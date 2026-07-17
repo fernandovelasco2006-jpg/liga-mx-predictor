@@ -511,3 +511,287 @@ BAJAS = {}
 # 4. Fixture congestion: pausa del 4-13 agosto por fase de grupos de
 #    Leagues Cup 2026 — considera un factor de fatiga/rotación para
 #    equipos que jueguen ambos torneos en semanas cercanas.
+
+# ═══════════════════════════════════════════════════════════════════════
+# MOTOR DE SIMULACIÓN
+# ═══════════════════════════════════════════════════════════════════════
+import numpy as np
+from datetime import datetime, timedelta
+
+# ─────────────────────────────────────────────────────────────────────────
+# ⚠️ FALTA — GOLES A FAVOR/CONTRA REALES POR EQUIPO (Clausura 2026)
+# Igual que FORMA_MUNDIAL en tu predictor del Mundial. Sin esto,
+# calcular_lambdas() deriva ataque/defensa de tu ELO (aproximación
+# razonable pero menos precisa). En cuanto tengas los datos reales del
+# Clausura 2026 (goles a favor, en contra, partidos jugados), llena este
+# dict así: "Equipo": (goles_favor, goles_contra, partidos_jugados)
+# ─────────────────────────────────────────────────────────────────────────
+FORMA_LIGA_MX = {}
+
+# ⚠️ FALTA — fechas en que cada equipo jugó Leagues Cup 2026 (4-13 agosto
+# fase de grupos, luego eliminación directa si avanza). Pídele a
+# Perplexity: "dame las fechas exactas de los partidos de Leagues Cup
+# 2026 de los 18 equipos de Liga MX". Formato: "Equipo": ["YYYY-MM-DD", ...]
+LEAGUES_CUP_FECHAS = {}
+
+LIGA_PROMEDIO_GOLES = 1.35  # goles esperados por equipo en un partido "neutro"
+
+
+def _fuerza_ataque_defensa(equipo):
+    """
+    Devuelve (factor_ataque, factor_defensa) para un equipo.
+    factor_ataque > 1  -> anota más de lo normal
+    factor_defensa > 1 -> concede MENOS de lo normal (ver uso en calcular_lambdas)
+    Usa datos reales de FORMA_LIGA_MX si existen; si no, deriva un
+    estimado a partir del ELO (menos preciso, pero funcional mientras
+    consigues los goles reales del Clausura 2026).
+    """
+    forma = FORMA_LIGA_MX.get(equipo)
+    if forma and forma[2] > 0:
+        gf, gc, pj = forma
+        ataque = (gf / pj) / LIGA_PROMEDIO_GOLES
+        defensa = LIGA_PROMEDIO_GOLES / max(gc / pj, 0.2)
+        return ataque, defensa
+
+    # Fallback: derivar de ELO relativo al promedio de la liga
+    elo = ELO.get(equipo, 1500)
+    elo_prom = sum(ELO.values()) / len(ELO)
+    diff = elo - elo_prom
+    factor = diff / 400 * 0.35  # misma escala que usaste en el Mundial
+    ataque = 1.0 + factor
+    defensa = 1.0 + factor  # equipos de ELO alto también conceden menos
+    return max(ataque, 0.5), max(defensa, 0.5)
+
+
+def _partido_reciente_leagues_cup(equipo, fecha_partido_str, dias=7):
+    """True si el equipo jugó Leagues Cup dentro de los `dias` previos
+    a fecha_partido_str (formato 'YYYY-MM-DD')."""
+    if not fecha_partido_str or equipo not in LEAGUES_CUP_FECHAS:
+        return False
+    try:
+        fecha_partido = datetime.strptime(fecha_partido_str, "%Y-%m-%d")
+    except ValueError:
+        return False
+    for f in LEAGUES_CUP_FECHAS[equipo]:
+        f_dt = datetime.strptime(f, "%Y-%m-%d")
+        if 0 <= (fecha_partido - f_dt).days <= dias:
+            return True
+    return False
+
+
+def calcular_lambdas(local, visitante, arbitro=None, fecha_partido=None):
+    """
+    Calcula (lambda_local, lambda_visitante) — goles esperados de cada
+    equipo — combinando:
+      1. Ataque/Defensa (real si hay datos en FORMA_LIGA_MX, si no ELO)
+      2. Altitud (bonus ofensivo al local en sedes altas, penalización
+         al visitante no aclimatado)
+      3. Árbitro (más tarjetas -> partido más trabado -> menos goles)
+      4. Fatiga por Leagues Cup (-10% al ataque si jugó en los 7 días previos)
+    """
+    ataque_local, defensa_local = _fuerza_ataque_defensa(local)
+    ataque_visit, defensa_visit = _fuerza_ataque_defensa(visitante)
+
+    lam_local = LIGA_PROMEDIO_GOLES * ataque_local * defensa_visit
+    lam_visit = LIGA_PROMEDIO_GOLES * ataque_visit * defensa_local
+    # ventaja de local "base" (jugar en casa siempre ayuda un poco)
+    lam_local *= 1.12
+
+    # ── 1. Factor Altitud ──────────────────────────────────────────────
+    alt_local = ALTITUD_EQUIPO.get(local)
+    alt_sede_visitante = ALTITUD_EQUIPO.get(visitante)  # altitud de LA CIUDAD del visitante (para saber si está aclimatado)
+    if alt_local and alt_local >= 1700:
+        visitante_aclimatado = alt_sede_visitante is not None and alt_sede_visitante >= 1500
+        if not visitante_aclimatado:
+            # bonus escalado: a 2,680m (Toluca) el bonus es mayor que a 1,820m (Querétaro)
+            bonus = min(0.30, max(0.10, (alt_local - 1200) / 1000 * 0.20))
+            lam_local += bonus
+            lam_visit *= 0.90  # el visitante rinde peor a falta de oxígeno
+
+    # ── 2. Factor Arbitraje ──────────────────────────────────────────────
+    if arbitro and arbitro in ARBITROS_LIGA_MX:
+        prom_am_arbitro, _n = ARBITROS_LIGA_MX[arbitro]
+        prom_liga = sum(v[0] for v in ARBITROS_LIGA_MX.values()) / len(ARBITROS_LIGA_MX)
+        # un árbitro que saca más tarjetas de lo normal = partido más
+        # cortado/físico = ligeramente menos gol; uno muy permisivo deja
+        # fluir el juego = ligeramente más gol
+        desviacion = (prom_am_arbitro - prom_liga) / prom_liga
+        factor_arb = 1.0 - max(-0.10, min(0.15, desviacion * 0.30))
+        lam_local *= factor_arb
+        lam_visit *= factor_arb
+    # si no conoces al árbitro, no se aplica ajuste (ARBITRO_DEFAULT ya
+    # es razonable para el resto del padrón)
+
+    # ── 3. Factor Fatiga (Leagues Cup) ──────────────────────────────────
+    if _partido_reciente_leagues_cup(local, fecha_partido):
+        lam_local *= 0.90
+    if _partido_reciente_leagues_cup(visitante, fecha_partido):
+        lam_visit *= 0.90
+
+    return max(lam_local, 0.15), max(lam_visit, 0.15)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# TABLA GENERAL — puntos, GF/GC, diferencia de goles
+# ─────────────────────────────────────────────────────────────────────────
+def _tabla_vacia():
+    return {equipo: {"Pts": 0, "PJ": 0, "G": 0, "E": 0, "P": 0,
+                      "GF": 0, "GC": 0, "DG": 0} for equipo in EQUIPOS}
+
+
+def _actualizar_tabla(tabla, local, visitante, gl, gv):
+    tabla[local]["PJ"] += 1
+    tabla[visitante]["PJ"] += 1
+    tabla[local]["GF"] += gl
+    tabla[local]["GC"] += gv
+    tabla[visitante]["GF"] += gv
+    tabla[visitante]["GC"] += gl
+    if gl > gv:
+        tabla[local]["Pts"] += 3
+        tabla[local]["G"] += 1
+        tabla[visitante]["P"] += 1
+    elif gv > gl:
+        tabla[visitante]["Pts"] += 3
+        tabla[visitante]["G"] += 1
+        tabla[local]["P"] += 1
+    else:
+        tabla[local]["Pts"] += 1
+        tabla[visitante]["Pts"] += 1
+        tabla[local]["E"] += 1
+        tabla[visitante]["E"] += 1
+    tabla[local]["DG"] = tabla[local]["GF"] - tabla[local]["GC"]
+    tabla[visitante]["DG"] = tabla[visitante]["GF"] - tabla[visitante]["GC"]
+
+
+def _clasificacion(tabla):
+    """Ordena por Pts, luego diferencia de goles, luego goles a favor."""
+    return sorted(tabla.items(),
+                  key=lambda kv: (-kv[1]["Pts"], -kv[1]["DG"], -kv[1]["GF"]))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LIGUILLA — cuartos/semis/final a ida y vuelta, reseeding tras cuartos
+# (formato estándar Liga MX: 1v8, 2v7, 3v6, 4v5)
+# ─────────────────────────────────────────────────────────────────────────
+def _jugar_serie_ida_vuelta(mejor_seed, peor_seed, rng):
+    """Ida: local el de peor posición. Vuelta: local el de mejor posición
+    (ventaja de definir en casa, como en Liga MX). Si el marcador global
+    queda empatado, se define por penales con probabilidad ligeramente
+    inclinada según diferencia de ELO."""
+    lam_a1, lam_b1 = calcular_lambdas(peor_seed, mejor_seed)
+    g_ida_peor = rng.poisson(lam_a1)
+    g_ida_mejor = rng.poisson(lam_b1)
+
+    lam_a2, lam_b2 = calcular_lambdas(mejor_seed, peor_seed)
+    g_vuelta_mejor = rng.poisson(lam_a2)
+    g_vuelta_peor = rng.poisson(lam_b2)
+
+    global_mejor = g_ida_mejor + g_vuelta_mejor
+    global_peor = g_ida_peor + g_vuelta_peor
+
+    if global_mejor > global_peor:
+        return mejor_seed
+    if global_peor > global_mejor:
+        return peor_seed
+
+    # empate global -> penales, ligera ventaja probabilística por ELO
+    elo_mejor = ELO.get(mejor_seed, 1500)
+    elo_peor = ELO.get(peor_seed, 1500)
+    prob_mejor = 0.5 + max(-0.15, min(0.15, (elo_mejor - elo_peor) / 400 * 0.15))
+    return mejor_seed if rng.random() < prob_mejor else peor_seed
+
+
+def _simular_liguilla(top8_ordenado, rng):
+    """top8_ordenado: lista de 8 equipos en orden de posición en la
+    tabla general (1° a 8°). Devuelve el campeón."""
+    cruces_cuartos = [
+        (top8_ordenado[0], top8_ordenado[7]),
+        (top8_ordenado[1], top8_ordenado[6]),
+        (top8_ordenado[2], top8_ordenado[5]),
+        (top8_ordenado[3], top8_ordenado[4]),
+    ]
+    semifinalistas = [_jugar_serie_ida_vuelta(a, b, rng) for a, b in cruces_cuartos]
+
+    # reseeding: se reordenan según su posición original en la tabla
+    semifinalistas.sort(key=lambda e: top8_ordenado.index(e))
+    cruces_semis = [
+        (semifinalistas[0], semifinalistas[3]),
+        (semifinalistas[1], semifinalistas[2]),
+    ]
+    finalistas = [_jugar_serie_ida_vuelta(a, b, rng) for a, b in cruces_semis]
+    finalistas.sort(key=lambda e: top8_ordenado.index(e))
+    campeon = _jugar_serie_ida_vuelta(finalistas[0], finalistas[1], rng)
+    return campeon
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# SIMULACIÓN DE TEMPORADA COMPLETA (Monte Carlo)
+# ─────────────────────────────────────────────────────────────────────────
+def simular_temporada(n_temporadas=2000, semilla=None):
+    """
+    Corre `n_temporadas` simulaciones completas del Apertura 2026
+    (fase regular + liguilla) y devuelve probabilidades agregadas.
+
+    - Si un partido de PARTIDOS ya tiene resultado real (no None), se usa
+      tal cual en vez de simularlo — así, conforme avance el torneo real,
+      la simulación se vuelve cada vez más precisa (igual que en tu
+      predictor del Mundial).
+    - n_temporadas=2000-5000 ya da estimaciones estables. No hace falta
+      llegar a millones como en una simulación de un solo partido: aquí
+      cada "temporada" implica simular ~161 partidos (153 de fase regular
+      + hasta 8 de liguilla), así que el costo computacional es mayor.
+    """
+    rng = np.random.default_rng(semilla)
+    conteo_liguilla = {e: 0 for e in EQUIPOS}
+    conteo_campeon = {e: 0 for e in EQUIPOS}
+    suma_posicion = {e: 0 for e in EQUIPOS}
+    ultima_tabla = None
+
+    for _ in range(n_temporadas):
+        tabla = _tabla_vacia()
+        for local, visitante, jornada, estadio, resultado, arbitro in PARTIDOS:
+            if resultado is not None:
+                gl, gv = resultado
+            else:
+                fecha_str = HORARIOS_PARTIDO.get((local, visitante), "")
+                fecha_str = fecha_str.split(" ")[0] if fecha_str else None
+                lam_l, lam_v = calcular_lambdas(local, visitante, arbitro=arbitro,
+                                                 fecha_partido=fecha_str)
+                gl = int(rng.poisson(lam_l))
+                gv = int(rng.poisson(lam_v))
+            _actualizar_tabla(tabla, local, visitante, gl, gv)
+
+        clasificacion = _clasificacion(tabla)
+        for posicion, (equipo, _stats) in enumerate(clasificacion, start=1):
+            suma_posicion[equipo] += posicion
+
+        top8 = [equipo for equipo, _ in clasificacion[:8]]
+        for equipo in top8:
+            conteo_liguilla[equipo] += 1
+
+        campeon = _simular_liguilla(top8, rng)
+        conteo_campeon[campeon] += 1
+        ultima_tabla = clasificacion
+
+    prob_liguilla = {e: round(conteo_liguilla[e] / n_temporadas * 100, 1) for e in EQUIPOS}
+    prob_campeon = {e: round(conteo_campeon[e] / n_temporadas * 100, 1) for e in EQUIPOS}
+    posicion_promedio = {e: round(suma_posicion[e] / n_temporadas, 1) for e in EQUIPOS}
+
+    return {
+        "prob_liguilla": dict(sorted(prob_liguilla.items(), key=lambda kv: -kv[1])),
+        "prob_campeon": dict(sorted(prob_campeon.items(), key=lambda kv: -kv[1])),
+        "posicion_promedio": dict(sorted(posicion_promedio.items(), key=lambda kv: kv[1])),
+        "ejemplo_tabla_final": ultima_tabla,  # última tabla simulada, solo de referencia
+    }
+
+
+if __name__ == "__main__":
+    # Prueba rápida — corre pocas temporadas para verificar que todo
+    # funciona antes de subirlo a Streamlit con un n_temporadas más alto.
+    resultado = simular_temporada(n_temporadas=200, semilla=42)
+    print("── Probabilidad de Liguilla (top 8) ──")
+    for equipo, prob in resultado["prob_liguilla"].items():
+        print(f"  {equipo:20s} {prob:5.1f}%")
+    print("\n── Probabilidad de Campeón ──")
+    for equipo, prob in list(resultado["prob_campeon"].items())[:8]:
+        print(f"  {equipo:20s} {prob:5.1f}%")
