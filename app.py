@@ -9,6 +9,28 @@ from liga_mx_algoritmo import (
 )
 
 st.set_page_config(
+    # --- CSS PARA ESTILO MÉXICO Y LIGA MX ---
+st.markdown("""
+    <style>
+    /* Colores y estilo general */
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    h1, h2, h3 {
+        color: #006847;
+        border-bottom: 2px solid #CE1126;
+    }
+    /* Estilo de botones */
+    div.stButton > button:first-child {
+        background-color: #006847;
+        color: white;
+    }
+    /* Tablas */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #006847;
+    }
+    </style>
+""", unsafe_allow_html=True)
     page_title="Liga MX · Apertura 2026 · Predictor",
     page_icon="⚽",
     layout="wide",
