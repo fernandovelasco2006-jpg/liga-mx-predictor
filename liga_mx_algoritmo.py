@@ -102,7 +102,10 @@ def _jugo_leagues_cup_reciente(equipo: str, fecha_partido: datetime) -> bool:
     return False
 
 
-def calcular_lambdas(home_team: str, away_team: str) -> tuple:
+def calcular_lambdas(home_team: str, away_team: str,
+                      peso_elo: float = 1.0,
+                      peso_altitud: float = 1.0,
+                      peso_arbitro: float = 1.0) -> tuple:
     """
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
@@ -111,14 +114,22 @@ def calcular_lambdas(home_team: str, away_team: str) -> tuple:
       3. Factor árbitro (promedio de tarjetas → intensidad del partido)
       4. Factor fatiga (Leagues Cup en los últimos 7 días)
 
+    peso_elo, peso_altitud, peso_arbitro: multiplicadores para ajustar
+    cuánto pesa cada factor en el resultado final. 1.0 = calibración por
+    defecto (la que ya probamos). 0.0 = el factor no tiene efecto.
+    2.0 = el doble de efecto que el calibrado. Pensados para conectarse
+    directo a st.slider en la interfaz — sin tocar variables globales.
+
     Devuelve (lambda_home, lambda_away) listos para simular goles con
     una distribución de Poisson.
     """
     # 1. Ataque / Defensa ────────────────────────────────────────────
-    ataque_home = FUERZA_ATAQUE.get(home_team, LIGA_PROMEDIO_GOLES)
-    defensa_home = FUERZA_DEFENSA.get(home_team, LIGA_PROMEDIO_GOLES)
-    ataque_away = FUERZA_ATAQUE.get(away_team, LIGA_PROMEDIO_GOLES)
-    defensa_away = FUERZA_DEFENSA.get(away_team, LIGA_PROMEDIO_GOLES)
+    # peso_elo interpola entre "todos los equipos son iguales" (peso=0)
+    # y "la calibración ELO completa" (peso=1); peso=2 duplica el efecto.
+    ataque_home = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_ATAQUE.get(home_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
+    defensa_home = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(home_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
+    ataque_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_ATAQUE.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
+    defensa_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
 
     # Modelo clásico tipo Dixon-Coles: goles esperados del local
     # dependen de SU ataque y de la defensa del VISITANTE (y viceversa).
@@ -131,13 +142,14 @@ def calcular_lambdas(home_team: str, away_team: str) -> tuple:
     # 2. Factor altitud ───────────────────────────────────────────────
     alt_local = ALTITUD_EQUIPO.get(home_team)
     if alt_local is not None and alt_local >= ALTITUD_UMBRAL:
+        bono = BONUS_ALTITUD_LOCAL * peso_altitud
         if away_team not in EQUIPOS_ACLIMATADOS_ALTURA:
             # el visitante no está acostumbrado a la altura → el local
             # se beneficia más de lo normal
-            lam_home += BONUS_ALTITUD_LOCAL
+            lam_home += bono
         else:
             # ambos equipos están acostumbrados a la altura → bonus reducido
-            lam_home += BONUS_ALTITUD_LOCAL * 0.3
+            lam_home += bono * 0.3
 
     # 3. Factor árbitro ─────────────────────────────────────────────
     # Un árbitro que reparte muchas tarjetas normalmente corresponde a
@@ -149,8 +161,9 @@ def calcular_lambdas(home_team: str, away_team: str) -> tuple:
     PROMEDIO_LIGA_AMARILLAS = 4.3
     desviacion = prom_amarillas - PROMEDIO_LIGA_AMARILLAS
     # cada amarilla de más sobre el promedio recorta ~1.5% el ritmo ofensivo,
-    # tope de +-10% para no sobre-ajustar con muestras chicas
-    factor_arbitro = 1.0 - max(min(desviacion * 0.015, 0.10), -0.10)
+    # escalado por peso_arbitro, con tope de +-10%*peso_arbitro (máx 30%)
+    tope = min(0.10 * peso_arbitro, 0.30)
+    factor_arbitro = 1.0 - max(min(desviacion * 0.015 * peso_arbitro, tope), -tope)
     lam_home *= factor_arbitro
     lam_away *= factor_arbitro
 
@@ -167,11 +180,16 @@ def calcular_lambdas(home_team: str, away_team: str) -> tuple:
 # ─────────────────────────────────────────────────────────────────────────
 # simular_temporada()
 # ─────────────────────────────────────────────────────────────────────────
-def _jugar_partido(home_team: str, away_team: str, rng=None) -> tuple:
+def _jugar_partido(home_team: str, away_team: str, rng=None,
+                    peso_elo: float = 1.0, peso_altitud: float = 1.0,
+                    peso_arbitro: float = 1.0) -> tuple:
     """Simula UN resultado (goles_home, goles_away) usando Poisson."""
     if rng is None:
         rng = np.random.default_rng()
-    lam_h, lam_a = calcular_lambdas(home_team, away_team)
+    lam_h, lam_a = calcular_lambdas(home_team, away_team,
+                                     peso_elo=peso_elo,
+                                     peso_altitud=peso_altitud,
+                                     peso_arbitro=peso_arbitro)
     goles_h = rng.poisson(lam_h)
     goles_a = rng.poisson(lam_a)
     return int(goles_h), int(goles_a)
@@ -217,7 +235,9 @@ def _ordenar_tabla(tabla: dict) -> list:
     return filas
 
 
-def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: int, rng=None) -> dict:
+def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: int, rng=None,
+                             peso_elo: float = 1.0, peso_altitud: float = 1.0,
+                             peso_arbitro: float = 1.0) -> dict:
     """
     Serie a ida y vuelta. El peor posicionado (seed más alto/número más
     grande) juega la IDA de local; el mejor posicionado juega la VUELTA
@@ -230,8 +250,9 @@ def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: i
     else:
         mejor, peor = equipo_B, equipo_A
 
-    gh1, ga1 = _jugar_partido(peor, mejor, rng)     # ida: local el peor posicionado
-    gh2, ga2 = _jugar_partido(mejor, peor, rng)     # vuelta: local el mejor posicionado
+    kwargs = dict(peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
+    gh1, ga1 = _jugar_partido(peor, mejor, rng, **kwargs)     # ida: local el peor posicionado
+    gh2, ga2 = _jugar_partido(mejor, peor, rng, **kwargs)     # vuelta: local el mejor posicionado
 
     goles_mejor = ga1 + gh2
     goles_peor = gh1 + ga2
@@ -252,9 +273,16 @@ def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: i
     }
 
 
-def simular_temporada(rng=None) -> dict:
+def simular_temporada(rng=None,
+                       peso_elo: float = 1.0,
+                       peso_altitud: float = 1.0,
+                       peso_arbitro: float = 1.0) -> dict:
     """
     Simula la fase regular completa (17 jornadas) + Liguilla completa.
+
+    peso_elo, peso_altitud, peso_arbitro: se pasan directo a
+    calcular_lambdas() en cada partido — pensados para conectarse a
+    st.slider() en la interfaz sin usar estado global.
 
     Devuelve:
         {
@@ -270,13 +298,15 @@ def simular_temporada(rng=None) -> dict:
     if rng is None:
         rng = np.random.default_rng()
 
+    kwargs = dict(peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
+
     tabla = _tabla_vacia()
     for home, away, jornada, estadio, resultado_real, arbitro in PARTIDOS:
         if resultado_real is not None:
             # partido ya jugado en la vida real → usa el resultado real
             gh, ga = resultado_real
         else:
-            gh, ga = _jugar_partido(home, away, rng)
+            gh, ga = _jugar_partido(home, away, rng, **kwargs)
         _actualizar_tabla(tabla, home, away, gh, ga)
 
     tabla_final = _ordenar_tabla(tabla)
@@ -291,7 +321,7 @@ def simular_temporada(rng=None) -> dict:
         (top8[3]["equipo"], top8[4]["equipo"]),
     ]
     cuartos = [
-        _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng)
+        _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng, **kwargs)
         for a, b in pares_cuartos
     ]
 
@@ -303,14 +333,14 @@ def simular_temporada(rng=None) -> dict:
         (avanzan_ordenados[1], avanzan_ordenados[2]),
     ]
     semis = [
-        _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng)
+        _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng, **kwargs)
         for a, b in pares_semis
     ]
 
     # ── Final ───────────────────────────────────────────────────────
     finalistas = [s["ganador"] for s in semis]
     final = _jugar_serie_ida_vuelta(finalistas[0], finalistas[1],
-                                     seed[finalistas[0]], seed[finalistas[1]], rng)
+                                     seed[finalistas[0]], seed[finalistas[1]], rng, **kwargs)
 
     return {
         "tabla_final": tabla_final,
@@ -331,14 +361,19 @@ def simular_temporada(rng=None) -> dict:
 # simulaciones por partido en el Mundial, pero aquí cada simulación es
 # una TEMPORADA completa.
 # ─────────────────────────────────────────────────────────────────────────
-def simular_temporada_montecarlo(n: int = 1000) -> dict:
+def simular_temporada_montecarlo(n: int = 1000,
+                                  peso_elo: float = 1.0,
+                                  peso_altitud: float = 1.0,
+                                  peso_arbitro: float = 1.0) -> dict:
     rng = np.random.default_rng()
     conteo_liguilla = defaultdict(int)
     conteo_campeon = defaultdict(int)
     suma_posicion = defaultdict(int)
 
     for _ in range(n):
-        resultado = simular_temporada(rng)
+        resultado = simular_temporada(rng, peso_elo=peso_elo,
+                                       peso_altitud=peso_altitud,
+                                       peso_arbitro=peso_arbitro)
         for fila in resultado["tabla_final"][:8]:
             conteo_liguilla[fila["equipo"]] += 1
         for fila in resultado["tabla_final"]:
