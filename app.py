@@ -7,7 +7,7 @@ from liga_mx_predictor_skeleton import (
 )
 from liga_mx_algoritmo import (
     calcular_lambdas, simular_temporada, simular_temporada_montecarlo,
-    simular_partido, analizar_apuestas,
+    simular_partido, analizar_apuestas, armar_parlay,
 )
 
 st.set_page_config(
@@ -105,12 +105,7 @@ with tab_config:
     with col3:
         peso_arbitro = st.slider("Peso Árbitro", 0.0, 2.0, 1.0, 0.1)
     st.markdown("---")
-    n_sims_partido = st.select_slider(
-        "Simulaciones por partido",
-        options=[100_000, 500_000, 1_000_000, 5_000_000, 10_000_000],
-        value=1_000_000,
-        format_func=lambda x: f"{x:,}",
-    )
+    N_SIMS_PARTIDO = 10_000_000  # fijo, igual que en el Mundial
     n_temporadas_mc = st.slider("Temporadas a simular (Montecarlo)", 100, 5000, 1000, 100)
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -129,7 +124,7 @@ with tab_pred:
         local, visit, jornada, estadio, resultado_real, arbitro = partidos_j[idx_sel]
 
         st.markdown("---")
-        st.caption(f"⚡ {n_sims_partido:,} simulaciones (ajustable en Configuración)")
+        st.caption(f"⚡ {N_SIMS_PARTIDO:,} simulaciones")
         btn = st.button("⚽ Simular partido", key="btn_simular")
 
     with col_der:
@@ -152,8 +147,8 @@ with tab_pred:
             )
 
         if btn or resultado_real:
-            with st.spinner(f"Simulando {n_sims_partido:,} partidos..."):
-                r = simular_partido(local, visit, n=n_sims_partido,
+            with st.spinner(f"Simulando {N_SIMS_PARTIDO:,} partidos..."):
+                r = simular_partido(local, visit, n=N_SIMS_PARTIDO,
                                      peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
 
             pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
@@ -229,6 +224,17 @@ with tab_pred:
                             f'<div style="font-size:0.6rem;color:#6b9b7d;margin-top:0.3rem">{ap["nota"]}</div></div>',
                             unsafe_allow_html=True,
                         )
+                parlay = armar_parlay(sugs)
+                if parlay:
+                    st.markdown(
+                        f'<div style="background:linear-gradient(135deg,#1a1500,#2a2000);'
+                        f'border:1px solid #e5007d;border-radius:10px;padding:0.8rem 1rem;margin-top:0.75rem">'
+                        f'<span style="font-size:0.6rem;color:#e5007d;letter-spacing:2px">💛 PARLAY SUGERIDO</span>'
+                        f'<div style="font-size:0.85rem;color:#e5007d;margin:0.2rem 0">{parlay["texto"]}</div>'
+                        f'<div style="font-size:0.65rem;color:#8fbfa0">Prob. combinada: '
+                        f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
+                        unsafe_allow_html=True,
+                    )
             else:
                 st.info("Sin señales claras de apuesta para este partido — modelo conservador.")
 
@@ -263,8 +269,8 @@ with tab_apuestas:
                 f'<span style="font-size:0.7rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
                 unsafe_allow_html=True,
             )
-            with st.spinner("Calculando..."):
-                r = simular_partido(local, visit, n=200_000, peso_elo=peso_elo,
+            with st.spinner(f"Simulando {N_SIMS_PARTIDO:,} veces..."):
+                r = simular_partido(local, visit, n=N_SIMS_PARTIDO, peso_elo=peso_elo,
                                      peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
             sugs = [s for s in analizar_apuestas(local, visit, r) if s["nivel"] == "ALTA"]
             if not sugs:
@@ -280,6 +286,17 @@ with tab_apuestas:
                             f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
                             unsafe_allow_html=True,
                         )
+                parlay = armar_parlay(sugs)
+                if parlay:
+                    st.markdown(
+                        f'<div style="background:linear-gradient(135deg,#1a1500,#2a2000);'
+                        f'border:1px solid #e5007d;border-radius:10px;padding:0.6rem 0.9rem;margin-top:0.5rem">'
+                        f'<span style="font-size:0.55rem;color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                        f'<div style="font-size:0.78rem;color:#e5007d;margin:0.15rem 0">{parlay["texto"]}</div>'
+                        f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
+                        f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
+                        unsafe_allow_html=True,
+                    )
     st.markdown('<div style="font-size:0.65rem;color:#4a5568;padding-top:1rem;border-top:1px solid #1f4a2e;'
                 'margin-top:1rem">⚠️ Solo informativo · Apuesta responsablemente</div>', unsafe_allow_html=True)
 
