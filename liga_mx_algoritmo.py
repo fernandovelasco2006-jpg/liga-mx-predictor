@@ -387,148 +387,43 @@ def simular_temporada_montecarlo(n: int = 1000,
     }
 
 
+
 # ─────────────────────────────────────────────────────────────────────────
-# simular_partido() — Monte Carlo de UN SOLO partido, estilo Mundial:
-# corre n simulaciones (ej. 10,000,000) usando los mismos lambdas de
-# calcular_lambdas(), y devuelve probabilidades, marcador esperado,
-# top 5 marcadores, córners y tarjetas esperadas.
+# simular_partido() — Monte Carlo de UN partido, 10,000,000 simulaciones
+# por defecto (igual que el Mundial), usando calcular_lambdas().
 # ─────────────────────────────────────────────────────────────────────────
 from collections import Counter
 from liga_mx_predictor_skeleton import CORNERS_EQUIPO, CORNERS_DEFAULT
 
-PROMEDIO_LIGA_AMARILLAS_PARTIDO = 4.3
+PROMEDIO_LIGA_AMARILLAS = 4.3
+PROMEDIO_LIGA_ROJAS = 0.15   # ⚠️ placeholder — no hay dato real de rojas por árbitro todavía
+
+
+def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
+    """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido."""
+    arbitro = _buscar_arbitro(home_team, away_team)
+    prom_amarillas, _n = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
+    if arbitro and arbitro in ARBITROS_LIGA_MX:
+        amarillas_esp = prom_amarillas
+    else:
+        desviacion = (prom_amarillas - PROMEDIO_LIGA_AMARILLAS) * peso_arbitro
+        amarillas_esp = PROMEDIO_LIGA_AMARILLAS + desviacion * 0.3
+    amarillas_esp = max(amarillas_esp, 1.5)
+    # rojas escaladas proporcionalmente al "carácter" del árbitro (placeholder,
+    # reemplazar cuando tengas promedio real de rojas por árbitro)
+    rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / PROMEDIO_LIGA_AMARILLAS)
+    return amarillas_esp, rojas_esp
 
 
 def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
                      peso_elo: float = 1.0, peso_altitud: float = 1.0,
                      peso_arbitro: float = 1.0) -> dict:
-    rng = np.random.default_rng()
-    lam_h, lam_a = calcular_lambdas(home_team, away_team,
-                                     peso_elo=peso_elo, peso_altitud=peso_altitud,
-                                     peso_arbitro=peso_arbitro)
-
-    ga = rng.poisson(lam_h, n).astype(np.int32)
-    gb = rng.poisson(lam_a, n).astype(np.int32)
-
-    prob_a = float(np.mean(ga > gb) * 100)
-    prob_b = float(np.mean(gb > ga) * 100)
-    prob_emp = float(np.mean(ga == gb) * 100)
-
-    goles_tot = ga + gb
-    prob_over15 = float(np.mean(goles_tot > 1) * 100)
-    prob_over25 = float(np.mean(goles_tot > 2) * 100)
-    prob_btts = float(np.mean((ga > 0) & (gb > 0)) * 100)
-    top5 = Counter(zip(ga.tolist(), gb.tolist())).most_common(5)
-
-    # córners
-    corners_h = CORNERS_EQUIPO.get(home_team, CORNERS_DEFAULT)
-    corners_a = CORNERS_EQUIPO.get(away_team, CORNERS_DEFAULT)
-    corners_esp = corners_h + corners_a
-    corners_sim = rng.poisson(corners_esp, n).astype(np.int32)
-    prob_corners_over85 = float(np.mean(corners_sim > 8) * 100)
-    prob_corners_under85 = 100 - prob_corners_over85
-
-    # tarjetas — según árbitro asignado
-    arbitro = _buscar_arbitro(home_team, away_team)
-    prom_amarillas, _n_partidos_arb = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
-    lam_amarillas = prom_amarillas * peso_arbitro if arbitro else PROMEDIO_LIGA_AMARILLAS_PARTIDO
-    tarjetas_sim = rng.poisson(max(lam_amarillas, 0.1), n).astype(np.int32)
-    prob_am_over35 = float(np.mean(tarjetas_sim > 3) * 100)
-
-    goles_a_mean = float(np.mean(ga))
-    goles_b_mean = float(np.mean(gb))
-    del ga, gb, goles_tot, corners_sim, tarjetas_sim
-
-    return {
-        "prob_a": prob_a, "prob_b": prob_b, "prob_emp": prob_emp,
-        "goles_a": goles_a_mean, "goles_b": goles_b_mean,
-        "top5": top5,
-        "lam_a": round(lam_h, 3), "lam_b": round(lam_a, 3),
-        "elo_a": ELO.get(home_team, 1500), "elo_b": ELO.get(away_team, 1500),
-        "prob_over15": prob_over15, "prob_over25": prob_over25,
-        "prob_under25": 100 - prob_over25,
-        "prob_btts": prob_btts, "prob_no_btts": 100 - prob_btts,
-        "corners_esp": corners_esp,
-        "prob_corners_over85": prob_corners_over85,
-        "prob_corners_under85": prob_corners_under85,
-        "amarillas_esp": round(lam_amarillas, 1),
-        "prob_am_over35": prob_am_over35,
-        "arbitro": arbitro or "Sin asignar",
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# analizar_apuestas() — mismo patrón que el Mundial: umbrales de
-# confianza por mercado, devuelve solo las apuestas con señal fuerte.
-# ─────────────────────────────────────────────────────────────────────────
-def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
-    apuestas = []
-    UMBRAL_RESULTADO = 55.0     # liga regular es más parejo que el Mundial → umbral más bajo
-    UMBRAL_MERCADOS = 65.0
-
-    def ap(mercado, seleccion, confianza, nota):
-        apuestas.append({
-            "mercado": mercado, "seleccion": seleccion, "confianza": confianza,
-            "nivel": "ALTA" if confianza >= 70 else "MEDIA",
-            "nota": nota,
-        })
-
-    pa, pd_, pb = r["prob_a"], r["prob_emp"], r["prob_b"]
-    if pa >= UMBRAL_RESULTADO:
-        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones")
-    if pb >= UMBRAL_RESULTADO:
-        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones")
-    conf_1x = min(pa + pd_, 99)
-    conf_x2 = min(pb + pd_, 99)
-    if conf_1x >= 75 and pa < UMBRAL_RESULTADO:
-        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
-    if conf_x2 >= 75 and pb < UMBRAL_RESULTADO:
-        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
-    if r["prob_over15"] >= UMBRAL_MERCADOS:
-        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones")
-    if r["prob_over25"] >= UMBRAL_MERCADOS:
-        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones")
-    if r["prob_under25"] >= UMBRAL_MERCADOS:
-        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", r["prob_under25"], f"{r['prob_under25']:.1f}% de simulaciones")
-    if r["prob_btts"] >= UMBRAL_MERCADOS:
-        ap("Ambos Marcan", "✅ Sí — ambos anotan", r["prob_btts"], f"{r['prob_btts']:.1f}% de simulaciones")
-    if r["prob_no_btts"] >= UMBRAL_MERCADOS:
-        ap("Ambos Marcan", "✅ No — al menos uno no anota", r["prob_no_btts"], f"{r['prob_no_btts']:.1f}% de simulaciones")
-    if r["prob_corners_over85"] >= UMBRAL_MERCADOS:
-        ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_under85"] >= UMBRAL_MERCADOS:
-        ap("Córners", "✅ Under 8.5 córners (máx 8)", r["prob_corners_under85"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_am_over35"] >= UMBRAL_MERCADOS:
-        ap("Tarjetas Amarillas", "✅ Over 3.5 amarillas (4+)", r["prob_am_over35"], f"{r['amarillas_esp']:.1f} esperadas — árbitro {r['arbitro']}")
-
-    apuestas.sort(key=lambda x: x["confianza"], reverse=True)
-    return apuestas
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# simular_partido() — Monte Carlo de UN partido específico, igual que
-# simular() en el Mundial: corre N simulaciones con Poisson y agrega
-# probabilidades de mercados (1X2, over/under, BTTS, tarjetas, córners).
-# ─────────────────────────────────────────────────────────────────────────
-from collections import Counter as _Counter
-
-PROMEDIO_LIGA_AMARILLAS = 4.3
-
-
-def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> float:
-    arbitro = _buscar_arbitro(home_team, away_team)
-    prom_amarillas, _n = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
-    desviacion = (prom_amarillas - PROMEDIO_LIGA_AMARILLAS) * peso_arbitro
-    return max(prom_amarillas if arbitro else PROMEDIO_LIGA_AMARILLAS + desviacion * 0.3, 1.5)
-
-
-def simular_partido(home_team: str, away_team: str, n: int = 1_000_000,
-                     peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                     peso_arbitro: float = 1.0) -> dict:
     """
-    Corre N simulaciones Monte Carlo de UN partido (no de la temporada
-    completa) y agrega probabilidades por mercado. Equivalente a
-    simular() en tu predictor del Mundial.
+    Corre N simulaciones Monte Carlo de UN partido (10,000,000 por
+    defecto, igual que en tu predictor del Mundial) y agrega
+    probabilidades por mercado: 1X2, doble oportunidad, total de goles,
+    ambos marcan, tarjetas totales (amarilla=1pt, roja=2pts, convención
+    de casas de apuestas) y córners.
     """
     rng = np.random.default_rng()
     lam_h, lam_a = calcular_lambdas(home_team, away_team,
@@ -549,17 +444,28 @@ def simular_partido(home_team: str, away_team: str, n: int = 1_000_000,
     prob_over35 = float(np.mean(goles_totales > 3) * 100)
     prob_btts = float(np.mean((goles_h > 0) & (goles_a > 0)) * 100)
 
-    top5 = _Counter(zip(goles_h.tolist(), goles_a.tolist())).most_common(5)
+    top5 = Counter(zip(goles_h.tolist(), goles_a.tolist())).most_common(5)
 
+    # ── Córners: varias líneas, igual que el Mundial ──────────────────
     corners_esp = CORNERS_EQUIPO.get(home_team, CORNERS_DEFAULT) + CORNERS_EQUIPO.get(away_team, CORNERS_DEFAULT)
     corners_sim = rng.poisson(corners_esp, n).astype(np.int32)
+    prob_corners_over65 = float(np.mean(corners_sim > 6) * 100)
+    prob_corners_over75 = float(np.mean(corners_sim > 7) * 100)
     prob_corners_over85 = float(np.mean(corners_sim > 8) * 100)
-    prob_corners_under85 = 100 - prob_corners_over85
+    prob_corners_over95 = float(np.mean(corners_sim > 9) * 100)
 
-    amarillas_esp = _tarjetas_esperadas(home_team, away_team, peso_arbitro)
-    tarjetas_sim = rng.poisson(amarillas_esp, n).astype(np.int32)
-    prob_am_over25 = float(np.mean(tarjetas_sim > 2) * 100)
-    prob_am_over35 = float(np.mean(tarjetas_sim > 3) * 100)
+    # ── Tarjetas: convención de casas de apuestas → roja = 2 amarillas ──
+    amarillas_esp, rojas_esp = _tarjetas_esperadas(home_team, away_team, peso_arbitro)
+    amarillas_sim = rng.poisson(amarillas_esp, n).astype(np.int32)
+    rojas_sim = rng.poisson(max(rojas_esp, 0.01), n).astype(np.int32)
+    tarjetas_totales_sim = amarillas_sim + 2 * rojas_sim   # roja cuenta doble
+    tarjetas_totales_esp = amarillas_esp + 2 * rojas_esp
+    prob_tarj_over25 = float(np.mean(tarjetas_totales_sim > 2) * 100)
+    prob_tarj_over35 = float(np.mean(tarjetas_totales_sim > 3) * 100)
+    prob_tarj_over45 = float(np.mean(tarjetas_totales_sim > 4) * 100)
+    prob_tarj_over55 = float(np.mean(tarjetas_totales_sim > 5) * 100)
+
+    del goles_totales, corners_sim, amarillas_sim, rojas_sim, tarjetas_totales_sim
 
     return {
         "prob_home": prob_home, "prob_draw": prob_draw, "prob_away": prob_away,
@@ -570,21 +476,41 @@ def simular_partido(home_team: str, away_team: str, n: int = 1_000_000,
         "prob_over25": prob_over25, "prob_over35": prob_over35,
         "prob_btts": prob_btts,
         "corners_esp": corners_esp,
+        "prob_corners_over65": prob_corners_over65,
+        "prob_corners_over75": prob_corners_over75,
         "prob_corners_over85": prob_corners_over85,
-        "prob_corners_under85": prob_corners_under85,
+        "prob_corners_over95": prob_corners_over95,
         "amarillas_esp": round(amarillas_esp, 1),
-        "prob_am_over25": prob_am_over25, "prob_am_over35": prob_am_over35,
+        "rojas_esp": round(rojas_esp, 2),
+        "tarjetas_totales_esp": round(tarjetas_totales_esp, 1),
+        "prob_tarj_over25": prob_tarj_over25,
+        "prob_tarj_over35": prob_tarj_over35,
+        "prob_tarj_over45": prob_tarj_over45,
+        "prob_tarj_over55": prob_tarj_over55,
         "arbitro": _buscar_arbitro(home_team, away_team) or "Sin asignar",
         "n_sims": n,
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# analizar_apuestas() — MISMAS REGLAS que el Mundial: umbrales dinámicos
+# según qué tan "cerrado" pinta el partido, un mercado por categoría
+# (para no repetir 3 líneas de córners), y nivel ALTA/MEDIA.
+# ─────────────────────────────────────────────────────────────────────────
 def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
-    """Genera sugerencias de apuestas con confianza ALTA/MEDIA, igual
-    estilo que analizar_apuestas() del Mundial."""
     apuestas = []
-    UMBRAL_RESULTADO = 65.0
-    UMBRAL_MERCADOS = 75.0
+
+    lam_total = r["lam_home"] + r["lam_away"]
+    import math as _math
+    prob_00 = _math.exp(-r["lam_home"]) * _math.exp(-r["lam_away"]) * 100
+    ES_PARTIDO_DEFENSIVO = prob_00 > 8 or lam_total < 2.2
+
+    UMBRAL_RESULTADO = 55.0
+    UMBRAL_DOBLE_OP = 78.0
+    UMBRAL_OVER05 = min(92.0, 80.0 + prob_00 * 0.5) if prob_00 > 5 else 82.0
+    UMBRAL_MERCADOS = 65.0 if ES_PARTIDO_DEFENSIVO else 70.0
+    UMBRAL_TARJ = 65.0 if ES_PARTIDO_DEFENSIVO else 70.0
+    UMBRAL_CORN = 65.0 if ES_PARTIDO_DEFENSIVO else 70.0
 
     def ap(mercado, seleccion, confianza, nota):
         apuestas.append({
@@ -594,36 +520,120 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
             "nota": nota,
         })
 
-    if r["prob_home"] >= UMBRAL_RESULTADO:
-        ap("Resultado (1X2)", f"✅ Gana {home_team}", r["prob_home"], f"{r['prob_home']:.1f}% de las simulaciones")
-    if r["prob_away"] >= UMBRAL_RESULTADO:
-        ap("Resultado (1X2)", f"✅ Gana {away_team}", r["prob_away"], f"{r['prob_away']:.1f}% de las simulaciones")
-    conf_1x = r["prob_home"] + r["prob_draw"]
-    conf_x2 = r["prob_away"] + r["prob_draw"]
-    if conf_1x >= 80 and r["prob_home"] < UMBRAL_RESULTADO:
-        ap("Doble Oportunidad", f"✅ {home_team} o Empate", conf_1x, f"1X = {conf_1x:.1f}%")
-    if conf_x2 >= 80 and r["prob_away"] < UMBRAL_RESULTADO:
-        ap("Doble Oportunidad", f"✅ {away_team} o Empate", conf_x2, f"X2 = {conf_x2:.1f}%")
+    pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
+
+    # Ganador
+    if pa >= UMBRAL_RESULTADO:
+        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones")
+    if pb >= UMBRAL_RESULTADO:
+        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones")
+
+    # Ganador o empate (doble oportunidad)
+    conf_1x = min(pa + pd_, 99)
+    conf_x2 = min(pb + pd_, 99)
+    if conf_1x >= UMBRAL_DOBLE_OP and pa < UMBRAL_RESULTADO:
+        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
+    if conf_x2 >= UMBRAL_DOBLE_OP and pb < UMBRAL_RESULTADO:
+        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
+
+    # Total de goles
+    if r["prob_over05"] >= UMBRAL_OVER05:
+        ap("Total Goles", "✅ Over 0.5 (al menos 1 gol)", r["prob_over05"], f"{r['prob_over05']:.1f}% de simulaciones")
     if r["prob_over15"] >= UMBRAL_MERCADOS:
-        ap("Total Goles", "✅ Over 1.5", r["prob_over15"], f"{r['prob_over15']:.1f}% de las simulaciones")
+        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones")
     if r["prob_over25"] >= UMBRAL_MERCADOS:
-        ap("Total Goles", "✅ Over 2.5", r["prob_over25"], f"{r['prob_over25']:.1f}% de las simulaciones")
+        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones")
+    if r["prob_over35"] >= UMBRAL_MERCADOS:
+        ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones")
+    if (100 - r["prob_over15"]) >= UMBRAL_MERCADOS:
+        ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones")
     if (100 - r["prob_over25"]) >= UMBRAL_MERCADOS:
-        ap("Total Goles", "✅ Under 2.5", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de las simulaciones")
+        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones")
+
+    # Ambos marcan
     if r["prob_btts"] >= UMBRAL_MERCADOS:
-        ap("Ambos Marcan", "✅ Sí", r["prob_btts"], f"{r['prob_btts']:.1f}% de las simulaciones")
+        ap("Ambos Marcan", "✅ Sí — ambos anotan", r["prob_btts"], f"{r['prob_btts']:.1f}% de simulaciones")
     if (100 - r["prob_btts"]) >= UMBRAL_MERCADOS:
-        ap("Ambos Marcan", "✅ No", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de las simulaciones")
-    if r["prob_am_over25"] >= UMBRAL_MERCADOS:
-        ap("Tarjetas", "✅ Over 2.5 amarillas", r["prob_am_over25"], f"{r['amarillas_esp']} esperadas")
-    if r["prob_corners_over85"] >= UMBRAL_MERCADOS:
-        ap("Córners", "✅ Over 8.5 córners", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_under85"] >= UMBRAL_MERCADOS:
-        ap("Córners", "✅ Under 8.5 córners", r["prob_corners_under85"], f"{r['corners_esp']:.1f} esperados")
+        ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
+
+    # Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
+    if r["prob_tarj_over25"] >= UMBRAL_TARJ:
+        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if r["prob_tarj_over35"] >= UMBRAL_TARJ:
+        ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if r["prob_tarj_over45"] >= UMBRAL_TARJ:
+        ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if (100 - r["prob_tarj_over35"]) >= UMBRAL_TARJ:
+        ap("Tarjetas", "✅ Under 3.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+
+    # Córners — varias líneas
+    if r["prob_corners_over65"] >= UMBRAL_CORN and r["corners_esp"] >= 7:
+        ap("Córners", "✅ Over 6.5 córners (7+)", r["prob_corners_over65"], f"{r['corners_esp']:.1f} esperados")
+    if r["prob_corners_over75"] >= UMBRAL_CORN and r["corners_esp"] >= 8:
+        ap("Córners", "✅ Over 7.5 córners (8+)", r["prob_corners_over75"], f"{r['corners_esp']:.1f} esperados")
+    if r["prob_corners_over85"] >= UMBRAL_CORN:
+        ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
+    if (100 - r["prob_corners_over85"]) >= UMBRAL_CORN:
+        ap("Córners", "✅ Under 8.5 córners (máx 8)", 100 - r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
 
     apuestas.sort(key=lambda x: x["confianza"], reverse=True)
-    return apuestas
 
+    # Un solo mercado por categoría (evita repetir 3 líneas de la misma cosa)
+    filtradas = []
+    categorias_vistas = set()
+    for a in apuestas:
+        merc = a["mercado"]
+        sel = a["seleccion"].lower()
+        if merc == "Tarjetas":
+            cat = "tarj_over" if "over" in sel else "tarj_under"
+        elif merc == "Córners":
+            cat = "co_over" if "over" in sel else "co_under"
+        elif merc == "Total Goles":
+            cat = "goles_over" if "over" in sel else "goles_under"
+        else:
+            cat = merc
+        if cat not in categorias_vistas:
+            categorias_vistas.add(cat)
+            filtradas.append(a)
+    return filtradas
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# armar_parlay() — mismo criterio que el Mundial: solo apuestas ALTA,
+# máximo una por categoría (Resultado/Doble Oportunidad, Goles, Tarjetas,
+# Córners, Ambos Marcan), probabilidad combinada = producto de confianzas.
+# ─────────────────────────────────────────────────────────────────────────
+def armar_parlay(sugerencias: list) -> dict:
+    altas = [a for a in sugerencias if a["nivel"] == "ALTA"]
+    if len(altas) < 2:
+        return None
+
+    seleccionadas = []
+    mercados_usados = set()
+    tiene_resultado = False
+    for a in sorted(altas, key=lambda x: x["confianza"], reverse=True):
+        merc = a["mercado"]
+        if merc in ("Resultado (1X2)", "Doble Oportunidad"):
+            if not tiene_resultado:
+                seleccionadas.append(a)
+                tiene_resultado = True
+            continue
+        if merc not in mercados_usados:
+            seleccionadas.append(a)
+            mercados_usados.add(merc)
+
+    if len(seleccionadas) < 2:
+        return None
+
+    prob_combinada = 1.0
+    for a in seleccionadas:
+        prob_combinada *= a["confianza"] / 100
+
+    return {
+        "selecciones": seleccionadas,
+        "texto": " + ".join(a["seleccion"].replace("✅ ", "") for a in seleccionadas),
+        "prob_combinada": round(prob_combinada * 100, 1),
+    }
 
 
 if __name__ == "__main__":
@@ -639,8 +649,11 @@ if __name__ == "__main__":
         print(f"  {fila['posicion']:>2}. {fila['equipo']:<20} PTS={fila['PTS']:<3} DG={fila['DG']:<4} GF={fila['GF']}")
     print("\nCampeón simulado:", resultado["liguilla"]["campeon"])
 
-    print("\n── simular_partido() de ejemplo (500k sims) ──")
+    print("\n── simular_partido() de ejemplo (500k sims, para no tardar en la prueba) ──")
     r = simular_partido("America", "Guadalajara", n=500_000)
-    print(f"  América {r['prob_a']:.1f}% - Empate {r['prob_emp']:.1f}% - Guadalajara {r['prob_b']:.1f}%")
-    print(f"  Goles esperados: {r['goles_a']:.2f} - {r['goles_b']:.2f}")
-    print("  Apuestas sugeridas:", [a["seleccion"] for a in analizar_apuestas("America", "Guadalajara", r)])
+    print(f"  América {r['prob_home']:.1f}% - Empate {r['prob_draw']:.1f}% - Guadalajara {r['prob_away']:.1f}%")
+    print(f"  Goles esperados: {r['goles_home']:.2f} - {r['goles_away']:.2f}")
+    sugs = analizar_apuestas("America", "Guadalajara", r)
+    print("  Apuestas sugeridas:", [(a["seleccion"], a["nivel"]) for a in sugs])
+    parlay = armar_parlay(sugs)
+    print("  Parlay:", parlay)
