@@ -4,10 +4,13 @@ from datetime import datetime, timedelta, timezone
 
 from liga_mx_predictor_skeleton import (
     EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO, ARBITROS_LIGA_MX,
+    ARBITRO_DEFAULT, CORNERS_EQUIPO,
 )
 from liga_mx_algoritmo import (
     calcular_lambdas, simular_temporada, simular_temporada_montecarlo,
     simular_partido, analizar_apuestas, armar_parlay,
+    ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
+    PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
 )
 
 st.set_page_config(
@@ -18,8 +21,17 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────────────────
-# ESTILO — mismo lenguaje visual que el Mundial-predictor, recoloreado:
-# verde/blanco/rojo (México) + magenta Liga MX como acento.
+# PESOS DEL MODELO — fijos en el código, no ajustables desde la interfaz.
+# Si algún día quieres recalibrar, cámbialos aquí (no en la UI).
+# ─────────────────────────────────────────────────────────────────────────
+PESO_ELO = 1.0
+PESO_ALTITUD = 1.0
+PESO_ARBITRO = 1.0
+N_SIMS_PARTIDO = 10_000_000
+
+# ─────────────────────────────────────────────────────────────────────────
+# ESTILO — mismo lenguaje visual que el Mundial-predictor: verde/blanco/
+# rojo (México) + magenta Liga MX como acento.
 # ─────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -53,6 +65,7 @@ h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 .bet-card { border-radius:10px; padding:0.9rem; height:100%; }
 .bet-card-alta { background:#0d2818; border:1px solid #2d6b45; }
 .bet-card-media { background:#12241a; border:1px solid #1f4a2e; }
+.parlay-card { background:linear-gradient(135deg,#1a1500,#2a2000); border:1px solid #e5007d; border-radius:10px; padding:0.8rem 1rem; margin-top:0.75rem; }
 .disclaimer-banner { background: linear-gradient(135deg, #2a1500, #3a1e00); border: 1px solid #5a3a00; border-radius: 10px; padding: 0.7rem 1.2rem; margin-bottom: 1rem; font-size: 0.75rem; color: #f0c040; line-height: 1.5; text-align: center; }
 .stButton > button { background: linear-gradient(135deg,#006341,#e5007d) !important; font-size:1rem !important; color:white !important; border:none !important; border-radius:8px !important; font-family:'Bebas Neue', sans-serif !important; letter-spacing:2px !important; padding:0.6rem 2rem !important; width:100% !important; }
 .stButton > button:hover { filter: brightness(1.15); }
@@ -71,7 +84,7 @@ Apuesta responsablemente y solo en plataformas legales. Debes ser mayor de edad 
 st.markdown("""
 <div class="hero">
   <div class="hero-title">LIGA MX · APERTURA 2026</div>
-  <div class="hero-sub">Monte Carlo · hasta 10,000,000 simulaciones · ELO + Altitud + Árbitro</div>
+  <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · ELO + Altitud + Árbitro</div>
 </div>""", unsafe_allow_html=True)
 
 BANDERAS_EQUIPO = {
@@ -85,31 +98,36 @@ BANDERAS_EQUIPO = {
 def flag(t):
     return BANDERAS_EQUIPO.get(t, "⚽")
 
+def tag(cls, txt):
+    return f'<span class="tag {cls}">{txt}</span>'
+
+if "historial_apuestas_sesion" not in st.session_state:
+    st.session_state["historial_apuestas_sesion"] = []
+
+def _registrar_apuestas_sesion(local, visit, jornada, sugs):
+    ya_registrado = any(
+        h["local"] == local and h["visit"] == visit for h in st.session_state["historial_apuestas_sesion"]
+    )
+    if ya_registrado:
+        return
+    for s in sugs:
+        if s["nivel"] != "ALTA":
+            continue
+        st.session_state["historial_apuestas_sesion"].append({
+            "local": local, "visit": visit, "jornada": jornada,
+            "mercado": s["mercado"], "seleccion": s["seleccion"], "confianza": s["confianza"],
+            "hora_registro": datetime.now().strftime("%H:%M:%S"),
+        })
+
 # ─────────────────────────────────────────────────────────────────────────
-# TABS
+# TABS — misma barra que el Mundial-predictor
 # ─────────────────────────────────────────────────────────────────────────
-tab_pred, tab_apuestas, tab_tabla, tab_mc, tab_config = st.tabs([
-    "🎯 Predictor", "🎰 Apuestas del Día", "📊 Tabla / Liguilla",
-    "🎲 Montecarlo Temporada", "⚙️ Configuración",
+tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_info = st.tabs([
+    "🎯 Predictor", "📊 Resultados reales", "🎰 Apuestas", "📈 Historial", "🎲 Apuestas Hist.", "⚙️ Modelo",
 ])
 
-# ── Configuración (se define primero porque los otros tabs la usan) ──────
-with tab_config:
-    st.markdown("### Pesos del modelo")
-    st.caption("1.0 = calibración por defecto. 0.0 = sin efecto. 2.0 = doble efecto.")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        peso_elo = st.slider("Peso ELO (ataque/defensa)", 0.0, 2.0, 1.0, 0.1)
-    with col2:
-        peso_altitud = st.slider("Peso Altitud", 0.0, 2.0, 1.0, 0.1)
-    with col3:
-        peso_arbitro = st.slider("Peso Árbitro", 0.0, 2.0, 1.0, 0.1)
-    st.markdown("---")
-    N_SIMS_PARTIDO = 10_000_000  # fijo, igual que en el Mundial
-    n_temporadas_mc = st.slider("Temporadas a simular (Montecarlo)", 100, 5000, 1000, 100)
-
 # ─────────────────────────────────────────────────────────────────────────
-# TAB — Predictor (estilo Mundial: elige partido, simula N veces)
+# TAB — Predictor
 # ─────────────────────────────────────────────────────────────────────────
 with tab_pred:
     col_izq, col_der = st.columns([1, 2.5], gap="large")
@@ -129,7 +147,7 @@ with tab_pred:
 
     with col_der:
         alt = ALTITUD_EQUIPO.get(local)
-        estado_tag = '<span class="tag tag-played">✓ Jugado</span>' if resultado_real else '<span class="tag tag-pending">⏳ Por jugarse</span>'
+        estado_tag = tag("tag-played", "✓ Jugado") if resultado_real else tag("tag-pending", "⏳ Por jugarse")
         alt_txt = f"⛰️ {alt:,} m &nbsp;·&nbsp; " if alt else ""
         st.markdown(
             f'{estado_tag}<div style="font-size:0.75rem;color:#6b9b7d;margin:0.5rem 0 1rem">'
@@ -149,7 +167,7 @@ with tab_pred:
         if btn or resultado_real:
             with st.spinner(f"Simulando {N_SIMS_PARTIDO:,} partidos..."):
                 r = simular_partido(local, visit, n=N_SIMS_PARTIDO,
-                                     peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
+                                     peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
 
             pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
             st.markdown(
@@ -202,12 +220,13 @@ with tab_pred:
 
             st.markdown(
                 f'<div class="model-note">λ_local={r["lam_home"]} · λ_visita={r["lam_away"]} · '
-                f'Árbitro: {r["arbitro"]} · Pesos: ELO={peso_elo} Altitud={peso_altitud} Árbitro={peso_arbitro}</div>',
+                f'Árbitro: {r["arbitro"]} · Tarjetas totales esp. (roja=2pts): {r["tarjetas_totales_esp"]}</div>',
                 unsafe_allow_html=True,
             )
 
             st.markdown("<br>", unsafe_allow_html=True)
             sugs = analizar_apuestas(local, visit, r)
+            _registrar_apuestas_sesion(local, visit, jornada, sugs)
             if sugs:
                 st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
                             'letter-spacing:2px;color:#e5007d;margin-bottom:0.75rem">🎰 APUESTAS SUGERIDAS</div>',
@@ -227,10 +246,8 @@ with tab_pred:
                 parlay = armar_parlay(sugs)
                 if parlay:
                     st.markdown(
-                        f'<div style="background:linear-gradient(135deg,#1a1500,#2a2000);'
-                        f'border:1px solid #e5007d;border-radius:10px;padding:0.8rem 1rem;margin-top:0.75rem">'
-                        f'<span style="font-size:0.6rem;color:#e5007d;letter-spacing:2px">💛 PARLAY SUGERIDO</span>'
-                        f'<div style="font-size:0.85rem;color:#e5007d;margin:0.2rem 0">{parlay["texto"]}</div>'
+                        f'<div class="parlay-card"><span style="font-size:0.6rem;color:#e5007d;letter-spacing:2px">'
+                        f'💛 PARLAY SUGERIDO</span><div style="font-size:0.85rem;color:#e5007d;margin:0.2rem 0">{parlay["texto"]}</div>'
                         f'<div style="font-size:0.65rem;color:#8fbfa0">Prob. combinada: '
                         f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
                         unsafe_allow_html=True,
@@ -239,7 +256,32 @@ with tab_pred:
                 st.info("Sin señales claras de apuesta para este partido — modelo conservador.")
 
 # ─────────────────────────────────────────────────────────────────────────
-# TAB — Apuestas del Día (estilo Mundial: expander con partidos de hoy)
+# TAB — Resultados reales
+# ─────────────────────────────────────────────────────────────────────────
+with tab_res:
+    st.markdown("#### Resultados registrados")
+    st.caption("Partidos ya disputados del Apertura 2026.")
+    jugados = [p for p in PARTIDOS if p[4] is not None]
+    if not jugados:
+        st.info("Aún no hay resultados registrados.")
+    else:
+        for jn in sorted(set(p[2] for p in jugados)):
+            st.markdown(f"**Jornada {jn}**")
+            for local, visit, jornada, estadio, res, arb in jugados:
+                if jornada != jn:
+                    continue
+                gh, ga = res
+                color = "#0d1f16" if gh != ga else "#0d1827"
+                ganador = (f"→ Ganó **{local}**" if gh > ga else f"→ Ganó **{visit}**" if ga > gh else "→ **Empate**")
+                st.markdown(
+                    f'<div style="background:{color};border-radius:8px;padding:0.5rem 1rem;margin-bottom:0.35rem;font-size:0.88rem">'
+                    f'{flag(local)} {local} <b style="font-size:1.1rem;color:#4ade80;margin:0 0.4rem">{gh}–{ga}</b>'
+                    f'{visit} {flag(visit)}<span style="color:#6b9b7d;font-size:0.72rem;margin-left:0.8rem">'
+                    f'📍 {estadio} · {ganador}</span></div>', unsafe_allow_html=True,
+                )
+
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Apuestas (del día)
 # ─────────────────────────────────────────────────────────────────────────
 with tab_apuestas:
     st.markdown("### 🎰 Apuestas más fuertes de hoy")
@@ -270,9 +312,11 @@ with tab_apuestas:
                 unsafe_allow_html=True,
             )
             with st.spinner(f"Simulando {N_SIMS_PARTIDO:,} veces..."):
-                r = simular_partido(local, visit, n=N_SIMS_PARTIDO, peso_elo=peso_elo,
-                                     peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
-            sugs = [s for s in analizar_apuestas(local, visit, r) if s["nivel"] == "ALTA"]
+                r = simular_partido(local, visit, n=N_SIMS_PARTIDO, peso_elo=PESO_ELO,
+                                     peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+            sugs_todas = analizar_apuestas(local, visit, r)
+            _registrar_apuestas_sesion(local, visit, jornada, sugs_todas)
+            sugs = [s for s in sugs_todas if s["nivel"] == "ALTA"]
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
             else:
@@ -289,9 +333,8 @@ with tab_apuestas:
                 parlay = armar_parlay(sugs)
                 if parlay:
                     st.markdown(
-                        f'<div style="background:linear-gradient(135deg,#1a1500,#2a2000);'
-                        f'border:1px solid #e5007d;border-radius:10px;padding:0.6rem 0.9rem;margin-top:0.5rem">'
-                        f'<span style="font-size:0.55rem;color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                        f'<div class="parlay-card" style="padding:0.6rem 0.9rem"><span style="font-size:0.55rem;'
+                        f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
                         f'<div style="font-size:0.78rem;color:#e5007d;margin:0.15rem 0">{parlay["texto"]}</div>'
                         f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
                         f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
@@ -301,73 +344,114 @@ with tab_apuestas:
                 'margin-top:1rem">⚠️ Solo informativo · Apuesta responsablemente</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────
-# TAB — Tabla / Liguilla
+# TAB — Historial (predicciones vs resultados reales)
 # ─────────────────────────────────────────────────────────────────────────
-with tab_tabla:
-    st.markdown("### Tabla de posiciones (resultados reales + proyección)")
-    if st.button("🔄 Recalcular tabla y Liguilla") or "resultado_temporada" not in st.session_state:
-        st.session_state["resultado_temporada"] = simular_temporada(
-            peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
-
-    resultado = st.session_state["resultado_temporada"]
-    df_tabla = pd.DataFrame(resultado["tabla_final"])
-    df_tabla = df_tabla[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
-    df_tabla.columns = ["#", "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Pts"]
-    st.dataframe(
-        df_tabla,
-        use_container_width=True, hide_index=True,
-        column_config={"#": st.column_config.NumberColumn(width="small")},
-    )
-    st.caption("Los primeros 8 lugares (arriba) clasifican a la Liguilla")
-
-    st.markdown("### Liguilla simulada")
-    liguilla = resultado["liguilla"]
-    col_cf, col_sf, col_f = st.columns(3)
-    with col_cf:
-        st.markdown("**Cuartos de Final**")
-        for serie in liguilla["cuartos"]:
-            st.markdown(f"- {serie['marcador_global']} → **{serie['ganador']}**")
-    with col_sf:
-        st.markdown("**Semifinales**")
-        for serie in liguilla["semis"]:
-            st.markdown(f"- {serie['marcador_global']} → **{serie['ganador']}**")
-    with col_f:
-        st.markdown("**Final**")
-        st.markdown(f"- {liguilla['final']['marcador_global']}")
-        st.success(f"🏆 Campeón: {liguilla['campeon']}")
-
-# ─────────────────────────────────────────────────────────────────────────
-# TAB — Montecarlo Temporada
-# ─────────────────────────────────────────────────────────────────────────
-with tab_mc:
-    st.markdown(f"### {n_temporadas_mc:,} temporadas simuladas")
-    if st.button("🎲 Correr simulación Montecarlo", type="primary"):
-        with st.spinner(f"Simulando {n_temporadas_mc:,} temporadas completas..."):
-            st.session_state["resultado_montecarlo"] = simular_temporada_montecarlo(
-                n=n_temporadas_mc, peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
-
-    if "resultado_montecarlo" in st.session_state:
-        mc = st.session_state["resultado_montecarlo"]
-        df_mc = pd.DataFrame([
-            {"Equipo": eq, "Prob. Liguilla (%)": mc["prob_liguilla"][eq],
-             "Prob. Campeón (%)": mc["prob_campeon"][eq],
-             "Posición promedio": mc["posicion_promedio"][eq]}
-            for eq in EQUIPOS
-        ]).sort_values("Prob. Campeón (%)", ascending=False).reset_index(drop=True)
-
-        st.dataframe(
-            df_mc, use_container_width=True, hide_index=True,
-            column_config={
-                "Prob. Liguilla (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
-                "Prob. Campeón (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
-            },
-        )
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            st.markdown("**Top 10 — Probabilidad de Liguilla**")
-            st.bar_chart(df_mc.nlargest(10, "Prob. Liguilla (%)").set_index("Equipo")["Prob. Liguilla (%)"])
-        with col_c2:
-            st.markdown("**Top 10 — Probabilidad de Campeón**")
-            st.bar_chart(df_mc.nlargest(10, "Prob. Campeón (%)").set_index("Equipo")["Prob. Campeón (%)"])
+with tab_hist:
+    st.markdown("#### 📈 Historial de predicciones vs resultados reales")
+    jugados = [p for p in PARTIDOS if p[4] is not None]
+    if not jugados:
+        st.info("Aún no hay partidos terminados para calcular accuracy. Se irá llenando conforme avance el torneo.")
     else:
-        st.info("Presiona el botón para correr la simulación con los pesos actuales.")
+        aciertos_ganador, aciertos_over25, total = 0, 0, 0
+        filas = []
+        for local, visit, jornada, estadio, res, arb in jugados:
+            try:
+                r = simular_partido(local, visit, n=50_000, peso_elo=PESO_ELO,
+                                     peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+                favorito = local if r["prob_home"] > r["prob_away"] else visit
+                gh, ga = res
+                ganador_real = local if gh > ga else (visit if ga > gh else "Empate")
+                correcto = favorito == ganador_real
+                if correcto:
+                    aciertos_ganador += 1
+                if ((gh + ga) > 2) == (r["prob_over25"] > 50):
+                    aciertos_over25 += 1
+                total += 1
+                filas.append({"partido": f"{flag(local)} {local} vs {flag(visit)} {visit}",
+                               "resultado": f"{gh}-{ga}", "favorito": favorito, "real": ganador_real, "ok": correcto})
+            except Exception:
+                continue
+        if total > 0:
+            c1, c2, c3 = st.columns(3)
+            acc_g = aciertos_ganador / total * 100
+            acc_o = aciertos_over25 / total * 100
+            with c1:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{acc_g:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy ganador</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{acc_o:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy Over/Under 2.5</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{total}</div>'
+                            f'<div class="metric-lbl">Partidos analizados</div></div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            for f in filas:
+                icono = "✅" if f["ok"] else "❌"
+                color = "#0d2818" if f["ok"] else "#1a0d0d"
+                st.markdown(
+                    f'<div style="background:{color};border-radius:8px;padding:0.5rem 0.9rem;margin-bottom:0.3rem;'
+                    f'font-size:0.82rem">{icono} {f["partido"]} — {f["resultado"]} · Modelo: '
+                    f'<b style="color:#e5007d">{f["favorito"]}</b> · Real: {f["real"]}</div>', unsafe_allow_html=True,
+                )
+
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Apuestas Hist. (sesión actual; se vuelve persistente con Supabase)
+# ─────────────────────────────────────────────────────────────────────────
+with tab_hist_ap:
+    st.markdown("#### 🎲 Historial de apuestas sugeridas (esta sesión)")
+    st.caption(
+        "Se registran automáticamente las apuestas de confianza ALTA cada vez que simulas un partido "
+        "en Predictor o en Apuestas. ⚠️ Por ahora solo dura tu sesión actual del navegador — cuando "
+        "conectemos Supabase, esto va a persistir entre visitas, igual que en el Mundial-predictor."
+    )
+    hist = st.session_state["historial_apuestas_sesion"]
+    if not hist:
+        st.info("Todavía no has simulado ningún partido en esta sesión. Ve al tab Predictor o Apuestas.")
+    else:
+        for h in reversed(hist):
+            st.markdown(
+                f'<div style="background:#111827;border:1px solid #1f4a2e;border-radius:8px;padding:0.5rem 0.9rem;'
+                f'margin-bottom:0.3rem"><span style="color:#e8f0ea;font-size:0.8rem;font-weight:600">'
+                f'{flag(h["local"])} {h["local"]} vs {flag(h["visit"])} {h["visit"]}</span>'
+                f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.8rem">Jornada {h["jornada"]} · {h["hora_registro"]}</span>'
+                f'<div style="font-size:0.75rem;color:#f0c040;margin-top:0.2rem">📋 {h["mercado"]} → {h["seleccion"]} '
+                f'<span style="color:#4ade80">({h["confianza"]:.0f}%)</span></div></div>',
+                unsafe_allow_html=True,
+            )
+
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Modelo (informativo, NO editable)
+# ─────────────────────────────────────────────────────────────────────────
+with tab_info:
+    st.markdown("#### ¿Cómo funciona el modelo?")
+    st.markdown(f"""
+El predictor usa **simulación Monte Carlo con distribución de Poisson** — {N_SIMS_PARTIDO:,} simulaciones
+por partido, el mismo enfoque que casas de apuestas y modelos académicos serios.
+
+**En cada simulación el modelo combina:**
+- **Ataque/Defensa** — derivado del ELO de cada equipo (⚠️ placeholder hasta tener goles reales del Clausura 2026)
+- **Altitud** — bono de +{BONUS_ALTITUD_LOCAL} al λ del local si su ciudad está a ≥{ALTITUD_UMBRAL:,}m
+  y el visitante no está aclimatado a la altura
+- **Árbitro** — promedio real de tarjetas del árbitro asignado (cuando lo tenemos) vs. el promedio de
+  liga ({PROMEDIO_LIGA_AMARILLAS} amarillas/partido)
+- **Fatiga Leagues Cup** — reduce el λ ofensivo {(1-FACTOR_FATIGA_LEAGUES_CUP)*100:.0f}% si el equipo jugó
+  Leagues Cup en los 7 días previos
+
+**Pesos actuales del modelo** (fijos, no ajustables desde la interfaz):
+
+| Factor | Peso |
+|---|---|
+| ELO (ataque/defensa) | {PESO_ELO} |
+| Altitud | {PESO_ALTITUD} |
+| Árbitro | {PESO_ARBITRO} |
+
+**Mercados de apuestas sugeridos:** Resultado (1X2), Doble Oportunidad, Total de Goles (Over/Under),
+Ambos Marcan, Tarjetas totales (roja cuenta como 2 amarillas, igual que las casas de apuestas), y Córners.
+""")
+    st.markdown("---")
+    st.markdown("#### ELO Ratings — 18 equipos")
+    sorted_elo = sorted(ELO.items(), key=lambda x: x[1], reverse=True)
+    cols = st.columns(3)
+    for i, (equipo, elo) in enumerate(sorted_elo):
+        with cols[i % 3]:
+            st.markdown(f"{flag(equipo)} **{equipo}** — `{elo}`")
