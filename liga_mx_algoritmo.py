@@ -102,6 +102,24 @@ def _jugo_leagues_cup_reciente(equipo: str, fecha_partido: datetime) -> bool:
     return False
 
 
+def _forma_real_liga_mx() -> dict:
+    """
+    Calcula (goles_favor, goles_contra, partidos_jugados) REALES por
+    equipo, a partir de los partidos que ya tienen resultado en
+    PARTIDOS. Se recalcula cada vez que se llama (barato: 153 filas) —
+    así conforme le vayas dando resultados de más jornadas, el modelo
+    se corrige solo sin que tengas que tocar código.
+    """
+    forma = {eq: [0, 0, 0] for eq in EQUIPOS}
+    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
+        if resultado is None:
+            continue
+        gh, ga = resultado
+        forma[local][0] += gh; forma[local][1] += ga; forma[local][2] += 1
+        forma[visit][0] += ga; forma[visit][1] += gh; forma[visit][2] += 1
+    return forma
+
+
 def calcular_lambdas(home_team: str, away_team: str,
                       peso_elo: float = 1.0,
                       peso_altitud: float = 1.0,
@@ -110,9 +128,12 @@ def calcular_lambdas(home_team: str, away_team: str,
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
       1. Ataque/Defensa (relativo al ELO, ver nota de PLACEHOLDER arriba)
-      2. Factor altitud (ventaja para el local en ciudades altas)
-      3. Factor árbitro (promedio de tarjetas → intensidad del partido)
-      4. Factor fatiga (Leagues Cup en los últimos 7 días)
+      2. Forma real — goles reales anotados/recibidos en partidos ya
+         jugados de este torneo (se auto-actualiza con cada resultado
+         que agregues a PARTIDOS)
+      3. Factor altitud (ventaja para el local en ciudades altas)
+      4. Factor árbitro (promedio de tarjetas → intensidad del partido)
+      5. Factor fatiga (Leagues Cup en los últimos 7 días)
 
     peso_elo, peso_altitud, peso_arbitro: multiplicadores para ajustar
     cuánto pesa cada factor en el resultado final. 1.0 = calibración por
@@ -135,6 +156,23 @@ def calcular_lambdas(home_team: str, away_team: str,
     # dependen de SU ataque y de la defensa del VISITANTE (y viceversa).
     lam_home = (ataque_home / LIGA_PROMEDIO_GOLES) * (defensa_away / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
     lam_away = (ataque_away / LIGA_PROMEDIO_GOLES) * (defensa_home / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
+
+    # 1b. Forma real — ajusta con goles reales, tope +-8% (mismo criterio
+    # que usabas en FORMA_MUNDIAL del Mundial-predictor)
+    forma = _forma_real_liga_mx()
+    for equipo in (home_team, away_team):
+        gf, gc, pj = forma.get(equipo, (0, 0, 0))
+        if pj > 0:
+            avg_gf = gf / pj
+            avg_gc = gc / pj
+            f_of = max(1.0 + min((avg_gf - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, 0.08), 0.92)
+            f_def = max(1.0 + min((avg_gc - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, 0.08), 0.92)
+            if equipo == home_team:
+                lam_home *= f_of
+                lam_away *= f_def
+            else:
+                lam_away *= f_of
+                lam_home *= f_def
 
     # Ventaja de localía estándar (típico ~10-15% en fútbol de liga)
     lam_home *= 1.12
