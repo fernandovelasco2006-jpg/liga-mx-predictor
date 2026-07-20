@@ -393,25 +393,33 @@ HORARIOS_PARTIDO = {
 # reciente) + ajuste específico para Atlante como recién ascendido.
 # Conseguido vía Perplexity.
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# ELO — YA NO es la aproximación de Perplexity. Recalculado a partir de
+# la tabla REAL y verificable del Clausura 2026 (fuente: Wikipedia,
+# "2025–26 Liga MX season" — puntos y diferencia de gol reales de los
+# 17 partidos que jugó cada equipo). Fórmula: 1500 + (Pts - promedio)*10
+# + GD*3. Atlante se mantiene en 1435 (recién ascendido, sin historial
+# en Primera División — no hay tabla real de la que partir).
+# ─────────────────────────────────────────────────────────────────────────
 ELO = {
-    "Guadalajara":        1710,  # Chivas
-    "Pumas UNAM":         1705,
-    "Cruz Azul":          1685,
-    "Pachuca":            1675,
-    "Toluca":             1670,
-    "Tigres":             1655,
-    "America":            1650,
-    "Atlas":              1630,
-    "Tijuana":            1620,
-    "Monterrey":          1615,
-    "Necaxa":             1600,
-    "Queretaro":          1585,
-    "FC Juarez":          1575,
-    "Atletico San Luis":  1570,
-    "Leon":               1565,
-    "Puebla":             1545,
-    "Atlante":            1435,  # recién ascendido, plantel Miguel Herrera — no heredado de Mazatlán
-    "Santos Laguna":      1520,
+    "Pumas UNAM":         1673,
+    "Guadalajara":        1670,
+    "Cruz Azul":          1631,
+    "Toluca":             1598,
+    "Pachuca":            1590,
+    "Tigres":             1542,
+    "America":            1521,
+    "Atlas":              1516,
+    "Tijuana":            1498,
+    "Leon":               1452,
+    "Queretaro":          1450,
+    "Monterrey":          1436,
+    "Atlante":            1435,  # recién ascendido, plantel Miguel Herrera — sin tabla real
+    "FC Juarez":          1434,
+    "Atletico San Luis":  1433,
+    "Necaxa":             1424,
+    "Puebla":             1353,
+    "Santos Laguna":      1328,
 }
 
 # ─────────────────────────────────────────────────────────────────────────
