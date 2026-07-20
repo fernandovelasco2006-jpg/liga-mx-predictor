@@ -59,15 +59,15 @@ ALTITUD_EQUIPO = {
 # (América/Cruz Azul/Atlante comparten Estadio Banorte).
 # ─────────────────────────────────────────────────────────────────────────
 PARTIDOS = [
-    ('Necaxa', 'Atlante', 1, 'Estadio Victoria', None, 'Yonatan Peinado Aguirre'),
-    ('Tijuana', 'Tigres', 1, 'Estadio Caliente', None, 'Ismael Rosario Lopez Peñuelas'),
-    ('Atletico San Luis', 'Cruz Azul', 1, 'Estadio Libertad Financiera', None, 'Adonai Escobedo Gonzalez'),
-    ('Leon', 'Atlas', 1, 'Estadio Nou Camp', None, 'Jesus Rafael Lopez Valle'),
-    ('FC Juarez', 'Puebla', 1, 'Estadio Olimpico Benito Juarez', None, 'Fernando Hernandez Gomez'),
-    ('Pumas UNAM', 'Pachuca', 1, 'Estadio Olimpico Universitario', None, 'Vicente Jassiel Reynoso Arce'),
-    ('Guadalajara', 'Toluca', 1, 'Estadio Akron', None, 'Daniel Quintero Huitron'),
-    ('Monterrey', 'Santos Laguna', 1, 'Estadio BBVA', None, 'Marco Antonio Ortiz Nava'),
-    ('Queretaro', 'America', 1, 'Estadio Corregidora', None, 'Luis Enrique Santander Aguirre'),
+    ('Necaxa', 'Atlante', 1, 'Estadio Victoria', (2, 1), 'Yonatan Peinado Aguirre'),
+    ('Tijuana', 'Tigres', 1, 'Estadio Caliente', (3, 1), 'Ismael Rosario Lopez Peñuelas'),
+    ('Atletico San Luis', 'Cruz Azul', 1, 'Estadio Libertad Financiera', (2, 3), 'Adonai Escobedo Gonzalez'),
+    ('Leon', 'Atlas', 1, 'Estadio Nou Camp', (2, 3), 'Jesus Rafael Lopez Valle'),
+    ('FC Juarez', 'Puebla', 1, 'Estadio Olimpico Benito Juarez', (0, 1), 'Fernando Hernandez Gomez'),
+    ('Pumas UNAM', 'Pachuca', 1, 'Estadio Olimpico Universitario', (0, 3), 'Vicente Jassiel Reynoso Arce'),
+    ('Guadalajara', 'Toluca', 1, 'Estadio Akron', (0, 2), 'Daniel Quintero Huitron'),
+    ('Monterrey', 'Santos Laguna', 1, 'Estadio BBVA', (3, 2), 'Marco Antonio Ortiz Nava'),
+    ('Queretaro', 'America', 1, 'Estadio Corregidora', (0, 1), 'Luis Enrique Santander Aguirre'),
     ('Cruz Azul', 'Puebla', 2, 'Estadio Banorte', None, None),
     ('Toluca', 'Pumas UNAM', 2, 'Estadio Nemesio Diez', None, None),
     ('Tigres', 'Atletico San Luis', 2, 'Estadio Universitario', None, None),
@@ -503,7 +503,18 @@ BAJAS = {}
 # este dato). También sirve a futuro para recalibrar CORNERS_EQUIPO y
 # ARBITROS_LIGA_MX con números reales en vez de proyecciones.
 # ─────────────────────────────────────────────────────────────────────────
-DATOS_REALES_LIGAMX = {}
+DATOS_REALES_LIGAMX = {
+    # Jornada 1 — 16-18 julio 2026
+    "Necaxa_Atlante":             {"am": 0,  "co": 16},   # 0 NEC + 0 ATL | 11 NEC + 5 ATL
+    "Tijuana_Tigres":             {"am": 6,  "co": 5},    # 2 TIJ + 4 TIG | 1 TIJ + 4 TIG
+    "Atletico San Luis_Cruz Azul":{"am": 3,  "co": 8},    # 2 ASL + 1 CAZ | 4 ASL + 4 CAZ
+    "Leon_Atlas":                 {"am": 4,  "co": 8},    # 2 LEO + 2 ATA | 6 LEO + 2 ATA
+    "FC Juarez_Puebla":           {"am": 2,  "co": 12},   # 1 JUA + 1 PUE | 5 JUA + 7 PUE
+    "Pumas UNAM_Pachuca":         {"am": 1,  "co": 13},   # 1 PUM + 0 PAC | 9 PUM + 4 PAC
+    "Monterrey_Santos Laguna":    {"am": 0,  "co": 10},   # 0 MTY + 0 SAN | 5 MTY + 5 SAN
+    "Guadalajara_Toluca":         {"am": 4,  "co": 11},   # 2 GDL + 2 TOL | 9 GDL + 2 TOL
+    "Queretaro_America":          {"am": 10, "co": 14},   # 6 QRO + 4 AME | 2 QRO + 12 AME
+}
 
 # ─────────────────────────────────────────────────────────────────────────
 # NOTAS DE FORMATO — diferencias clave vs. el Mundial que ya tenías
