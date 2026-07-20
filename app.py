@@ -107,11 +107,11 @@ st.markdown("""
 </div>""", unsafe_allow_html=True)
 
 BANDERAS_EQUIPO = {
-    "America": "🦅", "Atlante": "🔵", "Atlas": "🔴", "Atletico San Luis": "🔴",
-    "Cruz Azul": "🔵", "Guadalajara": "🔴", "FC Juarez": "🟢", "Leon": "🟢",
-    "Monterrey": "🔵", "Necaxa": "⚪", "Pachuca": "🟡", "Puebla": "🔵",
-    "Pumas UNAM": "🐾", "Queretaro": "⚫", "Santos Laguna": "⚪",
-    "Tijuana": "🔴", "Tigres": "🟠", "Toluca": "🔴",
+    "America": "🦅", "Atlante": "🐎", "Atlas": "🦊", "Atletico San Luis": "🐶",
+    "Cruz Azul": "🚂", "Guadalajara": "🐐", "FC Juarez": "🐴", "Leon": "🦁",
+    "Monterrey": "🤠", "Necaxa": "⚡", "Pachuca": "🐹", "Puebla": "🎽",
+    "Pumas UNAM": "🐾", "Queretaro": "🐔", "Santos Laguna": "⚔️",
+    "Tijuana": "🐕", "Tigres": "🐯", "Toluca": "👹",
 }
 
 def flag(t):
