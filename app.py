@@ -236,8 +236,9 @@ if partidos_hoy_global:
         st.caption("⚠️ Solo informativo · Apuesta responsablemente")
 
 
-tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_info = st.tabs([
-    "🎯 Predictor", "📊 Resultados reales", "🎰 Apuestas", "📈 Historial", "🎲 Apuestas Hist.", "⚙️ Modelo",
+tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_tabla, tab_info = st.tabs([
+    "🎯 Predictor", "📊 Resultados reales", "🎰 Apuestas", "📈 Historial",
+    "🎲 Apuestas Hist.", "🏆 Tabla / Temporada", "⚙️ Modelo",
 ])
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -576,6 +577,86 @@ with tab_hist_ap:
             'evalúan automáticamente en cuanto el partido tiene resultado.</div>',
             unsafe_allow_html=True,
         )
+
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Tabla / Temporada (posiciones actuales + simular todo el torneo)
+# ─────────────────────────────────────────────────────────────────────────
+with tab_tabla:
+    st.markdown("### 📊 Tabla de posiciones actual")
+    st.caption("Usa los resultados reales que ya tenemos + proyecta el resto de la temporada.")
+
+    if st.button("🔄 Recalcular tabla y Liguilla", key="btn_recalcular_tabla") or "resultado_temporada" not in st.session_state:
+        with st.spinner("Simulando la temporada completa..."):
+            st.session_state["resultado_temporada"] = simular_temporada(
+                peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+
+    resultado_temp = st.session_state["resultado_temporada"]
+    df_tabla = pd.DataFrame(resultado_temp["tabla_final"])
+    df_tabla = df_tabla[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
+    df_tabla.insert(1, "", df_tabla["equipo"].map(flag))
+    df_tabla.columns = ["#", "", "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Pts"]
+    st.dataframe(
+        df_tabla, use_container_width=True, hide_index=True,
+        column_config={"#": st.column_config.NumberColumn(width="small")},
+    )
+    st.caption("🟢 Los primeros 8 lugares clasifican a la Liguilla")
+
+    st.markdown("### 🏆 Liguilla simulada (con la tabla de arriba)")
+    liguilla = resultado_temp["liguilla"]
+    col_cf, col_sf, col_f = st.columns(3)
+    with col_cf:
+        st.markdown("**Cuartos de Final**")
+        for serie in liguilla["cuartos"]:
+            st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
+    with col_sf:
+        st.markdown("**Semifinales**")
+        for serie in liguilla["semis"]:
+            st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
+    with col_f:
+        st.markdown("**Final**")
+        st.markdown(f"- {liguilla['final']['marcador_global']}")
+        st.success(f"🏆 Campeón: {flag(liguilla['campeon'])} {liguilla['campeon']}")
+
+    st.markdown("---")
+    st.markdown("### 🎲 Simular todo el torneo (Montecarlo)")
+    st.caption(
+        "Corre la temporada completa (17 jornadas + Liguilla) muchas veces y agrega "
+        "probabilidades reales de clasificar y ser campeón — el equivalente de liga regular "
+        "a las 10M simulaciones por partido."
+    )
+    n_temporadas = st.select_slider(
+        "Temporadas a simular", options=[100, 500, 1000, 2000, 5000], value=1000, key="n_temporadas_mc"
+    )
+    if st.button("🎲 Correr simulación de todo el torneo", type="primary"):
+        with st.spinner(f"Simulando {n_temporadas:,} temporadas completas..."):
+            st.session_state["resultado_montecarlo"] = simular_temporada_montecarlo(
+                n=n_temporadas, peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+
+    if "resultado_montecarlo" in st.session_state:
+        mc = st.session_state["resultado_montecarlo"]
+        df_mc = pd.DataFrame([
+            {"": flag(eq), "Equipo": eq, "Prob. Liguilla (%)": mc["prob_liguilla"][eq],
+             "Prob. Campeón (%)": mc["prob_campeon"][eq],
+             "Posición promedio": mc["posicion_promedio"][eq]}
+            for eq in EQUIPOS
+        ]).sort_values("Prob. Campeón (%)", ascending=False).reset_index(drop=True)
+
+        st.dataframe(
+            df_mc, use_container_width=True, hide_index=True,
+            column_config={
+                "Prob. Liguilla (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
+                "Prob. Campeón (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
+            },
+        )
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.markdown("**Top 10 — Probabilidad de Liguilla**")
+            st.bar_chart(df_mc.nlargest(10, "Prob. Liguilla (%)").set_index("Equipo")["Prob. Liguilla (%)"])
+        with col_c2:
+            st.markdown("**Top 10 — Probabilidad de Campeón**")
+            st.bar_chart(df_mc.nlargest(10, "Prob. Campeón (%)").set_index("Equipo")["Prob. Campeón (%)"])
+    else:
+        st.info("Presiona el botón para correr la simulación completa del torneo.")
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Modelo (informativo, NO editable)
