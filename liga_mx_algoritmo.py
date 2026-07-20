@@ -19,43 +19,88 @@ from liga_mx_predictor_skeleton import (
 )
 
 # ─────────────────────────────────────────────────────────────────────────
-# ⚠️ PLACEHOLDER — FUERZA DE ATAQUE Y DEFENSA POR EQUIPO
-# Todavía no tenemos goles-a-favor / goles-en-contra reales del Clausura
-# 2026 (a diferencia del Mundial, donde FORMA_MUNDIAL sí eran datos
-# reales de J1-J3). Por ahora los derivo del ELO con esta lógica:
-#   - Equipo con ELO por encima del promedio de la liga → ataca más y
-#     defiende mejor (concede menos) que el promedio.
-#   - Equipo por debajo del promedio → lo contrario.
-# EN CUANTO TENGAS los promedios reales de goles a favor/en contra por
-# partido de cada equipo (pídeselo a Perplexity: "goles a favor y en
-# contra promedio por partido de cada equipo de Liga MX en el Clausura
-# 2026"), reemplaza este bloque completo por un diccionario con esos
-# valores reales — el resto del algoritmo no necesita cambiar.
+# FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
+# (tabla final oficial, 17 jornadas, vía Wikipedia/Liga MX). Reemplaza el
+# viejo placeholder derivado de ELO. Atlante es la excepción: recién
+# ascendido, no jugó Clausura 2026 en Primera División, así que sigue
+# derivándose del ELO como estimado razonable.
+#
+# GF/GC reales del Clausura 2026 (17 PJ cada uno):
+#   Pumas 34-17 · Guadalajara 33-17 · Cruz Azul 31-18 (campeón) ·
+#   Pachuca 25-19 · Toluca 28-16 · Atlas 16-18 · Tigres 28-18 ·
+#   América 20-17 · Tijuana 19-17 · León 22-32 · Querétaro 17-21 ·
+#   FC Juárez 26-32 · Monterrey 22-24 · Atlético San Luis 24-27 ·
+#   Necaxa 19-25 · Puebla 13-26 · Santos Laguna 20-38
 # ─────────────────────────────────────────────────────────────────────────
 LIGA_PROMEDIO_GOLES = 1.35   # goles por equipo por partido, típico de Liga MX (~2.7 goles/partido total)
 _elo_promedio = sum(ELO.values()) / len(ELO)
 
+_GOLES_CLAUSURA_2026 = {
+    # equipo: (goles_favor, goles_contra, partidos_jugados)
+    "Pumas UNAM":         (34, 17, 17),
+    "Guadalajara":        (33, 17, 17),
+    "Cruz Azul":          (31, 18, 17),
+    "Pachuca":            (25, 19, 17),
+    "Toluca":             (28, 16, 17),
+    "Atlas":              (16, 18, 17),
+    "Tigres":             (28, 18, 17),
+    "America":            (20, 17, 17),
+    "Tijuana":            (19, 17, 17),
+    "Leon":               (22, 32, 17),
+    "Queretaro":          (17, 21, 17),
+    "FC Juarez":          (26, 32, 17),
+    "Monterrey":          (22, 24, 17),
+    "Atletico San Luis":  (24, 27, 17),
+    "Necaxa":             (19, 25, 17),
+    "Puebla":             (13, 26, 17),
+    "Santos Laguna":      (20, 38, 17),
+    # "Atlante" no tiene datos de Primera División del Clausura 2026
+    # (recién ascendido) — usa fallback de ELO más abajo.
+}
+
 FUERZA_ATAQUE = {}
 FUERZA_DEFENSA = {}
 for equipo, elo in ELO.items():
-    diff = elo - _elo_promedio
-    # ataque: entre ~0.75x y ~1.30x el promedio de la liga según qué tan
-    # arriba/abajo esté su ELO (tope +-150 puntos de diferencia)
-    factor_ataque = 1.0 + max(min(diff, 150), -150) / 500
-    # defensa: goles que CONCEDE el equipo (no lo que ataca). Equipo
-    # fuerte concede menos → factor < 1.0
-    factor_defensa = 1.0 - max(min(diff, 150), -150) / 650
-    FUERZA_ATAQUE[equipo] = round(LIGA_PROMEDIO_GOLES * factor_ataque, 3)
-    FUERZA_DEFENSA[equipo] = round(LIGA_PROMEDIO_GOLES * factor_defensa, 3)
+    if equipo in _GOLES_CLAUSURA_2026:
+        gf, gc, pj = _GOLES_CLAUSURA_2026[equipo]
+        FUERZA_ATAQUE[equipo] = round(gf / pj, 3)
+        FUERZA_DEFENSA[equipo] = round(gc / pj, 3)
+    else:
+        # Fallback derivado de ELO (solo Atlante, por ahora)
+        diff = elo - _elo_promedio
+        factor_ataque = 1.0 + max(min(diff, 150), -150) / 500
+        factor_defensa = 1.0 - max(min(diff, 150), -150) / 650
+        FUERZA_ATAQUE[equipo] = round(LIGA_PROMEDIO_GOLES * factor_ataque, 3)
+        FUERZA_DEFENSA[equipo] = round(LIGA_PROMEDIO_GOLES * factor_defensa, 3)
 
 # ─────────────────────────────────────────────────────────────────────────
-# ⚠️ PLACEHOLDER — FECHAS DE LEAGUES CUP POR EQUIPO
-# Vacío por ahora. Llénalo cuando tengas el calendario de Leagues Cup
-# 2026 confirmado para los equipos de Liga MX que participan (no todos
-# los 18 equipos van a Leagues Cup necesariamente — verifica cuáles).
-# Formato: {"America": ["2026-08-05", "2026-08-08", ...], ...}
+# FECHAS DE LEAGUES CUP POR EQUIPO — fase de grupos confirmada (4-13 de
+# agosto 2026). Los 18 equipos de Liga MX participan, 3 partidos cada
+# uno. Usado por _jugo_leagues_cup_reciente() para aplicar el -10% de
+# fatiga cuando un equipo jugó Leagues Cup en los 7 días previos a su
+# siguiente partido de Liga MX (relevante sobre todo para la Jornada 4,
+# 15-17 de agosto, justo después de esta fase de grupos).
 # ─────────────────────────────────────────────────────────────────────────
-LEAGUES_CUP_FECHAS = {}
+LEAGUES_CUP_FECHAS = {
+    "America":            ["2026-08-06", "2026-08-09", "2026-08-13"],
+    "Atlante":            ["2026-08-04", "2026-08-08", "2026-08-11"],
+    "Atlas":              ["2026-08-04", "2026-08-07", "2026-08-11"],
+    "Atletico San Luis":  ["2026-08-05", "2026-08-09", "2026-08-12"],
+    "Cruz Azul":          ["2026-08-06", "2026-08-09", "2026-08-13"],
+    "FC Juarez":          ["2026-08-04", "2026-08-07", "2026-08-11"],
+    "Guadalajara":        ["2026-08-05", "2026-08-08", "2026-08-12"],
+    "Leon":               ["2026-08-05", "2026-08-08", "2026-08-12"],
+    "Monterrey":          ["2026-08-05", "2026-08-08", "2026-08-12"],
+    "Necaxa":             ["2026-08-06", "2026-08-09", "2026-08-13"],
+    "Pachuca":            ["2026-08-04", "2026-08-07", "2026-08-11"],
+    "Puebla":             ["2026-08-06", "2026-08-09", "2026-08-12"],
+    "Pumas UNAM":         ["2026-08-04", "2026-08-07", "2026-08-11"],
+    "Queretaro":          ["2026-08-05", "2026-08-09", "2026-08-12"],
+    "Santos Laguna":      ["2026-08-06", "2026-08-09", "2026-08-13"],
+    "Tigres":             ["2026-08-04", "2026-08-07", "2026-08-11"],
+    "Tijuana":            ["2026-08-06", "2026-08-09", "2026-08-13"],
+    "Toluca":             ["2026-08-05", "2026-08-08", "2026-08-12"],
+}
 FACTOR_FATIGA_LEAGUES_CUP = 0.90   # -10% lambda ofensivo, como pediste
 
 ALTITUD_UMBRAL = 1700       # metros — a partir de aquí se considera "altura"
