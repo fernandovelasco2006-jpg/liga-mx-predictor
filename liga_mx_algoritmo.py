@@ -318,6 +318,44 @@ def _ordenar_tabla(tabla: dict) -> list:
     return filas
 
 
+def _ordenar_tabla_con_empates(tabla: dict) -> list:
+    """
+    Igual que _ordenar_tabla(), pero con numeración tipo competencia:
+    los equipos empatados en Pts/DG/GF comparten la misma posición y el
+    siguiente lugar distinto salta el número correspondiente (1,2,2,4 —
+    exactamente como se ve en la tabla oficial de Liga MX/ESPN).
+    """
+    filas = [{"equipo": eq, **stats} for eq, stats in tabla.items()]
+    filas.sort(key=lambda f: (f["PTS"], f["DG"], f["GF"]), reverse=True)
+    pos_actual = 0
+    anterior = None
+    for i, f in enumerate(filas, start=1):
+        clave = (f["PTS"], f["DG"], f["GF"])
+        if clave != anterior:
+            pos_actual = i
+        f["posicion"] = pos_actual
+        anterior = clave
+    return filas
+
+
+def tabla_actual_real() -> list:
+    """
+    Tabla de posiciones SOLO con los partidos que ya se jugaron de
+    verdad (resultado_real != None en PARTIDOS) — no mezcla nada
+    simulado/proyectado. Esto es lo que debe coincidir con la tabla
+    oficial de Liga MX/ESPN en cualquier momento del torneo.
+    """
+    tabla = _tabla_vacia()
+    partidos_jugados = 0
+    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
+        if resultado is None:
+            continue
+        gh, ga = resultado
+        _actualizar_tabla(tabla, local, visit, gh, ga)
+        partidos_jugados += 1
+    return _ordenar_tabla_con_empates(tabla), partidos_jugados
+
+
 def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: int, rng=None,
                              peso_elo: float = 1.0, peso_altitud: float = 1.0,
                              peso_arbitro: float = 1.0) -> dict:
