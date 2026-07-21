@@ -20,58 +20,86 @@ from liga_mx_predictor_skeleton import (
 
 # ─────────────────────────────────────────────────────────────────────────
 # FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
-# (tabla final oficial, 17 jornadas, vía Wikipedia/Liga MX). Reemplaza el
-# viejo placeholder derivado de ELO. Atlante es la excepción: recién
-# ascendido, no jugó Clausura 2026 en Primera División, así que sigue
-# derivándose del ELO como estimado razonable.
-#
-# GF/GC reales del Clausura 2026 (17 PJ cada uno):
-#   Pumas 34-17 · Guadalajara 33-17 · Cruz Azul 31-18 (campeón) ·
-#   Pachuca 25-19 · Toluca 28-16 · Atlas 16-18 · Tigres 28-18 ·
-#   América 20-17 · Tijuana 19-17 · León 22-32 · Querétaro 17-21 ·
-#   FC Juárez 26-32 · Monterrey 22-24 · Atlético San Luis 24-27 ·
-#   Necaxa 19-25 · Puebla 13-26 · Santos Laguna 20-38
+# (fuente FotMob: "goals_per_match" / "goals_conceded_per_match" — el
+# promedio YA viene calculado por partido, no lo recalculamos desde
+# totales porque esos totales incluyen otras competencias de la
+# temporada, no solo los 17 partidos de liga — eso fue justo el bug
+# que corregimos aquí).
+# Atlante no jugó Primera División el Clausura 2026 (recién ascendido) —
+# usa el dato real de Mazatlán como proxy (mismo criterio que ya usamos
+# para CORNERS_EQUIPO y el ELO).
 # ─────────────────────────────────────────────────────────────────────────
 LIGA_PROMEDIO_GOLES = 1.35   # goles por equipo por partido, típico de Liga MX (~2.7 goles/partido total)
 _elo_promedio = sum(ELO.values()) / len(ELO)
 
-_GOLES_CLAUSURA_2026 = {
-    # equipo: (goles_favor, goles_contra, partidos_jugados)
-    "Pumas UNAM":         (34, 17, 17),
-    "Guadalajara":        (33, 17, 17),
-    "Cruz Azul":          (31, 18, 17),
-    "Pachuca":            (25, 19, 17),
-    "Toluca":             (28, 16, 17),
-    "Atlas":              (16, 18, 17),
-    "Tigres":             (28, 18, 17),
-    "America":            (20, 17, 17),
-    "Tijuana":            (19, 17, 17),
-    "Leon":               (22, 32, 17),
-    "Queretaro":          (17, 21, 17),
-    "FC Juarez":          (26, 32, 17),
-    "Monterrey":          (22, 24, 17),
-    "Atletico San Luis":  (24, 27, 17),
-    "Necaxa":             (19, 25, 17),
-    "Puebla":             (13, 26, 17),
-    "Santos Laguna":      (20, 38, 17),
-    # "Atlante" no tiene datos de Primera División del Clausura 2026
-    # (recién ascendido) — usa fallback de ELO más abajo.
+FUERZA_ATAQUE = {
+    "Guadalajara":        1.9,
+    "Pumas UNAM":         1.8,
+    "Cruz Azul":          1.8,
+    "Tigres":             1.6,
+    "Toluca":             1.5,
+    "FC Juarez":          1.5,
+    "Pachuca":            1.4,
+    "America":            1.4,
+    "Atletico San Luis":  1.4,
+    "Leon":               1.3,
+    "Atlante":            1.3,  # ⚠️ heredado de Mazatlán
+    "Monterrey":          1.3,
+    "Santos Laguna":      1.2,
+    "Necaxa":             1.1,
+    "Tijuana":            1.1,
+    "Queretaro":          1.0,
+    "Atlas":              0.9,
+    "Puebla":             0.8,
+}
+FUERZA_DEFENSA = {
+    "Tijuana":            1.0,
+    "Toluca":             1.0,
+    "Pachuca":            1.0,
+    "Cruz Azul":          1.0,
+    "Tigres":             1.1,
+    "Guadalajara":        1.1,
+    "Pumas UNAM":         1.1,
+    "Queretaro":          1.2,
+    "Atlas":              1.2,
+    "America":            1.2,
+    "Monterrey":          1.4,
+    "Necaxa":             1.5,
+    "Puebla":             1.5,
+    "Atletico San Luis":  1.6,
+    "Leon":               1.9,
+    "FC Juarez":          1.9,
+    "Atlante":            2.2,  # ⚠️ heredado de Mazatlán
+    "Santos Laguna":      2.2,
 }
 
-FUERZA_ATAQUE = {}
-FUERZA_DEFENSA = {}
-for equipo, elo in ELO.items():
-    if equipo in _GOLES_CLAUSURA_2026:
-        gf, gc, pj = _GOLES_CLAUSURA_2026[equipo]
-        FUERZA_ATAQUE[equipo] = round(gf / pj, 3)
-        FUERZA_DEFENSA[equipo] = round(gc / pj, 3)
-    else:
-        # Fallback derivado de ELO (solo Atlante, por ahora)
-        diff = elo - _elo_promedio
-        factor_ataque = 1.0 + max(min(diff, 150), -150) / 500
-        factor_defensa = 1.0 - max(min(diff, 150), -150) / 650
-        FUERZA_ATAQUE[equipo] = round(LIGA_PROMEDIO_GOLES * factor_ataque, 3)
-        FUERZA_DEFENSA[equipo] = round(LIGA_PROMEDIO_GOLES * factor_defensa, 3)
+# ─────────────────────────────────────────────────────────────────────────
+# TARJETAS POR EQUIPO — datos reales del Clausura 2026 (fuente FotMob):
+# (amarillas_totales, rojas_totales, partidos_jugados). Se usa para
+# ajustar la expectativa de tarjetas combinando "carácter" del equipo
+# con el promedio del árbitro asignado (ver _tarjetas_esperadas()).
+# ─────────────────────────────────────────────────────────────────────────
+TARJETAS_EQUIPO_LIGAMX = {
+    "Santos Laguna":      (50, 5, 17),
+    "Pumas UNAM":         (50, 4, 17),
+    "Cruz Azul":          (49, 1, 17),
+    "Guadalajara":        (49, 0, 17),
+    "Tigres":             (44, 5, 17),
+    "Pachuca":            (43, 7, 17),
+    "Toluca":             (42, 5, 17),
+    "Atlas":              (42, 4, 17),
+    "Tijuana":            (42, 2, 17),
+    "Queretaro":          (40, 3, 17),
+    "Necaxa":             (36, 7, 17),
+    "Leon":               (36, 2, 17),
+    "Puebla":             (35, 6, 17),
+    "Atlante":            (35, 1, 17),  # ⚠️ heredado de Mazatlán
+    "FC Juarez":          (34, 3, 17),
+    "Atletico San Luis":  (33, 3, 17),
+    "America":            (27, 2, 17),
+    "Monterrey":          (26, 1, 17),
+}
+_PROMEDIO_LIGA_AMARILLAS_EQUIPO = sum(v[0] / v[2] for v in TARJETAS_EQUIPO_LIGAMX.values()) / len(TARJETAS_EQUIPO_LIGAMX)
 
 # ─────────────────────────────────────────────────────────────────────────
 # FECHAS DE LEAGUES CUP POR EQUIPO — fase de grupos confirmada (4-13 de
@@ -520,16 +548,36 @@ PROMEDIO_LIGA_AMARILLAS = 4.3
 PROMEDIO_LIGA_ROJAS = 0.15   # ⚠️ placeholder — no hay dato real de rojas por árbitro todavía
 
 
+def _factor_tarjetas_equipo(equipo: str) -> float:
+    """
+    Qué tan por encima/debajo del promedio de liga está el ESTILO
+    disciplinario del equipo (independiente del árbitro). 1.0 = promedio
+    de liga. Tope [0.7, 1.4] para no sobre-ajustar con muestras chicas.
+    """
+    datos = TARJETAS_EQUIPO_LIGAMX.get(equipo)
+    if not datos or datos[2] == 0:
+        return 1.0
+    am, ro, pj = datos
+    return max(0.7, min(1.4, (am / pj) / _PROMEDIO_LIGA_AMARILLAS_EQUIPO))
+
+
 def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
-    """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido."""
+    """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido,
+    combinando el promedio del árbitro (70%) con el estilo disciplinario
+    real de ambos equipos (30%) — mismo criterio que TARJETAS_MUNDIAL en
+    tu Mundial-predictor."""
     arbitro = _buscar_arbitro(home_team, away_team)
     prom_amarillas, _n = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
     if arbitro and arbitro in ARBITROS_LIGA_MX:
-        amarillas_esp = prom_amarillas
+        amarillas_esp_arbitro = prom_amarillas
     else:
         desviacion = (prom_amarillas - PROMEDIO_LIGA_AMARILLAS) * peso_arbitro
-        amarillas_esp = PROMEDIO_LIGA_AMARILLAS + desviacion * 0.3
+        amarillas_esp_arbitro = PROMEDIO_LIGA_AMARILLAS + desviacion * 0.3
+
+    factor_equipos = (_factor_tarjetas_equipo(home_team) + _factor_tarjetas_equipo(away_team)) / 2
+    amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
     amarillas_esp = max(amarillas_esp, 1.5)
+
     # rojas escaladas proporcionalmente al "carácter" del árbitro (placeholder,
     # reemplazar cuando tengas promedio real de rojas por árbitro)
     rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / PROMEDIO_LIGA_AMARILLAS)
