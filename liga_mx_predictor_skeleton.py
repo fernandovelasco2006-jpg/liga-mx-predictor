@@ -453,27 +453,35 @@ ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 4 conocidos, como fallback razo
 # datos duros de un torneo ya jugado (a diferencia del Mundial, donde
 # tenías corners reales partido por partido).
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# CÓRNERS — YA NO es proyección estática. Reemplazado con el promedio
+# real por partido de las 17 jornadas del Clausura 2026 (dato que
+# conseguiste). Atlante no tiene historial propio (recién ascendido) —
+# le puse el valor real de Mazatlán, cuyo lugar en la liga ocupó, como
+# mejor proxy disponible; reemplázalo en cuanto tengas 4-5 jornadas
+# reales de Atlante en Primera División.
+# ─────────────────────────────────────────────────────────────────────────
 CORNERS_EQUIPO = {
-    "America":            5.8,
-    "Tigres":             5.6,
-    "Cruz Azul":          6.1,
-    "Guadalajara":        5.4,
-    "Monterrey":          5.5,
-    "Pumas UNAM":         5.2,
-    "Toluca":             5.0,
-    "Pachuca":            5.3,
-    "Atlas":              4.8,
-    "Leon":               4.9,
-    "Tijuana":            4.6,
-    "Santos Laguna":      4.7,
-    "Atletico San Luis":  4.4,
-    "Necaxa":             4.3,
-    "Atlante":            4.5,
-    "Puebla":             4.1,
-    "FC Juarez":          4.2,
-    "Queretaro":          3.9,
+    "Cruz Azul":          7.59,
+    "Guadalajara":        7.12,
+    "Toluca":             6.59,
+    "Tigres":             6.00,
+    "America":            5.76,
+    "Pachuca":            5.71,
+    "Queretaro":          5.47,
+    "Leon":               5.29,
+    "Monterrey":          5.29,
+    "FC Juarez":          4.76,
+    "Pumas UNAM":         4.47,
+    "Necaxa":             4.47,
+    "Santos Laguna":      4.47,
+    "Atletico San Luis":  4.35,
+    "Puebla":             4.35,
+    "Atlas":              4.00,
+    "Atlante":            3.82,  # ⚠️ heredado de Mazatlán, verificar con datos reales de Atlante
+    "Tijuana":            3.71,
 }
-CORNERS_DEFAULT = 4.5
+CORNERS_DEFAULT = 5.26  # promedio real de liga (antes 4.5, estimado)
 
 # Remates totales y remates a puerta por equipo (mismo origen)
 REMATES_TOTALES_EQUIPO = {
