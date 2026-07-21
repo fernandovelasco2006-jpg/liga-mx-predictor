@@ -9,7 +9,7 @@ from liga_mx_predictor_skeleton import (
 )
 from liga_mx_algoritmo import (
     calcular_lambdas, simular_temporada, simular_temporada_montecarlo,
-    simular_partido, analizar_apuestas, armar_parlay,
+    simular_partido, analizar_apuestas, armar_parlay, tabla_actual_real,
     ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
     PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
 )
@@ -582,10 +582,31 @@ with tab_hist_ap:
 # TAB — Tabla / Temporada (posiciones actuales + simular todo el torneo)
 # ─────────────────────────────────────────────────────────────────────────
 with tab_tabla:
-    st.markdown("### 📊 Tabla de posiciones actual")
-    st.caption("Usa los resultados reales que ya tenemos + proyecta el resto de la temporada.")
+    st.markdown("### 📊 Tabla actual — solo partidos ya jugados")
+    st.caption("Debe coincidir exactamente con la tabla oficial de Liga MX/ESPN en todo momento.")
 
-    if st.button("🔄 Recalcular tabla y Liguilla", key="btn_recalcular_tabla") or "resultado_temporada" not in st.session_state:
+    tabla_real, n_jugados = tabla_actual_real()
+    if n_jugados == 0:
+        st.info("Todavía no hay partidos jugados registrados.")
+    else:
+        df_real = pd.DataFrame(tabla_real)
+        df_real = df_real[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
+        df_real.insert(1, "", df_real["equipo"].map(flag))
+        df_real.columns = ["#", "", "Club", "PJ", "G", "E", "P", "GF", "GC", "DG", "Pts"]
+        st.dataframe(
+            df_real, use_container_width=True, hide_index=True,
+            column_config={"#": st.column_config.NumberColumn(width="small")},
+        )
+        st.caption(f"📅 {n_jugados} partido(s) jugado(s) hasta ahora · empatados comparten posición, igual que la tabla oficial")
+
+    st.markdown("---")
+    st.markdown("### 🔮 Proyección de fin de temporada (simulada)")
+    st.caption(
+        "Esto SÍ mezcla los resultados reales de arriba con una simulación del resto de la "
+        "temporada — te da una idea de cómo podría terminar, pero no es la tabla oficial de hoy."
+    )
+
+    if st.button("🔄 Recalcular proyección y Liguilla", key="btn_recalcular_tabla") or "resultado_temporada" not in st.session_state:
         with st.spinner("Simulando la temporada completa..."):
             st.session_state["resultado_temporada"] = simular_temporada(
                 peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
@@ -599,7 +620,7 @@ with tab_tabla:
         df_tabla, use_container_width=True, hide_index=True,
         column_config={"#": st.column_config.NumberColumn(width="small")},
     )
-    st.caption("🟢 Los primeros 8 lugares clasifican a la Liguilla")
+    st.caption("🟢 Los primeros 8 lugares clasifican a la Liguilla (en la proyección)")
 
     st.markdown("### 🏆 Liguilla simulada (con la tabla de arriba)")
     liguilla = resultado_temp["liguilla"]
