@@ -622,6 +622,8 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     prob_corners_over75 = float(np.mean(corners_sim > 7) * 100)
     prob_corners_over85 = float(np.mean(corners_sim > 8) * 100)
     prob_corners_over95 = float(np.mean(corners_sim > 9) * 100)
+    prob_corners_over105 = float(np.mean(corners_sim > 10) * 100)
+    prob_corners_over115 = float(np.mean(corners_sim > 11) * 100)
 
     # ── Tarjetas: convención de casas de apuestas → roja = 2 amarillas ──
     amarillas_esp, rojas_esp = _tarjetas_esperadas(home_team, away_team, peso_arbitro)
@@ -649,6 +651,8 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
         "prob_corners_over75": prob_corners_over75,
         "prob_corners_over85": prob_corners_over85,
         "prob_corners_over95": prob_corners_over95,
+        "prob_corners_over105": prob_corners_over105,
+        "prob_corners_over115": prob_corners_over115,
         "amarillas_esp": round(amarillas_esp, 1),
         "rojas_esp": round(rojas_esp, 2),
         "tarjetas_totales_esp": round(tarjetas_totales_esp, 1),
@@ -726,24 +730,30 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
         ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
 
     # Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
-    if r["prob_tarj_over25"] >= UMBRAL_TARJ:
-        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    # Líneas recalibradas al promedio REAL actual (~4.6 combinado) — antes
+    # estaban en 2.5/3.5/4.5, casi siempre por debajo del promedio real,
+    # lo que las hacía "ganar" en prácticamente todos los partidos.
     if r["prob_tarj_over35"] >= UMBRAL_TARJ:
         ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
     if r["prob_tarj_over45"] >= UMBRAL_TARJ:
         ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if (100 - r["prob_tarj_over35"]) >= UMBRAL_TARJ:
-        ap("Tarjetas", "✅ Under 3.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if r["prob_tarj_over55"] >= UMBRAL_TARJ:
+        ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if (100 - r["prob_tarj_over45"]) >= UMBRAL_TARJ:
+        ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
 
-    # Córners — varias líneas
-    if r["prob_corners_over65"] >= UMBRAL_CORN and r["corners_esp"] >= 7:
-        ap("Córners", "✅ Over 6.5 córners (7+)", r["prob_corners_over65"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over75"] >= UMBRAL_CORN and r["corners_esp"] >= 8:
-        ap("Córners", "✅ Over 7.5 córners (8+)", r["prob_corners_over75"], f"{r['corners_esp']:.1f} esperados")
+    # Córners — líneas recalibradas al promedio REAL actual (~10.3 combinado)
+    # — antes 6.5/7.5/8.5/9.5, todas por debajo del promedio real.
     if r["prob_corners_over85"] >= UMBRAL_CORN:
         ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
-    if (100 - r["prob_corners_over85"]) >= UMBRAL_CORN:
-        ap("Córners", "✅ Under 8.5 córners (máx 8)", 100 - r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
+    if r["prob_corners_over95"] >= UMBRAL_CORN:
+        ap("Córners", "✅ Over 9.5 córners (10+)", r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
+    if r["prob_corners_over105"] >= UMBRAL_CORN:
+        ap("Córners", "✅ Over 10.5 córners (11+)", r["prob_corners_over105"], f"{r['corners_esp']:.1f} esperados")
+    if r["prob_corners_over115"] >= UMBRAL_CORN:
+        ap("Córners", "✅ Over 11.5 córners (12+)", r["prob_corners_over115"], f"{r['corners_esp']:.1f} esperados")
+    if (100 - r["prob_corners_over95"]) >= UMBRAL_CORN:
+        ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
 
     apuestas.sort(key=lambda x: x["confianza"], reverse=True)
 
