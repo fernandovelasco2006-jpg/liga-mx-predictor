@@ -444,8 +444,10 @@ ARBITROS_LIGA_MX = {
     "Cesar Arturo Ramos Palazuelos":   (4.1, 14),
     "Adonai Escobedo Gonzalez":        (5.2, 11),
     "Ismael Rosario Lopez Peñuelas":   (4.5, 11),  # pitó la Final de Ida del Clausura 2026
+    "Karen Hernandez Andrade":         (3.50, 10),  # rojas prom. 0.22/partido
+    "Victor Alfonso Caceres Hernandez":(3.89, 10),  # rojas prom. 0.22/partido
 }
-ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 4 conocidos, como fallback razonable
+ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 6 conocidos, como fallback razonable
 
 # ─────────────────────────────────────────────────────────────────────────
 # CÓRNERS Y REMATES — proyección basada en plantillas actuales y estilo
