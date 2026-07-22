@@ -68,8 +68,8 @@ PARTIDOS = [
     ('Guadalajara', 'Toluca', 1, 'Estadio Akron', (0, 2), 'Daniel Quintero Huitron'),
     ('Monterrey', 'Santos Laguna', 1, 'Estadio BBVA', (3, 2), 'Marco Antonio Ortiz Nava'),
     ('Queretaro', 'America', 1, 'Estadio Corregidora', (0, 1), 'Luis Enrique Santander Aguirre'),
-    ('Cruz Azul', 'Puebla', 2, 'Estadio Banorte', None, None),
-    ('Toluca', 'Pumas UNAM', 2, 'Estadio Nemesio Diez', None, None),
+    ('Cruz Azul', 'Puebla', 2, 'Estadio Banorte', None, 'Karen Hernandez Andrade'),
+    ('Toluca', 'Pumas UNAM', 2, 'Estadio Nemesio Diez', None, 'Victor Alfonso Caceres Hernandez'),
     ('Tigres', 'Atletico San Luis', 2, 'Estadio Universitario', None, None),
     ('Tijuana', 'Leon', 2, 'Estadio Caliente', None, None),
     ('Atlante', 'America', 2, 'Estadio Banorte', None, None),
@@ -228,8 +228,8 @@ HORARIOS_PARTIDO = {
     ('Guadalajara', 'Toluca'): '2026-07-18 19:07',
     ('Monterrey', 'Santos Laguna'): '2026-07-18 19:05',
     ('Queretaro', 'America'): '2026-07-18 21:10',
-    ('Cruz Azul', 'Puebla'): '2026-07-21 18:00',
-    ('Toluca', 'Pumas UNAM'): '2026-07-21 21:00',
+    ('Cruz Azul', 'Puebla'): '2026-07-21 19:00',
+    ('Toluca', 'Pumas UNAM'): '2026-07-21 21:05',
     ('Tigres', 'Atletico San Luis'): '2026-07-24 19:00',
     ('Tijuana', 'Leon'): '2026-07-24 20:00',
     ('Atlante', 'America'): '2026-07-24 20:00',
@@ -519,6 +519,37 @@ BAJAS = {}
 # este dato). También sirve a futuro para recalibrar CORNERS_EQUIPO y
 # ARBITROS_LIGA_MX con números reales en vez de proyecciones.
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# TARJETAS_EQUIPO_LIGAMX — total de amarillas/rojas reales por equipo en
+# el Clausura 2026 (17 partidos cada uno). Esto es DISTINTO del promedio
+# por árbitro que ya teníamos (ARBITROS_LIGA_MX) — aquí es "qué tan
+# tarjetero es el ESTILO del equipo", independiente de quién pite.
+# Atlante no tiene historial propio (recién ascendido) — usa el valor
+# real de Mazatlán como mejor proxy disponible, igual criterio que con
+# CORNERS_EQUIPO.
+# ─────────────────────────────────────────────────────────────────────────
+TARJETAS_EQUIPO_LIGAMX = {
+    # equipo: (amarillas_totales, rojas_totales, partidos_jugados)
+    "Santos Laguna":      (50, 5, 17),
+    "Pumas UNAM":         (50, 4, 17),
+    "Cruz Azul":          (49, 1, 17),
+    "Guadalajara":        (49, 0, 17),
+    "Tigres":             (44, 5, 17),
+    "Pachuca":            (43, 7, 17),
+    "Toluca":             (42, 5, 17),
+    "Atlas":              (42, 4, 17),
+    "Tijuana":            (42, 2, 17),
+    "Queretaro":          (40, 3, 17),
+    "Necaxa":             (36, 7, 17),
+    "Leon":               (36, 2, 17),
+    "Puebla":             (35, 6, 17),
+    "FC Juarez":          (34, 3, 17),
+    "Atletico San Luis":  (33, 3, 17),
+    "America":            (27, 2, 17),
+    "Monterrey":          (26, 1, 17),
+    "Atlante":            (35, 1, 17),  # ⚠️ heredado de Mazatlán, verificar con datos reales
+}
+
 DATOS_REALES_LIGAMX = {
     # Jornada 1 — 16-18 julio 2026
     "Necaxa_Atlante":             {"am": 0,  "co": 16},   # 0 NEC + 0 ATL | 11 NEC + 5 ATL
