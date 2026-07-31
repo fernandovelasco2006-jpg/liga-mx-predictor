@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from liga_mx_predictor_skeleton import (
-    EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO, ARBITROS_LIGA_MX,
+    EQUIPOS, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO, ARBITROS_LIGA_MX,
     ARBITRO_DEFAULT, CORNERS_EQUIPO,
 )
 from liga_mx_algoritmo import (
@@ -12,6 +12,7 @@ from liga_mx_algoritmo import (
     simular_partido, analizar_apuestas, armar_parlay, tabla_actual_real,
     ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
     PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
+    ELO_BASE, ELO_ACTUALIZADO, resumen_movimiento_elo, n_partidos_procesados,
 )
 
 try:
@@ -809,13 +810,21 @@ El predictor usa **simulación Monte Carlo con distribución de Poisson** — {N
 por partido, el mismo enfoque que casas de apuestas y modelos académicos serios.
 
 **En cada simulación el modelo combina:**
-- **Ataque/Defensa** — derivado del ELO de cada equipo (⚠️ placeholder hasta tener goles reales del Clausura 2026)
+- **Ataque/Defensa** — FUERZA_ATAQUE/FUERZA_DEFENSA de cada equipo, calibradas con el Clausura 2026 y
+  **recalibradas solas** con cada resultado real que se agrega (media móvil exponencial, α=0.15)
+- **Momentum vía Elo** — ajuste acotado (±8%) según cuánto se movió el Elo de cada equipo desde el
+  arranque del torneo (fórmula Elo estándar de fútbol, con ventaja de local y multiplicador por goleada)
+- **Forma real** — promedio real de goles anotados/recibidos en los partidos ya jugados (tope ±8%)
 - **Altitud** — bono de +{BONUS_ALTITUD_LOCAL} al λ del local si su ciudad está a ≥{ALTITUD_UMBRAL:,}m
   y el visitante no está aclimatado a la altura
 - **Árbitro** — promedio real de tarjetas del árbitro asignado (cuando lo tenemos) vs. el promedio de
   liga ({PROMEDIO_LIGA_AMARILLAS} amarillas/partido)
 - **Fatiga Leagues Cup** — reduce el λ ofensivo {(1-FACTOR_FATIGA_LEAGUES_CUP)*100:.0f}% si el equipo jugó
   Leagues Cup en los 7 días previos
+
+Los tres primeros factores (Ataque/Defensa, Momentum vía Elo, Forma real) se recalculan solos cada vez
+que arranca la app, reproduciendo todos los partidos que ya tienen resultado en `PARTIDOS` — no hay que
+tocar código ni una base de datos aparte, basta con seguir agregando los resultados reales jornada a jornada.
 
 **Pesos actuales del modelo** (fijos, no ajustables desde la interfaz):
 
@@ -829,9 +838,22 @@ por partido, el mismo enfoque que casas de apuestas y modelos académicos serios
 Ambos Marcan, Tarjetas totales (roja cuenta como 2 amarillas, igual que las casas de apuestas), y Córners.
 """)
     st.markdown("---")
-    st.markdown("#### ELO Ratings — 18 equipos")
-    sorted_elo = sorted(ELO.items(), key=lambda x: x[1], reverse=True)
+    n_jugados = n_partidos_procesados(PARTIDOS)
+    st.markdown(f"#### ELO Ratings — 18 equipos (recalibrado con {n_jugados} partidos jugados)")
+    sorted_elo = sorted(ELO_ACTUALIZADO.items(), key=lambda x: x[1], reverse=True)
     cols = st.columns(3)
     for i, (equipo, elo) in enumerate(sorted_elo):
         with cols[i % 3]:
-            st.markdown(f"{flag(equipo)} **{equipo}** — `{elo}`")
+            st.markdown(f"{flag(equipo)} **{equipo}** — `{round(elo, 1)}`")
+
+    if n_jugados > 0:
+        with st.expander(f"📈 Movimiento de Elo tras los últimos {n_jugados} partidos"):
+            movimientos = resumen_movimiento_elo(ELO_BASE, ELO_ACTUALIZADO, top=10)
+            for equipo, antes, despues, delta in movimientos:
+                color = "#6b9b7d" if delta > 0 else ("#c0685a" if delta < 0 else "#888")
+                signo = "+" if delta > 0 else ""
+                st.markdown(
+                    f"{flag(equipo)} **{equipo}** — {antes} → {despues} "
+                    f"<span style='color:{color}'>({signo}{delta})</span>",
+                    unsafe_allow_html=True,
+                )
