@@ -18,7 +18,7 @@ from liga_mx_algoritmo import (
 try:
     from liga_mx_supabase import (
         guardar_prediccion, guardar_apuestas, cargar_historial_apuestas,
-        calcular_stats_apuestas, actualizar_aciertos_pendientes,
+        calcular_stats_apuestas, calcular_stats_por_mercado, actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
     )
     SUPABASE_MODULO_DISPONIBLE = True
@@ -588,6 +588,35 @@ with tab_hist_ap:
             with c4:
                 st.markdown(f'<div class="metric-box"><div class="metric-val">{stats["total_pendientes"]}</div>'
                             f'<div class="metric-lbl">⏳ Pendientes</div></div>', unsafe_allow_html=True)
+
+            # ── Panel de auto-calibración: ¿el 80% que dice el modelo es
+            # realmente 80% de acierto? Desglosado por mercado. ──────────
+            stats_mercado = calcular_stats_por_mercado(historial)
+            if stats_mercado:
+                with st.expander("🎯 Auto-calibración por mercado — ¿el modelo cumple lo que promete?", expanded=False):
+                    st.caption(
+                        "Compara la confianza promedio que dijo el modelo al sugerir cada mercado contra "
+                        "el acierto real una vez que el partido ya se jugó. Solo se muestran mercados con "
+                        "3+ apuestas ya evaluadas — con menos, la tasa de acierto es puro ruido."
+                    )
+                    for fm in stats_mercado:
+                        color = ("#c0685a" if fm["brecha"] > 5 else
+                                 "#4ade80" if fm["brecha"] < -5 else "#e8f0ea")
+                        texto_pendientes = f" · {fm['n_pendientes']} pendientes" if fm["n_pendientes"] else ""
+                        st.markdown(
+                            f'<div style="background:#111827;border:1px solid #1f4a2e;border-radius:8px;'
+                            f'padding:0.6rem 1rem;margin-bottom:0.4rem">'
+                            f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                            f'<span style="color:#e8f0ea;font-size:0.85rem;font-weight:600">{fm["mercado"]}</span>'
+                            f'<span style="font-size:0.7rem;color:#6b9b7d">{fm["n_evaluadas"]} evaluadas{texto_pendientes}</span></div>'
+                            f'<div style="font-size:0.78rem;margin-top:0.3rem;color:#8fbfa0">'
+                            f'Modelo dijo: <b>{fm["confianza_promedio"]:.1f}%</b> &nbsp;·&nbsp; '
+                            f'Acertó de verdad: <b style="color:{color}">{fm["accuracy_real"]:.1f}%</b> '
+                            f'({fm["aciertos"]}/{fm["n_evaluadas"]})</div>'
+                            f'<div style="font-size:0.72rem;color:{color};margin-top:0.15rem">{fm["diagnostico"]}'
+                            f' (brecha: {fm["brecha"]:+.1f} pts)</div></div>',
+                            unsafe_allow_html=True,
+                        )
 
             if stats["evaluadas"]:
                 st.markdown("##### ✅ Apuestas evaluadas")
