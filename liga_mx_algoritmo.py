@@ -34,6 +34,45 @@ from liga_mx_elo_update import (
 # para CORNERS_EQUIPO y el ELO).
 # ─────────────────────────────────────────────────────────────────────────
 LIGA_PROMEDIO_GOLES = 1.35   # goles por equipo por partido, típico de Liga MX (~2.7 goles/partido total)
+
+# ─────────────────────────────────────────────────────────────────────────
+# CORRECCIÓN DIXON-COLES — marcadores bajos correlacionados
+# En fútbol real, 0-0, 1-0, 0-1 y 1-1 ocurren un poco más seguido de lo
+# que predice Poisson independiente puro (con el partido cerrado, ambos
+# equipos juegan más al resultado — más cautela, menos ida y vuelta).
+# Dixon & Coles (1997) corrigen justo esos 4 marcadores con un parámetro
+# ρ (rho), sin tocar el resto de la distribución de goles.
+#
+# RHO_DIXON_COLES = -0.13 es el valor que estimaron los autores
+# originales para fútbol inglés (el número más citado en la literatura
+# para ligas de clubes) — lo usamos como punto de partida razonable
+# mientras no tengamos suficientes partidos de Liga MX propios para
+# reestimarlo por máxima verosimilitud (se necesitan ~40+ partidos con
+# buena variedad de marcadores para que la reestimación sea estable).
+#
+# Esta corrección SOLO aplica a la distribución de GOLES (home/away) —
+# no se extiende a córners ni tarjetas, que en este modelo son
+# simulaciones independientes sin relación matemática con el marcador.
+# ─────────────────────────────────────────────────────────────────────────
+RHO_DIXON_COLES = -0.13
+
+
+def _tau_dixon_coles(x: int, y: int, lam: float, mu: float, rho: float = RHO_DIXON_COLES) -> float:
+    """
+    Factor de corrección τ(x,y) de Dixon-Coles. Devuelve 1.0 para
+    cualquier marcador fuera de {0-0, 1-0, 0-1, 1-1} — esos 4 son los
+    únicos que ajusta el modelo original. lam/mu = λ_home/λ_away.
+    """
+    if x == 0 and y == 0:
+        return 1 - lam * mu * rho
+    if x == 0 and y == 1:
+        return 1 + lam * rho
+    if x == 1 and y == 0:
+        return 1 + mu * rho
+    if x == 1 and y == 1:
+        return 1 - rho
+    return 1.0
+
 _elo_promedio = sum(ELO.values()) / len(ELO)
 
 FUERZA_ATAQUE = {
@@ -349,16 +388,29 @@ def calcular_lambdas(home_team: str, away_team: str,
 def _jugar_partido(home_team: str, away_team: str, rng=None,
                     peso_elo: float = 1.0, peso_altitud: float = 1.0,
                     peso_arbitro: float = 1.0) -> tuple:
-    """Simula UN resultado (goles_home, goles_away) usando Poisson."""
+    """
+    Simula UN resultado (goles_home, goles_away) usando Poisson, con la
+    misma corrección Dixon-Coles que simular_partido() — aquí, al ser un
+    solo sorteo (no millones), se aplica por muestreo de rechazo: se
+    sortea un marcador candidato y se acepta con probabilidad τ(x,y)/M
+    (M = cota superior de τ). Con ρ=-0.13, M ronda ~1.1-1.3, así que casi
+    siempre se acepta en el primer o segundo intento — el costo extra es
+    insignificante incluso corriendo miles de temporadas completas.
+    """
     if rng is None:
         rng = np.random.default_rng()
     lam_h, lam_a = calcular_lambdas(home_team, away_team,
                                      peso_elo=peso_elo,
                                      peso_altitud=peso_altitud,
                                      peso_arbitro=peso_arbitro)
-    goles_h = rng.poisson(lam_h)
-    goles_a = rng.poisson(lam_a)
-    return int(goles_h), int(goles_a)
+    m_bound = max(1.0, 1 - lam_h * lam_a * RHO_DIXON_COLES, 1 - RHO_DIXON_COLES)
+    for _ in range(200):
+        goles_h = int(rng.poisson(lam_h))
+        goles_a = int(rng.poisson(lam_a))
+        tau = _tau_dixon_coles(goles_h, goles_a, lam_h, lam_a)
+        if rng.random() < tau / m_bound:
+            return goles_h, goles_a
+    return goles_h, goles_a  # fallback de seguridad, en la práctica nunca se llega aquí
 
 
 def _tabla_vacia() -> dict:
@@ -657,18 +709,46 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     goles_h = rng.poisson(lam_h, n).astype(np.int32)
     goles_a = rng.poisson(lam_a, n).astype(np.int32)
 
-    prob_home = float(np.mean(goles_h > goles_a) * 100)
-    prob_draw = float(np.mean(goles_h == goles_a) * 100)
-    prob_away = float(np.mean(goles_h < goles_a) * 100)
+    # ── Corrección Dixon-Coles: pondera los 4 marcadores bajos ─────────
+    # En vez de re-muestrear (carísimo con n=10M), se le da a cada
+    # simulación un peso τ(x,y) — 1.0 para casi todas, y el factor de
+    # Dixon-Coles solo para 0-0/1-0/0-1/1-1. Todas las probabilidades de
+    # abajo usan np.average(..., weights=pesos_dc) en vez de np.mean(),
+    # que es exactamente el estimador de Monte Carlo por importancia para
+    # la distribución YA corregida — sin gastar más simulaciones.
+    pesos_dc = np.ones(n, dtype=np.float64)
+    m_00 = (goles_h == 0) & (goles_a == 0)
+    m_10 = (goles_h == 1) & (goles_a == 0)
+    m_01 = (goles_h == 0) & (goles_a == 1)
+    m_11 = (goles_h == 1) & (goles_a == 1)
+    pesos_dc[m_00] = max(1 - lam_h * lam_a * RHO_DIXON_COLES, 1e-6)
+    pesos_dc[m_10] = max(1 + lam_a * RHO_DIXON_COLES, 1e-6)
+    pesos_dc[m_01] = max(1 + lam_h * RHO_DIXON_COLES, 1e-6)
+    pesos_dc[m_11] = max(1 - RHO_DIXON_COLES, 1e-6)
+    del m_00, m_10, m_01, m_11
+
+    prob_home = float(np.average(goles_h > goles_a, weights=pesos_dc) * 100)
+    prob_draw = float(np.average(goles_h == goles_a, weights=pesos_dc) * 100)
+    prob_away = float(np.average(goles_h < goles_a, weights=pesos_dc) * 100)
 
     goles_totales = goles_h + goles_a
-    prob_over05 = float(np.mean(goles_totales > 0) * 100)
-    prob_over15 = float(np.mean(goles_totales > 1) * 100)
-    prob_over25 = float(np.mean(goles_totales > 2) * 100)
-    prob_over35 = float(np.mean(goles_totales > 3) * 100)
-    prob_btts = float(np.mean((goles_h > 0) & (goles_a > 0)) * 100)
+    prob_over05 = float(np.average(goles_totales > 0, weights=pesos_dc) * 100)
+    prob_over15 = float(np.average(goles_totales > 1, weights=pesos_dc) * 100)
+    prob_over25 = float(np.average(goles_totales > 2, weights=pesos_dc) * 100)
+    prob_over35 = float(np.average(goles_totales > 3, weights=pesos_dc) * 100)
+    prob_btts = float(np.average((goles_h > 0) & (goles_a > 0), weights=pesos_dc) * 100)
 
-    top5 = Counter(zip(goles_h.tolist(), goles_a.tolist())).most_common(5)
+    # top5 ponderado por Dixon-Coles, vectorizado (nada de loops en Python
+    # sobre potencialmente 10M filas): se codifica cada marcador (gh,ga)
+    # como un entero único y se suman los pesos con bincount.
+    goles_h_clip = np.minimum(goles_h, 20)   # techo de seguridad, nunca se alcanza en la práctica
+    goles_a_clip = np.minimum(goles_a, 20)
+    claves = (goles_h_clip.astype(np.int64) * 21 + goles_a_clip.astype(np.int64))
+    pesos_por_clave = np.bincount(claves, weights=pesos_dc, minlength=21 * 21)
+    top5_idx = np.argsort(pesos_por_clave)[::-1][:5]
+    top5 = [((int(idx // 21), int(idx % 21)), round(float(pesos_por_clave[idx]), 0))
+            for idx in top5_idx if pesos_por_clave[idx] > 0]
+    del goles_h_clip, goles_a_clip, claves, pesos_por_clave, top5_idx
 
     # ── Hándicap Asiático — probabilidad de cobertura por margen ──────
     # -1.0: cubre con diferencia >=2, empuja (reembolso) con diferencia
@@ -678,10 +758,10 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     # stake — nunca es una pérdida, así que no le resta "certeza" a la
     # recomendación.
     diff = goles_h - goles_a
-    prob_hcap_home_m10 = float(np.mean(diff >= 2) * 100)
-    prob_hcap_home_m20 = float(np.mean(diff >= 3) * 100)
-    prob_hcap_away_m10 = float(np.mean(diff <= -2) * 100)
-    prob_hcap_away_m20 = float(np.mean(diff <= -3) * 100)
+    prob_hcap_home_m10 = float(np.average(diff >= 2, weights=pesos_dc) * 100)
+    prob_hcap_home_m20 = float(np.average(diff >= 3, weights=pesos_dc) * 100)
+    prob_hcap_away_m10 = float(np.average(diff <= -2, weights=pesos_dc) * 100)
+    prob_hcap_away_m20 = float(np.average(diff <= -3, weights=pesos_dc) * 100)
     del diff
 
     # ── Córners: varias líneas, igual que el Mundial ──────────────────
@@ -709,7 +789,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 
     return {
         "prob_home": prob_home, "prob_draw": prob_draw, "prob_away": prob_away,
-        "goles_home": float(np.mean(goles_h)), "goles_away": float(np.mean(goles_a)),
+        "goles_home": float(np.average(goles_h, weights=pesos_dc)), "goles_away": float(np.average(goles_a, weights=pesos_dc)),
         "lam_home": round(lam_h, 3), "lam_away": round(lam_a, 3),
         "top5": top5,
         "prob_hcap_home_m10": prob_hcap_home_m10, "prob_hcap_home_m20": prob_hcap_home_m20,
