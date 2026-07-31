@@ -973,11 +973,18 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
     if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
 
-    apuestas.sort(key=lambda x: x["confianza"], reverse=True)
-
-    # Un solo mercado por categoría (evita repetir 3 líneas de la misma cosa)
-    filtradas = []
-    categorias_vistas = set()
+    # Un solo mercado por categoría (evita repetir 3 líneas de la misma
+    # cosa, ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez). Dentro de cada
+    # categoría se conserva la de MENOR confianza — que, como todas ya
+    # cumplieron el 80%, es exactamente la línea más "atrevida"/específica
+    # que aún se sostiene (Over 2.5 en vez de Over 0.5 si ambas pasan;
+    # Under 1.5 en vez de Under 2.5 si ambas pasan — la relación es la
+    # misma en ambos sentidos: la línea más floja siempre tiene la mayor
+    # confianza porque el evento que describe es un superconjunto del más
+    # estricto). Antes se quedaba con la de MAYOR confianza (la más
+    # floja), lo que escondía señales más fuertes cuando también pasaban
+    # el 80% — ej. Over 2.5 al 82% quedaba tapado por Over 0.5 al 98%.
+    mejor_por_categoria = {}
     for a in apuestas:
         merc = a["mercado"]
         sel = a["seleccion"].lower()
@@ -988,15 +995,13 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
         elif merc == "Total Goles":
             cat = "goles_over" if "over" in sel else "goles_under"
         elif merc == "Hándicap Asiático":
-            # una sola línea por equipo (se queda con la de mayor confianza,
-            # que tras el sort de arriba siempre es la línea más floja que
-            # aún cumple el 80%, ej. -1.0 antes que -2.0 del mismo equipo)
             cat = f"hcap_{home_team}" if home_team in a["seleccion"] else f"hcap_{away_team}"
         else:
             cat = merc
-        if cat not in categorias_vistas:
-            categorias_vistas.add(cat)
-            filtradas.append(a)
+        if cat not in mejor_por_categoria or a["confianza"] < mejor_por_categoria[cat]["confianza"]:
+            mejor_por_categoria[cat] = a
+
+    filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
     return filtradas
 
 
