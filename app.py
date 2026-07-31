@@ -222,16 +222,18 @@ if partidos_hoy_global:
                 f'<span style="font-size:0.68rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
                 unsafe_allow_html=True,
             )
-            cols_hoy = st.columns(min(len(sugs_alta_hoy), 3))
-            for i_ap, ap in enumerate(sugs_alta_hoy[:3]):
-                with cols_hoy[i_ap % 3]:
-                    st.markdown(
-                        f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
-                        f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
-                        f'<div style="font-size:0.88rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                        f'<div style="font-size:0.62rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
-                        unsafe_allow_html=True,
-                    )
+            for fila_inicio in range(0, len(sugs_alta_hoy), 3):
+                fila = sugs_alta_hoy[fila_inicio:fila_inicio + 3]
+                cols_hoy = st.columns(3)
+                for i_ap, ap in enumerate(fila):
+                    with cols_hoy[i_ap]:
+                        st.markdown(
+                            f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                            f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                            f'<div style="font-size:0.88rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                            f'<div style="font-size:0.62rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                            unsafe_allow_html=True,
+                        )
             parlay_hoy = armar_parlay(sugs_alta_hoy)
             if parlay_hoy:
                 st.markdown(
@@ -384,18 +386,20 @@ with tab_pred:
                 st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
                             'letter-spacing:2px;color:#e5007d;margin-bottom:0.75rem">🎰 APUESTAS SUGERIDAS</div>',
                             unsafe_allow_html=True)
-                cols_ap = st.columns(min(len(sugs), 3))
-                for i_ap, ap in enumerate(sugs[:3]):
-                    with cols_ap[i_ap]:
-                        cls = "bet-card-alta" if ap["nivel"] == "ALTA" else "bet-card-media"
-                        st.markdown(
-                            f'<div class="bet-card {cls}"><div style="font-size:0.6rem;color:#6b9b7d;'
-                            f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
-                            f'<div style="font-size:0.95rem;color:#e8f0ea;margin:0.3rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                            f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
-                            f'<div style="font-size:0.6rem;color:#6b9b7d;margin-top:0.3rem">{ap["nota"]}</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                # Todas las que cumplan el 80% — en filas de hasta 3 columnas
+                for fila_inicio in range(0, len(sugs), 3):
+                    fila = sugs[fila_inicio:fila_inicio + 3]
+                    cols_ap = st.columns(3)
+                    for i_ap, ap in enumerate(fila):
+                        with cols_ap[i_ap]:
+                            st.markdown(
+                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.6rem;color:#6b9b7d;'
+                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                f'<div style="font-size:0.95rem;color:#e8f0ea;margin:0.3rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                                f'<div style="font-size:0.6rem;color:#6b9b7d;margin-top:0.3rem">{ap["nota"]}</div></div>',
+                                unsafe_allow_html=True,
+                            )
                 parlay = armar_parlay(sugs)
                 if parlay:
                     st.markdown(
@@ -455,21 +459,23 @@ with tab_apuestas:
                 unsafe_allow_html=True,
             )
             r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
-            sugs_todas = analizar_apuestas(local, visit, r)
-            sugs = [s for s in sugs_todas if s["nivel"] == "ALTA"]
+            sugs = analizar_apuestas(local, visit, r)  # ya vienen solo las que cumplen 80%+
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
             else:
-                cols_ap = st.columns(min(len(sugs), 3))
-                for i_ap, ap in enumerate(sugs[:3]):
-                    with cols_ap[i_ap % 3]:
-                        st.markdown(
-                            f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
-                            f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
-                            f'<div style="font-size:0.9rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                            f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
-                            unsafe_allow_html=True,
-                        )
+                # Todas las que cumplan el 80% — en filas de hasta 3 columnas
+                for fila_inicio in range(0, len(sugs), 3):
+                    fila = sugs[fila_inicio:fila_inicio + 3]
+                    cols_ap = st.columns(3)
+                    for i_ap, ap in enumerate(fila):
+                        with cols_ap[i_ap]:
+                            st.markdown(
+                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                f'<div style="font-size:0.9rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                                unsafe_allow_html=True,
+                            )
                 parlay = armar_parlay(sugs)
                 if parlay:
                     st.markdown(
@@ -825,6 +831,16 @@ por partido, el mismo enfoque que casas de apuestas y modelos académicos serios
 Los tres primeros factores (Ataque/Defensa, Momentum vía Elo, Forma real) se recalculan solos cada vez
 que arranca la app, reproduciendo todos los partidos que ya tienen resultado en `PARTIDOS` — no hay que
 tocar código ni una base de datos aparte, basta con seguir agregando los resultados reales jornada a jornada.
+
+**¿Qué se recomienda como apuesta?**
+Un solo criterio parejo: cualquier mercado con **80% de probabilidad o más** según las simulaciones —
+no importa cuál sea. Todo lo que llegue a ese umbral aparece en "Apuestas sugeridas" (por partido) y en
+"Apuestas más fuertes de hoy" (todos los partidos del día), sin límite de cuántas se muestran.
+
+Mercados que evalúa: Resultado (1X2) · Doble Oportunidad (1X/X2) · Empate Sin Apuesta (DNB) · Hándicap
+Asiático (-1.0/-2.0 del favorito) · Total de Goles (Over/Under) · Ambos Marcan · Tarjetas · Córners.
+No incluye goles por mitades ni resultado al descanso — el modelo simula el partido completo con una sola
+λ de Poisson por equipo, no reparte los goles entre el primer y segundo tiempo.
 
 **Pesos actuales del modelo** (fijos, no ajustables desde la interfaz):
 
