@@ -17,6 +17,10 @@ from liga_mx_predictor_skeleton import (
     EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
     ARBITROS_LIGA_MX, ARBITRO_DEFAULT,
 )
+from liga_mx_elo_update import (
+    actualizar_elo, actualizar_fuerza_ataque_defensa,
+    resumen_movimiento_elo, n_partidos_procesados,
+)
 
 # ─────────────────────────────────────────────────────────────────────────
 # FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
@@ -72,6 +76,32 @@ FUERZA_DEFENSA = {
     "Atlante":            2.2,  # ⚠️ heredado de Mazatlán
     "Santos Laguna":      2.2,
 }
+
+# ─────────────────────────────────────────────────────────────────────────
+# RECALIBRACIÓN DINÁMICA — a partir de aquí, ELO_BASE / FUERZA_ATAQUE_BASE /
+# FUERZA_DEFENSA_BASE son el punto de partida "Clausura 2026" (nunca se
+# tocan). ELO_ACTUALIZADO, FUERZA_ATAQUE_ACTUALIZADA y
+# FUERZA_DEFENSA_ACTUALIZADA reproducen, con liga_mx_elo_update.py, cada
+# partido que ya tiene resultado real en PARTIDOS — así que se recalculan
+# solos cada vez que arranca la app, conforme le vas agregando jornadas
+# jugadas. calcular_lambdas() usa las versiones ACTUALIZADAS.
+# ─────────────────────────────────────────────────────────────────────────
+ELO_BASE = dict(ELO)
+FUERZA_ATAQUE_BASE = dict(FUERZA_ATAQUE)
+FUERZA_DEFENSA_BASE = dict(FUERZA_DEFENSA)
+
+ELO_ACTUALIZADO = actualizar_elo(PARTIDOS, ELO_BASE)
+FUERZA_ATAQUE_ACTUALIZADA, FUERZA_DEFENSA_ACTUALIZADA = actualizar_fuerza_ataque_defensa(
+    PARTIDOS, FUERZA_ATAQUE_BASE, FUERZA_DEFENSA_BASE
+)
+_elo_promedio_actualizado = sum(ELO_ACTUALIZADO.values()) / len(ELO_ACTUALIZADO)
+
+# A partir de aquí, FUERZA_ATAQUE y FUERZA_DEFENSA (los nombres que usa el
+# resto de este archivo) YA SON las versiones ajustadas por la forma real
+# del torneo — no las estáticas de arriba. Para comparar "modelo con vs.
+# sin recalibración", usa FUERZA_ATAQUE_BASE / FUERZA_DEFENSA_BASE.
+FUERZA_ATAQUE = FUERZA_ATAQUE_ACTUALIZADA
+FUERZA_DEFENSA = FUERZA_DEFENSA_ACTUALIZADA
 
 # ─────────────────────────────────────────────────────────────────────────
 # TARJETAS POR EQUIPO — datos reales del Clausura 2026 (fuente FotMob):
@@ -196,11 +226,21 @@ def _forma_real_liga_mx() -> dict:
 def calcular_lambdas(home_team: str, away_team: str,
                       peso_elo: float = 1.0,
                       peso_altitud: float = 1.0,
-                      peso_arbitro: float = 1.0) -> tuple:
+                      peso_arbitro: float = 1.0,
+                      peso_forma_elo: float = 1.0) -> tuple:
     """
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
-      1. Ataque/Defensa (relativo al ELO, ver nota de PLACEHOLDER arriba)
+      1. Ataque/Defensa — YA viene de FUERZA_ATAQUE_ACTUALIZADA /
+         FUERZA_DEFENSA_ACTUALIZADA (ver liga_mx_elo_update.py): estos
+         valores se recalibran solos con media móvil exponencial cada vez
+         que agregas un resultado real a PARTIDOS.
+      1c. Momentum vía Elo — ajuste adicional y acotado (±8%) basado en
+         cuánto se movió el Elo de cada equipo (actualizar_elo(), fórmula
+         Elo estándar con ventaja de local y multiplicador por goleada)
+         desde el arranque del torneo. Complementa a Forma real: mientras
+         Forma real mira el promedio de goles reales, este factor mira
+         resultados/margen relativo a la fuerza del rival enfrentado.
       2. Forma real — goles reales anotados/recibidos en partidos ya
          jugados de este torneo (se auto-actualiza con cada resultado
          que agregues a PARTIDOS)
@@ -208,11 +248,12 @@ def calcular_lambdas(home_team: str, away_team: str,
       4. Factor árbitro (promedio de tarjetas → intensidad del partido)
       5. Factor fatiga (Leagues Cup en los últimos 7 días)
 
-    peso_elo, peso_altitud, peso_arbitro: multiplicadores para ajustar
-    cuánto pesa cada factor en el resultado final. 1.0 = calibración por
-    defecto (la que ya probamos). 0.0 = el factor no tiene efecto.
-    2.0 = el doble de efecto que el calibrado. Pensados para conectarse
-    directo a st.slider en la interfaz — sin tocar variables globales.
+    peso_elo, peso_altitud, peso_arbitro, peso_forma_elo: multiplicadores
+    para ajustar cuánto pesa cada factor en el resultado final. 1.0 =
+    calibración por defecto (la que ya probamos). 0.0 = el factor no
+    tiene efecto. 2.0 = el doble de efecto que el calibrado. Pensados
+    para conectarse directo a st.slider en la interfaz — sin tocar
+    variables globales.
 
     Devuelve (lambda_home, lambda_away) listos para simular goles con
     una distribución de Poisson.
@@ -246,6 +287,20 @@ def calcular_lambdas(home_team: str, away_team: str,
             else:
                 lam_away *= f_of
                 lam_home *= f_def
+
+    # 1c. Momentum vía Elo — compara el Elo actualizado (tras reproducir
+    # todos los partidos jugados) contra el Elo base de arranque de
+    # temporada. Si un equipo viene rindiendo por encima de lo esperado
+    # (ganó partidos cerrados que "no debía" ganar, o goleó a rivales
+    # fuertes), su Elo sube y este factor empuja su λ un poco más arriba
+    # — tope ±8%, mismo criterio que Forma real, para no desestabilizar
+    # el modelo con pocos partidos jugados.
+    delta_elo_home = ELO_ACTUALIZADO.get(home_team, _elo_promedio_actualizado) - ELO_BASE.get(home_team, _elo_promedio_actualizado)
+    delta_elo_away = ELO_ACTUALIZADO.get(away_team, _elo_promedio_actualizado) - ELO_BASE.get(away_team, _elo_promedio_actualizado)
+    ajuste_elo_home = max(min(delta_elo_home / 1000, 0.08), -0.08) * peso_forma_elo
+    ajuste_elo_away = max(min(delta_elo_away / 1000, 0.08), -0.08) * peso_forma_elo
+    lam_home *= (1.0 + ajuste_elo_home)
+    lam_away *= (1.0 + ajuste_elo_away)
 
     # Ventaja de localía estándar (típico ~10-15% en fútbol de liga)
     lam_home *= 1.12
