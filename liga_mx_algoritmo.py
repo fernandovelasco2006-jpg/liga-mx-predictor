@@ -33,7 +33,7 @@ from liga_mx_elo_update import (
 # usa el dato real de Mazatlán como proxy (mismo criterio que ya usamos
 # para CORNERS_EQUIPO y el ELO).
 # ─────────────────────────────────────────────────────────────────────────
-LIGA_PROMEDIO_GOLES = 1.35   # goles por equipo por partido, típico de Liga MX (~2.7 goles/partido total)
+LIGA_PROMEDIO_GOLES = 1.3693  # exacto: suma GF de los 18 equipos / (18×17) del Clausura 2026 — antes 1.35 (aproximado)
 
 # ─────────────────────────────────────────────────────────────────────────
 # CORRECCIÓN DIXON-COLES — marcadores bajos correlacionados
@@ -99,44 +99,48 @@ def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
 _elo_promedio = sum(ELO.values()) / len(ELO)
 
 FUERZA_ATAQUE = {
-    "Guadalajara":        1.9,
-    "Pumas UNAM":         1.8,
-    "Cruz Azul":          1.8,
-    "Tigres":             1.6,
-    "Toluca":             1.5,
-    "FC Juarez":          1.5,
-    "Pachuca":            1.4,
-    "America":            1.4,
-    "Atletico San Luis":  1.4,
-    "Leon":               1.3,
-    "Atlante":            1.3,  # ⚠️ heredado de Mazatlán
-    "Monterrey":          1.3,
-    "Santos Laguna":      1.2,
-    "Necaxa":             1.1,
-    "Tijuana":            1.1,
-    "Queretaro":          1.0,
-    "Atlas":              0.9,
-    "Puebla":             0.8,
+    # Recalibrado con la tabla exacta del Clausura 2026 (17 partidos,
+    # gf/pj — la tabla cuadra perfectamente con W-E-P y puntos de cada
+    # equipo, así que se usa tal cual en vez de la estimación anterior).
+    "Pumas UNAM":         2.00,  # antes 1.8 — GF real más alto de lo estimado
+    "Guadalajara":        1.94,
+    "Cruz Azul":          1.82,
+    "Tigres":             1.65,
+    "Toluca":             1.65,
+    "FC Juarez":          1.53,
+    "Pachuca":            1.47,
+    "Atletico San Luis":  1.41,
+    "Leon":               1.29,
+    "Atlante":            1.29,  # ⚠️ heredado de Mazatlán
+    "Monterrey":          1.29,
+    "America":            1.18,  # antes 1.4 — GF real bastante más bajo de lo estimado
+    "Santos Laguna":      1.18,
+    "Necaxa":             1.12,
+    "Tijuana":            1.12,
+    "Queretaro":          1.00,
+    "Atlas":              0.94,
+    "Puebla":             0.76,
 }
 FUERZA_DEFENSA = {
-    "Tijuana":            1.0,
-    "Toluca":             1.0,
-    "Pachuca":            1.0,
-    "Cruz Azul":          1.0,
-    "Tigres":             1.1,
-    "Guadalajara":        1.1,
-    "Pumas UNAM":         1.1,
-    "Queretaro":          1.2,
-    "Atlas":              1.2,
-    "America":            1.2,
-    "Monterrey":          1.4,
-    "Necaxa":             1.5,
-    "Puebla":             1.5,
-    "Atletico San Luis":  1.6,
-    "Leon":               1.9,
-    "FC Juarez":          1.9,
-    "Atlante":            2.2,  # ⚠️ heredado de Mazatlán
-    "Santos Laguna":      2.2,
+    # Mismo criterio: gc/pj exacto de la tabla del Clausura 2026.
+    "Toluca":             0.94,
+    "Guadalajara":        1.00,  # antes 1.1
+    "Pumas UNAM":         1.00,  # antes 1.1
+    "America":            1.00,  # antes 1.2 — defensa real mejor de lo estimado
+    "Tijuana":            1.00,
+    "Cruz Azul":          1.06,
+    "Tigres":             1.06,
+    "Atlas":              1.06,  # antes 1.2 — defensa real mejor de lo estimado
+    "Pachuca":            1.12,  # antes 1.0 — defensa real algo peor de lo estimado
+    "Queretaro":          1.24,
+    "Monterrey":          1.41,
+    "Necaxa":             1.47,
+    "Puebla":             1.53,
+    "Atletico San Luis":  1.59,
+    "Leon":               1.88,
+    "FC Juarez":          1.88,
+    "Atlante":            2.18,  # ⚠️ heredado de Mazatlán
+    "Santos Laguna":      2.24,
 }
 
 # ─────────────────────────────────────────────────────────────────────────
