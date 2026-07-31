@@ -670,6 +670,20 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 
     top5 = Counter(zip(goles_h.tolist(), goles_a.tolist())).most_common(5)
 
+    # ── Hándicap Asiático — probabilidad de cobertura por margen ──────
+    # -1.0: cubre con diferencia >=2, empuja (reembolso) con diferencia
+    # exacta de 1. -2.0: cubre con diferencia >=3, empuja con diferencia
+    # exacta de 2. Se reporta la probabilidad de cobertura tal cual (sin
+    # descontar el empuje del denominador) porque un empuje reembolsa el
+    # stake — nunca es una pérdida, así que no le resta "certeza" a la
+    # recomendación.
+    diff = goles_h - goles_a
+    prob_hcap_home_m10 = float(np.mean(diff >= 2) * 100)
+    prob_hcap_home_m20 = float(np.mean(diff >= 3) * 100)
+    prob_hcap_away_m10 = float(np.mean(diff <= -2) * 100)
+    prob_hcap_away_m20 = float(np.mean(diff <= -3) * 100)
+    del diff
+
     # ── Córners: varias líneas, igual que el Mundial ──────────────────
     corners_esp = CORNERS_EQUIPO.get(home_team, CORNERS_DEFAULT) + CORNERS_EQUIPO.get(away_team, CORNERS_DEFAULT)
     corners_sim = rng.poisson(corners_esp, n).astype(np.int32)
@@ -698,6 +712,8 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
         "goles_home": float(np.mean(goles_h)), "goles_away": float(np.mean(goles_a)),
         "lam_home": round(lam_h, 3), "lam_away": round(lam_a, 3),
         "top5": top5,
+        "prob_hcap_home_m10": prob_hcap_home_m10, "prob_hcap_home_m20": prob_hcap_home_m20,
+        "prob_hcap_away_m10": prob_hcap_away_m10, "prob_hcap_away_m20": prob_hcap_away_m20,
         "prob_over05": prob_over05, "prob_over15": prob_over15,
         "prob_over25": prob_over25, "prob_over35": prob_over35,
         "prob_btts": prob_btts,
@@ -726,88 +742,121 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 # (para no repetir 3 líneas de córners), y nivel ALTA/MEDIA.
 # ─────────────────────────────────────────────────────────────────────────
 def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
+    """
+    Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
+    llega o supera UMBRAL_RECOMENDACION (80%) — un solo criterio parejo
+    para las 8 familias de mercado que soporta el modelo: Resultado (1X2),
+    Doble Oportunidad, Empate Sin Apuesta (Draw No Bet), Hándicap
+    Asiático, Total de Goles, Ambos Marcan, Tarjetas y Córners.
+
+    Nota sobre Hándicap Europeo: en este modelo la probabilidad de
+    "cubrir" un hándicap Europeo -1/-2 (ganar por 2+/3+) es el MISMO
+    número que Hándicap Asiático -1.0/-2.0 (misma condición: diferencia de
+    gol) — la única diferencia entre ambos está en qué pasa con el margen
+    exacto (Asiático reembolsa, Europeo pierde), no en la confianza de la
+    simulación. Por eso solo se expone Hándicap Asiático para no duplicar
+    la misma señal dos veces en "apuestas sugeridas".
+
+    NO incluye goles por mitades ni resultado al descanso (HT/FT): el
+    modelo simula el partido completo con una sola λ de Poisson por
+    equipo, no reparte los goles entre primer/segundo tiempo, así que no
+    hay datos reales de qué tan probable es cada marcador al descanso.
+    """
     apuestas = []
-
-    lam_total = r["lam_home"] + r["lam_away"]
-    import math as _math
-    prob_00 = _math.exp(-r["lam_home"]) * _math.exp(-r["lam_away"]) * 100
-    ES_PARTIDO_DEFENSIVO = prob_00 > 8 or lam_total < 2.2
-
-    UMBRAL_RESULTADO = 55.0
-    UMBRAL_DOBLE_OP = 78.0
-    UMBRAL_OVER05 = min(92.0, 80.0 + prob_00 * 0.5) if prob_00 > 5 else 82.0
-    UMBRAL_MERCADOS = 65.0 if ES_PARTIDO_DEFENSIVO else 70.0
-    UMBRAL_TARJ = 65.0 if ES_PARTIDO_DEFENSIVO else 70.0
-    UMBRAL_CORN = 65.0 if ES_PARTIDO_DEFENSIVO else 70.0
+    UMBRAL_RECOMENDACION = 80.0
 
     def ap(mercado, seleccion, confianza, nota):
         apuestas.append({
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
-            "nivel": "ALTA" if confianza >= 78 else "MEDIA",
+            "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el 80%
             "nota": nota,
         })
 
     pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
 
-    # Ganador
-    if pa >= UMBRAL_RESULTADO:
+    # 1. Resultado (1X2)
+    if pa >= UMBRAL_RECOMENDACION:
         ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones")
-    if pb >= UMBRAL_RESULTADO:
+    if pb >= UMBRAL_RECOMENDACION:
         ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones")
 
-    # Ganador o empate (doble oportunidad)
+    # 2. Doble Oportunidad (1X / X2)
     conf_1x = min(pa + pd_, 99)
     conf_x2 = min(pb + pd_, 99)
-    if conf_1x >= UMBRAL_DOBLE_OP and pa < UMBRAL_RESULTADO:
+    if conf_1x >= UMBRAL_RECOMENDACION and pa < UMBRAL_RECOMENDACION:
         ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
-    if conf_x2 >= UMBRAL_DOBLE_OP and pb < UMBRAL_RESULTADO:
+    if conf_x2 >= UMBRAL_RECOMENDACION and pb < UMBRAL_RECOMENDACION:
         ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
 
-    # Total de goles
-    if r["prob_over05"] >= UMBRAL_OVER05:
+    # 3. Empate Sin Apuesta (Draw No Bet) — probabilidad de ganar,
+    # excluyendo del cálculo el caso "empate" (que reembolsa, no pierde).
+    if (pa + pb) > 0:
+        conf_dnb_home = pa / (pa + pb) * 100
+        conf_dnb_away = pb / (pa + pb) * 100
+        if conf_dnb_home >= UMBRAL_RECOMENDACION:
+            ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home,
+               f"{pa:.1f}% vs {pb:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
+        if conf_dnb_away >= UMBRAL_RECOMENDACION:
+            ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away,
+               f"{pb:.1f}% vs {pa:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
+
+    # 4. Hándicap Asiático — el favorito debe ganar por 2+ (-1.0) o 3+ (-2.0)
+    if r["prob_hcap_home_m10"] >= UMBRAL_RECOMENDACION:
+        ap("Hándicap Asiático", f"✅ {home_team} -1.0 (gana por 2+)", r["prob_hcap_home_m10"],
+           "Empuje (reembolso) si gana por exactamente 1")
+    if r["prob_hcap_home_m20"] >= UMBRAL_RECOMENDACION:
+        ap("Hándicap Asiático", f"✅ {home_team} -2.0 (gana por 3+)", r["prob_hcap_home_m20"],
+           "Empuje (reembolso) si gana por exactamente 2")
+    if r["prob_hcap_away_m10"] >= UMBRAL_RECOMENDACION:
+        ap("Hándicap Asiático", f"✅ {away_team} -1.0 (gana por 2+)", r["prob_hcap_away_m10"],
+           "Empuje (reembolso) si gana por exactamente 1")
+    if r["prob_hcap_away_m20"] >= UMBRAL_RECOMENDACION:
+        ap("Hándicap Asiático", f"✅ {away_team} -2.0 (gana por 3+)", r["prob_hcap_away_m20"],
+           "Empuje (reembolso) si gana por exactamente 2")
+
+    # 5. Total de Goles (Over/Under)
+    if r["prob_over05"] >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 0.5 (al menos 1 gol)", r["prob_over05"], f"{r['prob_over05']:.1f}% de simulaciones")
-    if r["prob_over15"] >= UMBRAL_MERCADOS:
+    if r["prob_over15"] >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones")
-    if r["prob_over25"] >= UMBRAL_MERCADOS:
+    if r["prob_over25"] >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones")
-    if r["prob_over35"] >= UMBRAL_MERCADOS:
+    if r["prob_over35"] >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones")
-    if (100 - r["prob_over15"]) >= UMBRAL_MERCADOS:
+    if (100 - r["prob_over15"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones")
-    if (100 - r["prob_over25"]) >= UMBRAL_MERCADOS:
+    if (100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones")
 
-    # Ambos marcan
-    if r["prob_btts"] >= UMBRAL_MERCADOS:
+    # 6. Ambos Marcan (BTTS)
+    if r["prob_btts"] >= UMBRAL_RECOMENDACION:
         ap("Ambos Marcan", "✅ Sí — ambos anotan", r["prob_btts"], f"{r['prob_btts']:.1f}% de simulaciones")
-    if (100 - r["prob_btts"]) >= UMBRAL_MERCADOS:
+    if (100 - r["prob_btts"]) >= UMBRAL_RECOMENDACION:
         ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
 
-    # Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
-    # Líneas recalibradas al promedio REAL actual (~4.6 combinado) — antes
-    # estaban en 2.5/3.5/4.5, casi siempre por debajo del promedio real,
-    # lo que las hacía "ganar" en prácticamente todos los partidos.
-    if r["prob_tarj_over35"] >= UMBRAL_TARJ:
+    # 7. Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
+    if r["prob_tarj_over25"] >= UMBRAL_RECOMENDACION:
+        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if r["prob_tarj_over35"] >= UMBRAL_RECOMENDACION:
         ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over45"] >= UMBRAL_TARJ:
+    if r["prob_tarj_over45"] >= UMBRAL_RECOMENDACION:
         ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over55"] >= UMBRAL_TARJ:
+    if r["prob_tarj_over55"] >= UMBRAL_RECOMENDACION:
         ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if (100 - r["prob_tarj_over45"]) >= UMBRAL_TARJ:
+    if (100 - r["prob_tarj_over45"]) >= UMBRAL_RECOMENDACION:
         ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
 
-    # Córners — líneas recalibradas al promedio REAL actual (~10.3 combinado)
-    # — antes 6.5/7.5/8.5/9.5, todas por debajo del promedio real.
-    if r["prob_corners_over85"] >= UMBRAL_CORN:
+    # 8. Córners
+    if r["prob_corners_over85"] >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over95"] >= UMBRAL_CORN:
+    if r["prob_corners_over95"] >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 9.5 córners (10+)", r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over105"] >= UMBRAL_CORN:
+    if r["prob_corners_over105"] >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 10.5 córners (11+)", r["prob_corners_over105"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over115"] >= UMBRAL_CORN:
+    if r["prob_corners_over115"] >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 11.5 córners (12+)", r["prob_corners_over115"], f"{r['corners_esp']:.1f} esperados")
-    if (100 - r["prob_corners_over95"]) >= UMBRAL_CORN:
+    if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
 
     apuestas.sort(key=lambda x: x["confianza"], reverse=True)
@@ -824,6 +873,11 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
             cat = "co_over" if "over" in sel else "co_under"
         elif merc == "Total Goles":
             cat = "goles_over" if "over" in sel else "goles_under"
+        elif merc == "Hándicap Asiático":
+            # una sola línea por equipo (se queda con la de mayor confianza,
+            # que tras el sort de arriba siempre es la línea más floja que
+            # aún cumple el 80%, ej. -1.0 antes que -2.0 del mismo equipo)
+            cat = f"hcap_{home_team}" if home_team in a["seleccion"] else f"hcap_{away_team}"
         else:
             cat = merc
         if cat not in categorias_vistas:
