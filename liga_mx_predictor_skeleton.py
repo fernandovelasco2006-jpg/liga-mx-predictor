@@ -68,24 +68,24 @@ PARTIDOS = [
     ('Guadalajara', 'Toluca', 1, 'Estadio Akron', (0, 2), 'Daniel Quintero Huitron'),
     ('Monterrey', 'Santos Laguna', 1, 'Estadio BBVA', (3, 2), 'Marco Antonio Ortiz Nava'),
     ('Queretaro', 'America', 1, 'Estadio Corregidora', (0, 1), 'Luis Enrique Santander Aguirre'),
-    ('Cruz Azul', 'Puebla', 2, 'Estadio Banorte', None, 'Karen Hernandez Andrade'),
-    ('Toluca', 'Pumas UNAM', 2, 'Estadio Nemesio Diez', None, 'Victor Alfonso Caceres Hernandez'),
-    ('Tigres', 'Atletico San Luis', 2, 'Estadio Universitario', None, 'Luis Alfredo Garcia Rodriguez'),
-    ('Tijuana', 'Leon', 2, 'Estadio Caliente', None, 'Joaquin Alberto Vizcarra Armenta'),
-    ('Atlante', 'America', 2, 'Estadio Banorte', None, 'Katia Itzel Garcia Mendoza'),
-    ('Guadalajara', 'FC Juarez', 2, 'Estadio Akron', None, 'Cesar Arturo Ramos Palazuelos'),
-    ('Santos Laguna', 'Atlas', 2, 'Estadio TSM Corona', None, 'Martin Molina Astorga'),
-    ('Necaxa', 'Monterrey', 2, 'Estadio Victoria', None, 'Ivan Antonio Lopez Sanchez'),
-    ('Pachuca', 'Queretaro', 2, 'Estadio Hidalgo', None, 'Maximiliano Quintero Hernandez'),
-    ('Puebla', 'Guadalajara', 3, 'Estadio Cuauhtemoc', None, None),
-    ('FC Juarez', 'Pumas UNAM', 3, 'Estadio Olimpico Benito Juarez', None, None),
-    ('Atletico San Luis', 'Tijuana', 3, 'Estadio Libertad Financiera', None, None),
-    ('Queretaro', 'Tigres', 3, 'Estadio Corregidora', None, None),
-    ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', None, None),
-    ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', None, None),
-    ('Cruz Azul', 'Atlante', 3, 'Estadio Banorte', None, None),
-    ('America', 'Santos Laguna', 3, 'Estadio Banorte', None, None),
-    ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', None, None),
+    ('Cruz Azul', 'Puebla', 2, 'Estadio Banorte', (2, 1), 'Karen Hernandez Andrade'),
+    ('Toluca', 'Pumas UNAM', 2, 'Estadio Nemesio Diez', (1, 2), 'Victor Alfonso Caceres Hernandez'),
+    ('Tigres', 'Atletico San Luis', 2, 'Estadio Universitario', (2, 2), 'Luis Alfredo Garcia Rodriguez'),
+    ('Tijuana', 'Leon', 2, 'Estadio Caliente', (1, 0), 'Joaquin Alberto Vizcarra Armenta'),
+    ('Atlante', 'America', 2, 'Estadio Banorte', (1, 1), 'Katia Itzel Garcia Mendoza'),
+    ('Guadalajara', 'FC Juarez', 2, 'Estadio Akron', (1, 0), 'Cesar Arturo Ramos Palazuelos'),
+    ('Santos Laguna', 'Atlas', 2, 'Estadio TSM Corona', (0, 1), 'Martin Molina Astorga'),
+    ('Necaxa', 'Monterrey', 2, 'Estadio Victoria', (2, 1), 'Ivan Antonio Lopez Sanchez'),
+    ('Pachuca', 'Queretaro', 2, 'Estadio Hidalgo', (1, 2), 'Maximiliano Quintero Hernandez'),
+    ('Puebla', 'Guadalajara', 3, 'Estadio Cuauhtemoc', None, 'Adonai Escobedo Gonzalez'),
+    ('FC Juarez', 'Pumas UNAM', 3, 'Estadio Olimpico Benito Juarez', None, 'Mario Terrazas Chavez'),
+    ('Atletico San Luis', 'Tijuana', 3, 'Estadio Libertad Financiera', None, 'Vicente Jassiel Reynoso Arce'),
+    ('Queretaro', 'Tigres', 3, 'Estadio Corregidora', None, 'Katia Itzel Garcia Mendoza'),
+    ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', None, 'Jorge Abraham Camacho Peregrina'),
+    ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', None, 'Fernando Hernandez Gomez'),
+    ('Cruz Azul', 'Atlante', 3, 'Estadio Banorte', None, 'Abraham De Jesus Quirarte Contreras'),
+    ('America', 'Santos Laguna', 3, 'Estadio Banorte', None, 'Victor Alfonso Caceres Hernandez'),
+    ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', None, 'Jesus Rafael Lopez Valle'),
     ('Atlante', 'Toluca', 4, 'Estadio Banorte', None, None),
     ('Monterrey', 'FC Juarez', 4, 'Estadio BBVA', None, None),
     ('Atlas', 'Tigres', 4, 'Estadio Jalisco', None, None),
@@ -563,6 +563,17 @@ DATOS_REALES_LIGAMX = {
     "Monterrey_Santos Laguna":    {"am": 0,  "co": 10},   # 0 MTY + 0 SAN | 5 MTY + 5 SAN
     "Guadalajara_Toluca":         {"am": 4,  "co": 11},   # 2 GDL + 2 TOL | 9 GDL + 2 TOL
     "Queretaro_America":          {"am": 10, "co": 14},   # 6 QRO + 4 AME | 2 QRO + 12 AME
+
+    # Jornada 2 — resultados y estadísticas confirmados
+    "Cruz Azul_Puebla":           {"am": 5,  "co": 10, "ro": 0},  # 2 CAZ + 3 PUE | 7 CAZ + 3 PUE
+    "Toluca_Pumas UNAM":          {"am": 2,  "co": 10, "ro": 0},  # 1 TOL + 1 PUM | 9 TOL + 1 PUM
+    "Atlante_America":            {"am": 4,  "co": 11, "ro": 0},  # 1 ATL + 3 AME | 2 ATL + 9 AME
+    "Tijuana_Leon":                {"am": 2,  "co": 13, "ro": 0},  # 0 TIJ + 2 LEO | 3 TIJ + 10 LEO
+    "Guadalajara_FC Juarez":      {"am": 3,  "co": 12, "ro": 0},  # 1 GDL + 2 JUA | 10 GDL + 2 JUA
+    "Santos Laguna_Atlas":        {"am": 3,  "co": 9,  "ro": 0},  # 2 SAN + 1 ATA | 4 SAN + 5 ATA
+    "Tigres_Atletico San Luis":   {"am": 3,  "co": 12, "ro": 0},  # 2 TIG + 1 ASL | 9 TIG + 3 ASL
+    "Necaxa_Monterrey":           {"am": 4,  "co": 5,  "ro": 1},  # 2 NEC + 2 MTY | 4 NEC + 1 MTY | 0 NEC + 1 MTY roja
+    "Pachuca_Queretaro":          {"am": 5,  "co": 7,  "ro": 0},  # 2 PAC + 3 QRO | 1 PAC + 6 QRO
 }
 
 # ─────────────────────────────────────────────────────────────────────────
