@@ -18,6 +18,7 @@ try:
     from liga_mx_supabase import (
         guardar_prediccion, guardar_apuestas, cargar_historial_apuestas,
         calcular_stats_apuestas, actualizar_aciertos_pendientes,
+        guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
     )
     SUPABASE_MODULO_DISPONIBLE = True
 except ImportError:
@@ -158,6 +159,7 @@ if SUPABASE_DISPONIBLE and not st.session_state.get("aciertos_lm_actualizados"):
     if partidos_jugados:
         try:
             actualizar_aciertos_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
+            actualizar_parlays_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
         except Exception:
             pass
     st.session_state["aciertos_lm_actualizados"] = True
@@ -193,6 +195,7 @@ if partidos_hoy_global:
     with st.expander(f"🎰 APUESTAS MÁS FUERTES DE HOY ({hoy}) — Click para ver", expanded=True):
         st.caption("Se calcula automáticamente al abrir la página · solo señales de confianza ALTA")
         total_apuestas_hoy = 0
+        patas_parlay_dia = []
         for local, visit, jornada, estadio, resultado, arbitro in partidos_hoy_global:
             horario = HORARIOS_PARTIDO.get((local, visit), "")
             hora_str = horario[11:] if horario else ""
@@ -203,6 +206,13 @@ if partidos_hoy_global:
             if not sugs_alta_hoy:
                 continue
             total_apuestas_hoy += len(sugs_alta_hoy)
+            # La mejor pata de este partido (mayor confianza) entra al parlay del día
+            mejor = sugs_alta_hoy[0]
+            patas_parlay_dia.append({
+                "local": local, "visitante": visit, "jornada": jornada,
+                "mercado": mejor["mercado"], "seleccion": mejor["seleccion"].replace("✅ ", ""),
+                "confianza": mejor["confianza"],
+            })
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:0.5rem;margin:0.8rem 0 0.4rem;'
                 f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
@@ -235,10 +245,37 @@ if partidos_hoy_global:
             st.info("Hoy no hay señales de confianza ALTA. El modelo es conservador.")
         st.caption("⚠️ Solo informativo · Apuesta responsablemente")
 
+        # ── PARLAY DEL DÍA — combina la mejor pata de CADA partido de hoy ──
+        if len(patas_parlay_dia) >= 2:
+            st.markdown("---")
+            prob_combinada_dia = 1.0
+            for pata in patas_parlay_dia:
+                prob_combinada_dia *= pata["confianza"] / 100
+            prob_combinada_dia *= 100
 
-tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_tabla, tab_info = st.tabs([
+            texto_patas = " + ".join(
+                f'{flag(p["local"])}{p["local"]} vs {p["visitante"]}: {p["seleccion"]}'
+                for p in patas_parlay_dia
+            )
+            st.markdown(
+                f'<div class="parlay-card" style="border-color:#e5007d;padding:1rem">'
+                f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.2rem;letter-spacing:2px;'
+                f'color:#e5007d;margin-bottom:0.4rem">🎟️ PARLAY DEL DÍA — {len(patas_parlay_dia)} partidos</div>'
+                f'<div style="font-size:0.78rem;color:#e8f0ea;line-height:1.6">{texto_patas}</div>'
+                f'<div style="font-size:0.7rem;color:#8fbfa0;margin-top:0.5rem">Prob. combinada: '
+                f'<b style="color:#e5007d">{prob_combinada_dia:.2f}%</b></div></div>',
+                unsafe_allow_html=True,
+            )
+            if SUPABASE_DISPONIBLE:
+                try:
+                    guardar_parlay_diario(SUPABASE_URL, SUPABASE_KEY, hoy, patas_parlay_dia, prob_combinada_dia)
+                except Exception:
+                    pass
+
+
+tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_parlays, tab_tabla, tab_info = st.tabs([
     "🎯 Predictor", "📊 Resultados reales", "🎰 Apuestas", "📈 Historial",
-    "🎲 Apuestas Hist.", "🏆 Tabla / Temporada", "⚙️ Modelo",
+    "🎲 Apuestas Hist.", "🎟️ Parlays", "🏆 Tabla / Temporada", "⚙️ Modelo",
 ])
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -575,6 +612,89 @@ with tab_hist_ap:
             '"pendientes" hasta que agregues manualmente el resultado real de amarillas/córners '
             '(igual que hacías con DATOS_REALES en el Mundial) — 1X2, doble oportunidad y goles se '
             'evalúan automáticamente en cuanto el partido tiene resultado.</div>',
+            unsafe_allow_html=True,
+        )
+
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Parlays (historial del "parlay del día" — todas las mejores
+# apuestas de cada partido del día, combinadas en una sola)
+# ─────────────────────────────────────────────────────────────────────────
+with tab_parlays:
+    st.markdown("#### 🎟️ Historial de Parlays del Día")
+    st.caption(
+        "Cada día se arma UN parlay combinando la mejor apuesta (mayor confianza) de "
+        "cada partido de esa fecha — igual que ves en el panel de arriba de la página. "
+        "Para que el parlay completo 'gane', TODAS sus patas tienen que acertar."
+    )
+
+    if not SUPABASE_DISPONIBLE:
+        st.warning(
+            "⚠️ Supabase no está conectado — los parlays del día no se pueden guardar ni "
+            "consultar en este modo. Conecta `SUPABASE_URL_LIGAMX` y `SUPABASE_KEY_LIGAMX` "
+            "en los Secrets de Streamlit Cloud."
+        )
+    else:
+        historial_parlays = cargar_historial_parlays(SUPABASE_URL, SUPABASE_KEY)
+        if not historial_parlays:
+            st.info("⏳ Aún no hay parlays guardados. Se arma uno automáticamente cada día que haya "
+                    "al menos 2 partidos con apuestas de confianza ALTA.")
+        else:
+            ganados = [p for p in historial_parlays if p.get("resultado") == "ganado"]
+            perdidos = [p for p in historial_parlays if p.get("resultado") == "perdido"]
+            pendientes_p = [p for p in historial_parlays if p.get("resultado") == "pendiente"]
+            evaluados = len(ganados) + len(perdidos)
+            accuracy_parlay = (len(ganados) / evaluados * 100) if evaluados else 0.0
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{accuracy_parlay:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy parlays</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#4ade80">{len(ganados)}</div>'
+                            f'<div class="metric-lbl">✅ Ganados</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#f87171">{len(perdidos)}</div>'
+                            f'<div class="metric-lbl">❌ Perdidos</div></div>', unsafe_allow_html=True)
+            with c4:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{len(pendientes_p)}</div>'
+                            f'<div class="metric-lbl">⏳ Pendientes</div></div>', unsafe_allow_html=True)
+
+            st.markdown("---")
+            for parlay in historial_parlays:
+                resultado_p = parlay.get("resultado", "pendiente")
+                icono = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳"}.get(resultado_p, "⏳")
+                color = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827"}.get(resultado_p, "#111827")
+                borde = {"ganado": "#2d6b45", "perdido": "#6b2d2d", "pendiente": "#1f4a2e"}.get(resultado_p, "#1f4a2e")
+
+                selecciones_p = parlay.get("selecciones", [])
+                if isinstance(selecciones_p, str):
+                    import json as _json
+                    try:
+                        selecciones_p = _json.loads(selecciones_p)
+                    except Exception:
+                        selecciones_p = []
+
+                patas_html = "".join(
+                    f'<div style="font-size:0.72rem;color:#e8f0ea;margin-top:0.15rem">'
+                    f'{flag(s.get("local",""))} {s.get("local","")} vs {s.get("visitante","")} — '
+                    f'<span style="color:#f0c040">{s.get("mercado","")}</span> → {s.get("seleccion","")} '
+                    f'<span style="color:#4ade80">({s.get("confianza",0):.0f}%)</span></div>'
+                    for s in selecciones_p
+                )
+                st.markdown(
+                    f'<div style="background:{color};border:1px solid {borde};border-radius:10px;'
+                    f'padding:0.8rem 1rem;margin-bottom:0.6rem">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                    f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">{icono} {parlay.get("fecha","")} '
+                    f'— {parlay.get("n_partidos", len(selecciones_p))} partidos</span>'
+                    f'<span style="font-size:0.7rem;color:#e5007d">Prob. combinada: {parlay.get("prob_combinada",0):.1f}%</span>'
+                    f'</div>{patas_html}</div>',
+                    unsafe_allow_html=True,
+                )
+        st.markdown(
+            '<div class="model-note">🎟️ Un parlay del día "pierde" si al menos una pata falla, y '
+            '"gana" solo si TODAS las patas aciertan. Las patas de Tarjetas/Córners quedan '
+            '"pendientes" hasta que agregues el dato real a DATOS_REALES_LIGAMX.</div>',
             unsafe_allow_html=True,
         )
 
