@@ -460,6 +460,7 @@ with tab_apuestas:
             )
             r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
             sugs = analizar_apuestas(local, visit, r)  # ya vienen solo las que cumplen 80%+
+            _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
             else:
