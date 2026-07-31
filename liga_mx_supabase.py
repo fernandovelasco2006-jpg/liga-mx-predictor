@@ -237,6 +237,123 @@ def calcular_stats_apuestas(historial: list) -> dict:
     }
 
 
+def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, prob_combinada: float) -> bool:
+    """
+    Guarda EL parlay del día (una sola fila por fecha) combinando la
+    mejor apuesta de cada partido del día. selecciones = lista de dicts
+    con local, visitante, jornada, mercado, seleccion, confianza.
+    """
+    if not (url and key) or len(selecciones) < 2:
+        return False
+    ahora = datetime.now(TZ_MX)
+    parlay_id = f"parlay_{fecha}"
+    payload = {
+        "id": parlay_id,
+        "fecha": fecha,
+        "creado_en": ahora.strftime("%Y-%m-%d %H:%M"),
+        "selecciones": selecciones,
+        "prob_combinada": round(prob_combinada, 1),
+        "n_partidos": len(selecciones),
+        "resultado": "pendiente",
+    }
+    try:
+        chk = requests.get(
+            f"{url}/rest/v1/parlays_historial_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"id": f"eq.{parlay_id}", "select": "id"},
+            timeout=5,
+        )
+        if chk.status_code == 200 and not chk.json():
+            requests.post(f"{url}/rest/v1/parlays_historial_ligamx", headers=_headers(key), json=payload, timeout=5)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def cargar_historial_parlays(url: str, key: str) -> list:
+    """Trae todos los parlays diarios guardados, más recientes primero."""
+    if not (url and key):
+        return []
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/parlays_historial_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "*", "order": "fecha.desc", "limit": 200},
+            timeout=10,
+        )
+        return resp.json() if resp.status_code == 200 else []
+    except Exception:
+        return []
+
+
+def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) -> int:
+    """
+    Revisa cada parlay pendiente: si TODAS sus patas ya tienen
+    resultado real, evalúa cada una y marca el parlay completo como
+    'ganado' (si todas acertaron) o 'perdido' (si al menos una falló).
+    Si falta el resultado de algún partido de la pata, o falta el dato
+    real de tarjetas/córners para evaluar esa pata, se queda pendiente.
+    """
+    if not (url and key):
+        return 0
+    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/parlays_historial_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "*", "resultado": "eq.pendiente", "limit": 100},
+            timeout=10,
+        )
+        pendientes = resp.json() if resp.status_code == 200 else []
+    except Exception:
+        return 0
+
+    actualizados = 0
+    for parlay in pendientes:
+        selecciones = parlay.get("selecciones", [])
+        if isinstance(selecciones, str):
+            import json as _json
+            try:
+                selecciones = _json.loads(selecciones)
+            except Exception:
+                continue
+
+        estados = []
+        for sel in selecciones:
+            clave = (sel.get("local"), sel.get("visitante"))
+            resultado = mapa_resultados.get(clave)
+            if resultado is None:
+                estados.append(None)
+                continue
+            gh, ga = resultado
+            datos = DATOS_REALES_LIGAMX.get(f"{sel.get('local')}_{sel.get('visitante')}", {})
+            acierto = evaluar_acierto(sel, sel.get("local"), sel.get("visitante"), gh, ga,
+                                       am_reales=datos.get("am"), co_reales=datos.get("co"))
+            estados.append(acierto)
+
+        if any(e is False for e in estados):
+            nuevo_resultado = "perdido"
+        elif estados and all(e is True for e in estados):
+            nuevo_resultado = "ganado"
+        else:
+            continue  # sigue pendiente
+
+        try:
+            requests.patch(
+                f"{url}/rest/v1/parlays_historial_ligamx",
+                headers=_headers(key, prefer=""),
+                params={"id": f"eq.{parlay['id']}"},
+                json={"resultado": nuevo_resultado},
+                timeout=8,
+            )
+            actualizados += 1
+        except Exception:
+            continue
+    return actualizados
+
+
 def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -> int:
     """
     Recorre PARTIDOS ya jugados y actualiza el campo 'acierto' de
