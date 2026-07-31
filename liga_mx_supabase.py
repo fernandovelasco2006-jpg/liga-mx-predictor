@@ -171,6 +171,34 @@ def evaluar_acierto(apuesta: dict, local: str, visit: str, gh: int, ga: int,
                     return goles_totales <= umbral
         return None
 
+    if mercado == "Empate Sin Apuesta":
+        if gh == ga:
+            return None  # empate → se reembolsa el stake, no cuenta como acierto ni fallo
+        if local in sel:
+            return gh > ga
+        if visit in sel:
+            return ga > gh
+        return None
+
+    if mercado == "Hándicap Asiático":
+        if "-1.0" in sel:
+            umbral_cubre, umbral_empuje = 2, 1
+        elif "-2.0" in sel:
+            umbral_cubre, umbral_empuje = 3, 2
+        else:
+            return None
+        if local in sel:
+            diferencia = gh - ga
+        elif visit in sel:
+            diferencia = ga - gh
+        else:
+            return None
+        if diferencia >= umbral_cubre:
+            return True
+        if diferencia == umbral_empuje:
+            return None  # empuje → se reembolsa el stake
+        return False
+
     if mercado == "Ambos Marcan":
         ambos = gh > 0 and ga > 0
         if "Sí" in sel:
