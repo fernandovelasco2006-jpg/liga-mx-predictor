@@ -265,6 +265,65 @@ def calcular_stats_apuestas(historial: list) -> dict:
     }
 
 
+def calcular_stats_por_mercado(historial: list, minimo_evaluadas: int = 3) -> list:
+    """
+    Panel de auto-calibración: compara, mercado por mercado, la confianza
+    que dijo el modelo (promedio de "confianza" al momento de sugerir la
+    apuesta) contra el acierto REAL una vez que el partido ya se jugó.
+
+    Si el modelo está bien calibrado, "confianza promedio" y "acierto
+    real" deberían andar parecidos (ej. dice 85% y acierta ~85% de las
+    veces). Si un mercado acierta bastante MENOS de lo que dice, es señal
+    de que ese mercado específico está sobre-confiado y su umbral (o su
+    fórmula) debería revisarse; si acierta MÁS de lo que dice, el modelo
+    se está quedando corto ahí y hay margen para bajar el umbral con
+    confianza.
+
+    minimo_evaluadas: no se reporta un mercado hasta que tenga al menos
+    este número de apuestas YA evaluadas (con resultado real) — con
+    1-2 casos la tasa de acierto no dice nada todavía, es puro ruido.
+
+    Devuelve una lista de dicts, uno por mercado, ordenada de mayor a
+    menor "brecha" (|confianza_promedio - accuracy_real|) — así lo
+    primero que se ve es el mercado que más se aleja de lo prometido.
+    """
+    por_mercado = {}
+    for a in historial:
+        merc = a.get("mercado", "Desconocido")
+        por_mercado.setdefault(merc, []).append(a)
+
+    filas = []
+    for merc, apuestas_merc in por_mercado.items():
+        evaluadas = [a for a in apuestas_merc if a.get("acierto") is not None]
+        pendientes = [a for a in apuestas_merc if a.get("acierto") is None]
+        if len(evaluadas) < minimo_evaluadas:
+            continue
+        aciertos = [a for a in evaluadas if a["acierto"]]
+        accuracy_real = len(aciertos) / len(evaluadas) * 100
+        confianza_promedio = sum(a.get("confianza", 0) for a in evaluadas) / len(evaluadas)
+        brecha = confianza_promedio - accuracy_real
+        if brecha > 5:
+            diagnostico = "⚠️ Sobre-confiado — acierta menos de lo que dice"
+        elif brecha < -5:
+            diagnostico = "📈 Conservador — acierta más de lo que dice"
+        else:
+            diagnostico = "✅ Bien calibrado"
+        filas.append({
+            "mercado": merc,
+            "n_evaluadas": len(evaluadas),
+            "n_pendientes": len(pendientes),
+            "aciertos": len(aciertos),
+            "fallos": len(evaluadas) - len(aciertos),
+            "accuracy_real": round(accuracy_real, 1),
+            "confianza_promedio": round(confianza_promedio, 1),
+            "brecha": round(brecha, 1),
+            "diagnostico": diagnostico,
+        })
+
+    filas.sort(key=lambda f: abs(f["brecha"]), reverse=True)
+    return filas
+
+
 def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, prob_combinada: float) -> bool:
     """
     Guarda EL parlay del día (una sola fila por fecha) combinando la
