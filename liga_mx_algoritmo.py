@@ -73,6 +73,29 @@ def _tau_dixon_coles(x: int, y: int, lam: float, mu: float, rho: float = RHO_DIX
         return 1 - rho
     return 1.0
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# SHRINKAGE PROGRESIVO — el tope de "Forma real" y "Momentum vía Elo" no
+# debería ser el mismo con 2 partidos jugados que con 15. Con pocos datos,
+# un equipo que anotó 2 goles de más en su único partido podría ser pura
+# suerte; con muchos partidos, la señal ya es confiable. En vez de un tope
+# fijo ±8% desde el partido 1, el tope escala linealmente de 0 hasta
+# TOPE_MAX_FORMA conforme el equipo acumula partidos jugados en el
+# torneo, hasta llegar al tope completo en PARTIDOS_PARA_TOPE_COMPLETO.
+# ─────────────────────────────────────────────────────────────────────────
+TOPE_MAX_FORMA = 0.08
+PARTIDOS_PARA_TOPE_COMPLETO = 10
+
+
+def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
+                     partidos_para_completo: int = PARTIDOS_PARA_TOPE_COMPLETO) -> float:
+    """Tope dinámico (0 a tope_max) según cuántos partidos reales lleva
+    jugados el equipo en el torneo — 0 partidos = 0 de tope (sin dato,
+    sin ajuste), tope_max a partir de partidos_para_completo."""
+    if partidos_jugados <= 0:
+        return 0.0
+    return tope_max * min(partidos_jugados / partidos_para_completo, 1.0)
+
 _elo_promedio = sum(ELO.values()) / len(ELO)
 
 FUERZA_ATAQUE = {
@@ -310,16 +333,18 @@ def calcular_lambdas(home_team: str, away_team: str,
     lam_home = (ataque_home / LIGA_PROMEDIO_GOLES) * (defensa_away / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
     lam_away = (ataque_away / LIGA_PROMEDIO_GOLES) * (defensa_home / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
 
-    # 1b. Forma real — ajusta con goles reales, tope +-8% (mismo criterio
-    # que usabas en FORMA_MUNDIAL del Mundial-predictor)
+    # 1b. Forma real — ajusta con goles reales, tope progresivo (ver
+    # _tope_shrinkage): empieza en 0 con pocos partidos jugados y llega a
+    # TOPE_MAX_FORMA (±8%) recién a partir de PARTIDOS_PARA_TOPE_COMPLETO.
     forma = _forma_real_liga_mx()
     for equipo in (home_team, away_team):
         gf, gc, pj = forma.get(equipo, (0, 0, 0))
         if pj > 0:
             avg_gf = gf / pj
             avg_gc = gc / pj
-            f_of = max(1.0 + min((avg_gf - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, 0.08), 0.92)
-            f_def = max(1.0 + min((avg_gc - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, 0.08), 0.92)
+            tope = _tope_shrinkage(pj)
+            f_of = max(1.0 + min((avg_gf - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, tope), 1.0 - tope)
+            f_def = max(1.0 + min((avg_gc - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, tope), 1.0 - tope)
             if equipo == home_team:
                 lam_home *= f_of
                 lam_away *= f_def
@@ -332,12 +357,17 @@ def calcular_lambdas(home_team: str, away_team: str,
     # temporada. Si un equipo viene rindiendo por encima de lo esperado
     # (ganó partidos cerrados que "no debía" ganar, o goleó a rivales
     # fuertes), su Elo sube y este factor empuja su λ un poco más arriba
-    # — tope ±8%, mismo criterio que Forma real, para no desestabilizar
-    # el modelo con pocos partidos jugados.
+    # — mismo tope progresivo que Forma real (ver _tope_shrinkage), por
+    # equipo: cada uno usa el tope que le corresponde según SUS partidos
+    # jugados, no un tope parejo para ambos.
     delta_elo_home = ELO_ACTUALIZADO.get(home_team, _elo_promedio_actualizado) - ELO_BASE.get(home_team, _elo_promedio_actualizado)
     delta_elo_away = ELO_ACTUALIZADO.get(away_team, _elo_promedio_actualizado) - ELO_BASE.get(away_team, _elo_promedio_actualizado)
-    ajuste_elo_home = max(min(delta_elo_home / 1000, 0.08), -0.08) * peso_forma_elo
-    ajuste_elo_away = max(min(delta_elo_away / 1000, 0.08), -0.08) * peso_forma_elo
+    pj_home = forma.get(home_team, (0, 0, 0))[2]
+    pj_away = forma.get(away_team, (0, 0, 0))[2]
+    tope_elo_home = _tope_shrinkage(pj_home)
+    tope_elo_away = _tope_shrinkage(pj_away)
+    ajuste_elo_home = max(min(delta_elo_home / 1000, tope_elo_home), -tope_elo_home) * peso_forma_elo
+    ajuste_elo_away = max(min(delta_elo_away / 1000, tope_elo_away), -tope_elo_away) * peso_forma_elo
     lam_home *= (1.0 + ajuste_elo_home)
     lam_away *= (1.0 + ajuste_elo_away)
 
