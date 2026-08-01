@@ -77,9 +77,9 @@ PARTIDOS = [
     ('Santos Laguna', 'Atlas', 2, 'Estadio TSM Corona', (0, 1), 'Martin Molina Astorga'),
     ('Necaxa', 'Monterrey', 2, 'Estadio Victoria', (2, 1), 'Ivan Antonio Lopez Sanchez'),
     ('Pachuca', 'Queretaro', 2, 'Estadio Hidalgo', (1, 2), 'Maximiliano Quintero Hernandez'),
-    ('Puebla', 'Guadalajara', 3, 'Estadio Cuauhtemoc', None, 'Adonai Escobedo Gonzalez'),
-    ('FC Juarez', 'Pumas UNAM', 3, 'Estadio Olimpico Benito Juarez', None, 'Mario Terrazas Chavez'),
-    ('Atletico San Luis', 'Tijuana', 3, 'Estadio Libertad Financiera', None, 'Vicente Jassiel Reynoso Arce'),
+    ('Puebla', 'Guadalajara', 3, 'Estadio Cuauhtemoc', (1, 1), 'Adonai Escobedo Gonzalez'),
+    ('FC Juarez', 'Pumas UNAM', 3, 'Estadio Olimpico Benito Juarez', (1, 5), 'Mario Terrazas Chavez'),
+    ('Atletico San Luis', 'Tijuana', 3, 'Estadio Libertad Financiera', (0, 0), 'Vicente Jassiel Reynoso Arce'),
     ('Queretaro', 'Tigres', 3, 'Estadio Corregidora', None, 'Katia Itzel Garcia Mendoza'),
     ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', None, 'Jorge Abraham Camacho Peregrina'),
     ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', None, 'Fernando Hernandez Gomez'),
@@ -446,6 +446,13 @@ ARBITROS_LIGA_MX = {
     "Ismael Rosario Lopez Peñuelas":   (4.5, 11),  # pitó la Final de Ida del Clausura 2026
     "Karen Hernandez Andrade":         (3.50, 10),  # rojas prom. 0.22/partido
     "Victor Alfonso Caceres Hernandez":(3.89, 10),  # rojas prom. 0.22/partido
+    # Los siguientes 2 vienen del promedio histórico que muestra la ficha
+    # del árbitro en Sofascore (no de nuestro propio conteo Clausura
+    # 2026 partido a partido como los de arriba) — por eso el "partidos
+    # dirigidos" se deja en 1: solo estoy seguro de que ese promedio
+    # aplica desde su partido de Jornada 3 (que sí confirmé a mano).
+    "Vicente Jassiel Reynoso Arce":    (3.63, 1),
+    "Mario Terrazas Chavez":           (4.74, 1),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 6 conocidos, como fallback razonable
 
@@ -574,6 +581,15 @@ DATOS_REALES_LIGAMX = {
     "Tigres_Atletico San Luis":   {"am": 3,  "co": 12, "ro": 0},  # 2 TIG + 1 ASL | 9 TIG + 3 ASL
     "Necaxa_Monterrey":           {"am": 4,  "co": 5,  "ro": 1},  # 2 NEC + 2 MTY | 4 NEC + 1 MTY | 0 NEC + 1 MTY roja
     "Pachuca_Queretaro":          {"am": 5,  "co": 7,  "ro": 0},  # 2 PAC + 3 QRO | 1 PAC + 6 QRO
+
+    # Jornada 3 — resultados y estadísticas confirmados (fuente: Sofascore)
+    "Atletico San Luis_Tijuana":  {"am": 3,  "co": 6,  "ro": 0},  # 1 ASL + 2 TIJ | 5 ASL + 1 TIJ
+    "FC Juarez_Pumas UNAM":       {"am": 3,  "co": 2,  "ro": 0},  # 2 JUA + 1 PUM | 2 JUA + 0 PUM
+    # Puebla_Guadalajara: córners confirmados (1 PUE + 7 GDL = 8), pero
+    # Sofascore no mostró la fila de tarjetas en el resumen que me diste
+    # (sí la mostró para los otros 2 partidos) — no metí "am"/"ro" para
+    # no inventar el dato; complétalo si lo consigues.
+    "Puebla_Guadalajara":         {"co": 8},
 }
 
 # ─────────────────────────────────────────────────────────────────────────
