@@ -80,9 +80,9 @@ PARTIDOS = [
     ('Puebla', 'Guadalajara', 3, 'Estadio Cuauhtemoc', (1, 1), 'Adonai Escobedo Gonzalez'),
     ('FC Juarez', 'Pumas UNAM', 3, 'Estadio Olimpico Benito Juarez', (1, 5), 'Mario Terrazas Chavez'),
     ('Atletico San Luis', 'Tijuana', 3, 'Estadio Libertad Financiera', (0, 0), 'Vicente Jassiel Reynoso Arce'),
-    ('Queretaro', 'Tigres', 3, 'Estadio Corregidora', None, 'Katia Itzel Garcia Mendoza'),
-    ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', None, 'Jorge Abraham Camacho Peregrina'),
-    ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', None, 'Fernando Hernandez Gomez'),
+    ('Queretaro', 'Tigres', 3, 'Estadio Corregidora', (3, 2), 'Katia Itzel Garcia Mendoza'),
+    ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', (0, 2), 'Jorge Abraham Camacho Peregrina'),
+    ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', (1, 0), 'Fernando Hernandez Gomez'),
     ('Cruz Azul', 'Atlante', 3, 'Estadio Banorte', None, 'Abraham De Jesus Quirarte Contreras'),
     ('America', 'Santos Laguna', 3, 'Estadio Banorte', None, 'Victor Alfonso Caceres Hernandez'),
     ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', None, 'Jesus Rafael Lopez Valle'),
@@ -453,6 +453,9 @@ ARBITROS_LIGA_MX = {
     # aplica desde su partido de Jornada 3 (que sí confirmé a mano).
     "Vicente Jassiel Reynoso Arce":    (3.63, 1),
     "Mario Terrazas Chavez":           (4.74, 1),
+    "Katia Itzel Garcia Mendoza":      (3.85, 1),
+    "Jorge Abraham Camacho Peregrina": (4.52, 1),
+    "Fernando Hernandez Gomez":        (4.82, 1),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 6 conocidos, como fallback razonable
 
@@ -590,6 +593,10 @@ DATOS_REALES_LIGAMX = {
     # (sí la mostró para los otros 2 partidos) — no metí "am"/"ro" para
     # no inventar el dato; complétalo si lo consigues.
     "Puebla_Guadalajara":         {"co": 8},
+
+    "Queretaro_Tigres":           {"am": 9,  "co": 17, "ro": 0},  # 6 QRO + 3 TIG | 6 QRO + 11 TIG
+    "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
+    "Leon_Pachuca":               {"am": 11, "co": 10, "ro": 1},  # 4 LEO + 7 PAC | 4 LEO + 6 PAC | 0 LEO + 1 PAC roja
 }
 
 # ─────────────────────────────────────────────────────────────────────────
