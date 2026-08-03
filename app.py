@@ -117,7 +117,7 @@ Apuesta responsablemente y solo en plataformas legales. Debes ser mayor de edad 
 st.markdown("""
 <div class="hero">
   <div class="hero-title">LIGA MX · APERTURA 2026</div>
-  <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · ELO + Altitud + Árbitro</div>
+  <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · ELO + Altitud + Árbitro + Clima</div>
 </div>""", unsafe_allow_html=True)
 
 BANDERAS_EQUIPO = {
