@@ -27,11 +27,22 @@ except ImportError:
     SUPABASE_MODULO_DISPONIBLE = False
 
 try:
+    from liga_mx_clima import obtener_clima_partido, factor_clima as _calc_factor_clima
+    CLIMA_MODULO_DISPONIBLE = True
+except ImportError:
+    CLIMA_MODULO_DISPONIBLE = False
+
+try:
     SUPABASE_URL = st.secrets.get("SUPABASE_URL_LIGAMX", None)
     SUPABASE_KEY = st.secrets.get("SUPABASE_KEY_LIGAMX", None)
 except Exception:
     SUPABASE_URL = os.environ.get("SUPABASE_URL_LIGAMX", None)
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY_LIGAMX", None)
+
+try:
+    WEATHER_API_KEY = st.secrets.get("WEATHER_API_KEY", None)
+except Exception:
+    WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
 
 SUPABASE_DISPONIBLE = SUPABASE_MODULO_DISPONIBLE and SUPABASE_URL and SUPABASE_KEY
 
@@ -172,9 +183,10 @@ if SUPABASE_DISPONIBLE and not st.session_state.get("aciertos_lm_actualizados"):
 # la página. Cacheado 1 hora para no re-simular 10M por cada visitante.
 # ─────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
-def _simular_partido_cached(local, visit, n, peso_elo, peso_altitud, peso_arbitro):
+def _simular_partido_cached(local, visit, n, peso_elo, peso_altitud, peso_arbitro, factor_clima=1.0):
     return simular_partido(local, visit, n=n, peso_elo=peso_elo,
-                            peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
+                            peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
+                            factor_clima=factor_clima)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -189,6 +201,23 @@ def _mercados_suspendidos_cached():
         return frozenset()
     historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
     return frozenset(calcular_mercados_suspendidos(historial))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CLIMA — temperatura/humedad/lluvia del partido, vía Visual Crossing.
+# Cacheado 1 hora: mismo criterio que las simulaciones (un pronóstico no
+# cambia de un minuto a otro, y no queremos gastar cuota de la API en
+# cada rerun de Streamlit).
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _factor_clima_cached(local, visit):
+    if not (CLIMA_MODULO_DISPONIBLE and WEATHER_API_KEY):
+        return 1.0, None
+    fecha_hora = HORARIOS_PARTIDO.get((local, visit))
+    if not fecha_hora:
+        return 1.0, None
+    clima = obtener_clima_partido(local, fecha_hora, WEATHER_API_KEY)
+    return _calc_factor_clima(clima), clima
 
 
 def _partidos_de_hoy():
@@ -225,7 +254,8 @@ if partidos_hoy_global:
         for local, visit, jornada, estadio, resultado, arbitro in partidos_hoy_global:
             horario = HORARIOS_PARTIDO.get((local, visit), "")
             hora_str = horario[11:] if horario else ""
-            r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
+            _fc, _ = _factor_clima_cached(local, visit)
+            r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc)
             sugs_hoy = analizar_apuestas(local, visit, r_hoy, mercados_suspendidos=_mercados_suspendidos_cached())
             _registrar_apuestas_sesion(local, visit, jornada, sugs_hoy, r=r_hoy, resultado_real=None)
             sugs_alta_hoy = [s for s in sugs_hoy if s["nivel"] == "ALTA"]
@@ -346,8 +376,10 @@ with tab_pred:
 
         if btn or resultado_real:
             with st.spinner(f"Simulando {N_SIMS_PARTIDO:,} partidos..."):
+                _fc, _clima_info = _factor_clima_cached(local, visit)
                 r = simular_partido(local, visit, n=N_SIMS_PARTIDO,
-                                     peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+                                     peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
+                                     factor_clima=_fc)
 
             pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
             st.markdown(
@@ -403,6 +435,13 @@ with tab_pred:
                 f'Árbitro: {r["arbitro"]} · Tarjetas totales esp. (roja=2pts): {r["tarjetas_totales_esp"]}</div>',
                 unsafe_allow_html=True,
             )
+            if _clima_info:
+                st.markdown(
+                    f'<div class="model-note">🌤️ Clima en {local}: {_clima_info.get("temp_c")}°C · '
+                    f'humedad {_clima_info.get("humedad_pct")}% · prob. lluvia {_clima_info.get("prob_lluvia_pct")}% · '
+                    f'{_clima_info.get("condiciones", "")} · factor aplicado a λ: ×{_fc:.3f}</div>',
+                    unsafe_allow_html=True,
+                )
 
             st.markdown("<br>", unsafe_allow_html=True)
             sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())
@@ -483,7 +522,8 @@ with tab_apuestas:
                 f'<span style="font-size:0.7rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
                 unsafe_allow_html=True,
             )
-            r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
+            _fc_dia, _ = _factor_clima_cached(local, visit)
+            r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc_dia)
             sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())  # ya vienen solo las que cumplen 80%+
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
             if not sugs:
