@@ -855,7 +855,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 # según qué tan "cerrado" pinta el partido, un mercado por categoría
 # (para no repetir 3 líneas de córners), y nivel ALTA/MEDIA.
 # ─────────────────────────────────────────────────────────────────────────
-def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
+def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset()) -> list:
     """
     Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
     llega o supera UMBRAL_RECOMENDACION (80%) — un solo criterio parejo
@@ -875,6 +875,12 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
     modelo simula el partido completo con una sola λ de Poisson por
     equipo, no reparte los goles entre primer/segundo tiempo, así que no
     hay datos reales de qué tan probable es cada marcador al descanso.
+
+    mercados_suspendidos: set con nombres de mercado (ej. {"Total Goles"})
+    que se excluyen del resultado aunque hayan cumplido el 80% — viene de
+    liga_mx_supabase.calcular_mercados_suspendidos(), la retroalimentación
+    automática que apaga temporalmente un mercado si su acierto real
+    viene rindiendo muy por debajo de lo que promete.
     """
     apuestas = []
     UMBRAL_RECOMENDACION = 80.0
@@ -1002,6 +1008,8 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict) -> list:
             mejor_por_categoria[cat] = a
 
     filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
+    if mercados_suspendidos:
+        filtradas = [a for a in filtradas if a["mercado"] not in mercados_suspendidos]
     return filtradas
 
 
