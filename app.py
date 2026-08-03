@@ -343,11 +343,30 @@ with tab_pred:
     col_izq, col_der = st.columns([1, 2.5], gap="large")
     with col_izq:
         st.markdown("#### Elige el partido")
-        jornadas = sorted(set(p[2] for p in PARTIDOS))
-        jornada_sel = st.selectbox("Jornada", jornadas, index=0, key="jornada_pred")
-        partidos_j = [p for p in PARTIDOS if p[2] == jornada_sel]
+
+        filtro_estado = st.radio(
+            "Estado", ["⏳ Por jugarse", "✓ Jugados"],
+            horizontal=True, key="filtro_estado_pred", label_visibility="collapsed",
+        )
+        es_por_jugarse = filtro_estado == "⏳ Por jugarse"
+        partidos_filtrados = [p for p in PARTIDOS if (p[4] is None) == es_por_jugarse]
+
+        if not partidos_filtrados:
+            # fallback: si la categoría elegida está vacía (ej. "Jugados" al
+            # arrancar la temporada), no se rompe nada — se usa la otra.
+            st.caption(f"No hay partidos {filtro_estado.split(' ', 1)[1].lower()} todavía — mostrando la otra categoría.")
+            partidos_filtrados = [p for p in PARTIDOS if (p[4] is None) != es_por_jugarse]
+
+        jornadas = sorted(set(p[2] for p in partidos_filtrados))
+        # "Por jugarse" arranca en la jornada más próxima (index 0, ya que
+        # jornadas está ordenado ascendente). "Jugados" arranca en la más
+        # reciente en vez de la Jornada 1 — es lo que casi siempre se quiere
+        # revisar.
+        idx_default = 0 if es_por_jugarse else len(jornadas) - 1
+        jornada_sel = st.selectbox("Jornada", jornadas, index=idx_default, key=f"jornada_pred_{filtro_estado}")
+        partidos_j = [p for p in partidos_filtrados if p[2] == jornada_sel]
         opciones = {f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}": i for i, p in enumerate(partidos_j)}
-        lbl_sel = st.selectbox("Partido", list(opciones.keys()), key="partido_pred")
+        lbl_sel = st.selectbox("Partido", list(opciones.keys()), key=f"partido_pred_{filtro_estado}_{jornada_sel}")
         idx_sel = opciones[lbl_sel]
         local, visit, jornada, estadio, resultado_real, arbitro = partidos_j[idx_sel]
 
