@@ -293,7 +293,8 @@ def calcular_lambdas(home_team: str, away_team: str,
                       peso_elo: float = 1.0,
                       peso_altitud: float = 1.0,
                       peso_arbitro: float = 1.0,
-                      peso_forma_elo: float = 1.0) -> tuple:
+                      peso_forma_elo: float = 1.0,
+                      factor_clima: float = 1.0) -> tuple:
     """
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
@@ -412,6 +413,13 @@ def calcular_lambdas(home_team: str, away_team: str,
         lam_home *= FACTOR_FATIGA_LEAGUES_CUP
     if _jugo_leagues_cup_reciente(away_team, fecha_partido):
         lam_away *= FACTOR_FATIGA_LEAGUES_CUP
+
+    # 5. Clima — factor pequeño y simétrico (afecta al partido completo,
+    # no a un solo equipo). Viene precalculado de liga_mx_clima.factor_clima()
+    # y por defecto es 1.0 (sin ajuste) si no hay API key de clima
+    # configurada o no se pudo consultar.
+    lam_home *= factor_clima
+    lam_away *= factor_clima
 
     return max(lam_home, 0.15), max(lam_away, 0.15)
 
@@ -727,7 +735,7 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
 
 def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
                      peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                     peso_arbitro: float = 1.0) -> dict:
+                     peso_arbitro: float = 1.0, factor_clima: float = 1.0) -> dict:
     """
     Corre N simulaciones Monte Carlo de UN partido (10,000,000 por
     defecto, igual que en tu predictor del Mundial) y agrega
@@ -738,7 +746,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     rng = np.random.default_rng()
     lam_h, lam_a = calcular_lambdas(home_team, away_team,
                                      peso_elo=peso_elo, peso_altitud=peso_altitud,
-                                     peso_arbitro=peso_arbitro)
+                                     peso_arbitro=peso_arbitro, factor_clima=factor_clima)
 
     goles_h = rng.poisson(lam_h, n).astype(np.int32)
     goles_a = rng.poisson(lam_a, n).astype(np.int32)
