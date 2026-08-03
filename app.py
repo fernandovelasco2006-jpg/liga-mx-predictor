@@ -18,7 +18,8 @@ from liga_mx_algoritmo import (
 try:
     from liga_mx_supabase import (
         guardar_prediccion, guardar_apuestas, cargar_historial_apuestas,
-        calcular_stats_apuestas, calcular_stats_por_mercado, actualizar_aciertos_pendientes,
+        calcular_stats_apuestas, calcular_stats_por_mercado, calcular_mercados_suspendidos,
+        actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
     )
     SUPABASE_MODULO_DISPONIBLE = True
@@ -176,6 +177,20 @@ def _simular_partido_cached(local, visit, n, peso_elo, peso_altitud, peso_arbitr
                             peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# RETROALIMENTACIÓN AUTOMÁTICA — trae el historial de apuestas y calcula
+# qué mercados (si alguno) hay que dejar de sugerir por bajo acierto
+# real. Cacheado 15 min (más corto que las simulaciones: esto sí cambia
+# seguido conforme se van evaluando apuestas nuevas jornada a jornada).
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=900, show_spinner=False)
+def _mercados_suspendidos_cached():
+    if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
+        return frozenset()
+    historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
+    return frozenset(calcular_mercados_suspendidos(historial))
+
+
 def _partidos_de_hoy():
     tz_mx = timezone(timedelta(hours=-6))
     hoy = datetime.now(tz_mx).strftime("%Y-%m-%d")
@@ -192,6 +207,16 @@ def _partidos_de_hoy():
 
 hoy, partidos_hoy_global = _partidos_de_hoy()
 
+_mercados_susp = _mercados_suspendidos_cached()
+if _mercados_susp:
+    st.markdown(
+        f'<div class="model-note" style="border-left-color:#c0685a">⏸️ <b>Retroalimentación automática:</b> '
+        f'{", ".join(sorted(_mercados_susp))} — suspendido{"s" if len(_mercados_susp) > 1 else ""} temporalmente '
+        f'de las apuestas sugeridas por bajo acierto real. Se reactiva{"n" if len(_mercados_susp) > 1 else ""} solo '
+        f'en cuanto el acierto se recupere (ver detalle en 🎯 Historial de Apuestas → Auto-calibración).</div>',
+        unsafe_allow_html=True,
+    )
+
 if partidos_hoy_global:
     with st.expander(f"🎰 APUESTAS MÁS FUERTES DE HOY ({hoy}) — Click para ver", expanded=True):
         st.caption("Se calcula automáticamente al abrir la página · solo señales de confianza ALTA")
@@ -201,7 +226,7 @@ if partidos_hoy_global:
             horario = HORARIOS_PARTIDO.get((local, visit), "")
             hora_str = horario[11:] if horario else ""
             r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
-            sugs_hoy = analizar_apuestas(local, visit, r_hoy)
+            sugs_hoy = analizar_apuestas(local, visit, r_hoy, mercados_suspendidos=_mercados_suspendidos_cached())
             _registrar_apuestas_sesion(local, visit, jornada, sugs_hoy, r=r_hoy, resultado_real=None)
             sugs_alta_hoy = [s for s in sugs_hoy if s["nivel"] == "ALTA"]
             if not sugs_alta_hoy:
@@ -380,7 +405,7 @@ with tab_pred:
             )
 
             st.markdown("<br>", unsafe_allow_html=True)
-            sugs = analizar_apuestas(local, visit, r)
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado_real)
             if sugs:
                 st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
@@ -459,7 +484,7 @@ with tab_apuestas:
                 unsafe_allow_html=True,
             )
             r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
-            sugs = analizar_apuestas(local, visit, r)  # ya vienen solo las que cumplen 80%+
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())  # ya vienen solo las que cumplen 80%+
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
