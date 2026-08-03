@@ -84,7 +84,7 @@ PARTIDOS = [
     ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', (0, 2), 'Jorge Abraham Camacho Peregrina'),
     ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', (1, 0), 'Fernando Hernandez Gomez'),
     ('Cruz Azul', 'Atlante', 3, 'Estadio Banorte', None, 'Abraham De Jesus Quirarte Contreras'),
-    ('America', 'Santos Laguna', 3, 'Estadio Banorte', None, 'Victor Alfonso Caceres Hernandez'),
+    ('America', 'Santos Laguna', 3, 'Estadio Azteca', (3, 0), 'Victor Alfonso Caceres Hernandez'),
     ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', None, 'Jesus Rafael Lopez Valle'),
     ('Atlante', 'Toluca', 4, 'Estadio Banorte', None, None),
     ('Monterrey', 'FC Juarez', 4, 'Estadio BBVA', None, None),
@@ -597,6 +597,7 @@ DATOS_REALES_LIGAMX = {
     "Queretaro_Tigres":           {"am": 9,  "co": 17, "ro": 0},  # 6 QRO + 3 TIG | 6 QRO + 11 TIG
     "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
     "Leon_Pachuca":               {"am": 11, "co": 10, "ro": 1},  # 4 LEO + 7 PAC | 4 LEO + 6 PAC | 0 LEO + 1 PAC roja
+    "America_Santos Laguna":      {"am": 1,  "co": 15, "ro": 0},  # 0 AME + 1 SAN | 4 AME + 11 SAN
 }
 
 # ─────────────────────────────────────────────────────────────────────────
