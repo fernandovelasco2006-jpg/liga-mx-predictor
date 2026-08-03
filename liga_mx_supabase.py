@@ -324,6 +324,41 @@ def calcular_stats_por_mercado(historial: list, minimo_evaluadas: int = 3) -> li
     return filas
 
 
+def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 5,
+                                   piso_accuracy: float = 65.0, brecha_maxima: float = 15.0) -> set:
+    """
+    RETROALIMENTACIÓN AUTOMÁTICA: decide qué mercados debe DEJAR de
+    sugerir el modelo por el momento, usando el mismo panel de
+    auto-calibración (calcular_stats_por_mercado) pero convertido en una
+    regla accionable en vez de solo un reporte para leer.
+
+    Un mercado se suspende si, con al menos `minimo_evaluadas` apuestas
+    YA evaluadas (resultado real conocido):
+      - su acierto real cae por debajo de `piso_accuracy` (65% por
+        defecto — un mercado que decía 80%+ pero acierta menos de 65%
+        de las veces está claramente mal calibrado, no es solo mala
+        suerte), O
+      - la brecha entre lo que prometió y lo que cumplió supera
+        `brecha_maxima` puntos (15 por defecto).
+
+    minimo_evaluadas=5 aquí es MÁS ALTO que el 3 que usa el panel
+    informativo — suspender un mercado es una decisión con consecuencia
+    real (deja de aparecer en apuestas sugeridas), así que pide más
+    evidencia antes de actuar que solo mostrar un número en un reporte.
+
+    CLAVE: esto se recalcula desde cero cada vez que se llama, nunca
+    queda un mercado "marcado" de forma permanente. En cuanto entren más
+    resultados y el acierto real se recupere por encima del piso, el
+    mercado se vuelve a sugerir automáticamente solo, sin tocar código.
+    """
+    stats = calcular_stats_por_mercado(historial, minimo_evaluadas=minimo_evaluadas)
+    suspendidos = set()
+    for fm in stats:
+        if fm["accuracy_real"] < piso_accuracy or fm["brecha"] > brecha_maxima:
+            suspendidos.add(fm["mercado"])
+    return suspendidos
+
+
 def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, prob_combinada: float) -> bool:
     """
     Guarda EL parlay del día (una sola fila por fecha) combinando la
