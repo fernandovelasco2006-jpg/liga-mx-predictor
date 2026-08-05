@@ -694,7 +694,7 @@ from collections import Counter
 from liga_mx_predictor_skeleton import CORNERS_EQUIPO, CORNERS_DEFAULT
 
 PROMEDIO_LIGA_AMARILLAS = 4.3
-PROMEDIO_LIGA_ROJAS = 0.15   # ⚠️ placeholder — no hay dato real de rojas por árbitro todavía
+PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.15 (placeholder sin datos)
 
 
 def _factor_tarjetas_equipo(equipo: str) -> float:
