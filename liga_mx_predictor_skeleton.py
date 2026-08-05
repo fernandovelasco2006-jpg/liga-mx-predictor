@@ -83,9 +83,9 @@ PARTIDOS = [
     ('Queretaro', 'Tigres', 3, 'Estadio Corregidora', (3, 2), 'Katia Itzel Garcia Mendoza'),
     ('Atlas', 'Monterrey', 3, 'Estadio Jalisco', (0, 2), 'Jorge Abraham Camacho Peregrina'),
     ('Leon', 'Pachuca', 3, 'Estadio Nou Camp', (1, 0), 'Fernando Hernandez Gomez'),
-    ('Cruz Azul', 'Atlante', 3, 'Estadio Banorte', None, 'Abraham De Jesus Quirarte Contreras'),
+    ('Cruz Azul', 'Atlante', 3, 'Estadio Ciudad de los Deportes', (2, 3), 'Abraham De Jesus Quirarte Contreras'),
     ('America', 'Santos Laguna', 3, 'Estadio Azteca', (3, 0), 'Victor Alfonso Caceres Hernandez'),
-    ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', None, 'Jesus Rafael Lopez Valle'),
+    ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', (3, 1), 'Jesus Rafael Lopez Valle'),
     ('Atlante', 'Toluca', 4, 'Estadio Banorte', None, None),
     ('Monterrey', 'FC Juarez', 4, 'Estadio BBVA', None, None),
     ('Atlas', 'Tigres', 4, 'Estadio Jalisco', None, None),
@@ -456,6 +456,8 @@ ARBITROS_LIGA_MX = {
     "Katia Itzel Garcia Mendoza":      (3.85, 1),
     "Jorge Abraham Camacho Peregrina": (4.52, 1),
     "Fernando Hernandez Gomez":        (4.82, 1),
+    "Jesus Rafael Lopez Valle":        (4.71, 1),
+    "Abraham De Jesus Quirarte Contreras": (5.41, 1),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 6 conocidos, como fallback razonable
 
@@ -598,6 +600,8 @@ DATOS_REALES_LIGAMX = {
     "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
     "Leon_Pachuca":               {"am": 11, "co": 10, "ro": 1},  # 4 LEO + 7 PAC | 4 LEO + 6 PAC | 0 LEO + 1 PAC roja
     "America_Santos Laguna":      {"am": 1,  "co": 15, "ro": 0},  # 0 AME + 1 SAN | 4 AME + 11 SAN
+    "Cruz Azul_Atlante":          {"am": 3,  "co": 12, "ro": 0},  # 2 CAZ + 1 ATL | 7 CAZ + 5 ATL
+    "Toluca_Necaxa":              {"am": 5,  "co": 8,  "ro": 2},  # 1 TOL + 4 NEC | 6 TOL + 2 NEC | 0 TOL + 2 NEC rojas
 }
 
 # ─────────────────────────────────────────────────────────────────────────
