@@ -458,6 +458,10 @@ ARBITROS_LIGA_MX = {
     "Fernando Hernandez Gomez":        (4.82, 1),
     "Jesus Rafael Lopez Valle":        (4.71, 1),
     "Abraham De Jesus Quirarte Contreras": (5.41, 1),
+    "Ivan Antonio Lopez Sanchez":      (5.61, 16),
+    "Luis Enrique Santander Aguirre":  (3.87, 18),
+    "Marco Antonio Ortiz Nava":        (4.92, 14),
+    "Maximiliano Quintero Hernandez":  (4.25, 8),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 6 conocidos, como fallback razonable
 
@@ -496,6 +500,81 @@ CORNERS_EQUIPO = {
     "Tijuana":            3.71,
 }
 CORNERS_DEFAULT = 5.26  # promedio real de liga (antes 4.5, estimado)
+
+# ─────────────────────────────────────────────────────────────────────────
+# CORNERS_EQUIPO_CONTRA — córners que CONCEDE cada equipo (al rival), no
+# los que genera. Estos datos NO son oficiales — el proveedor de Perplexity
+# no tiene esta métrica desglosada públicamente para Clausura 2026, así
+# que se construyó por ingeniería inversa del calendario cruzado: los
+# córners que un equipo generó de visitante se le contaron como
+# "concedidos" al local de ese partido, y viceversa. Es una aproximación
+# razonable, no un dato duro — reemplázalo si alguna vez consigues la
+# métrica real (FotMob/WhoScored suelen tenerla).
+# Convertido a promedio por partido (÷17). Atlante hereda de Mazatlán,
+# mismo criterio que el resto de las estadísticas del Clausura 2026.
+# ─────────────────────────────────────────────────────────────────────────
+CORNERS_EQUIPO_CONTRA = {
+    "Toluca":             3.59,
+    "Tigres":             3.88,
+    "Cruz Azul":          3.76,
+    "Guadalajara":        4.06,
+    "Pachuca":            4.18,
+    "America":            4.24,
+    "Pumas UNAM":         4.29,
+    "Monterrey":          4.47,
+    "Tijuana":            4.59,
+    "FC Juarez":          4.76,
+    "Atlante":            4.94,   # ⚠️ heredado de Mazatlán
+    "Santos Laguna":      4.88,
+    "Necaxa":             5.00,
+    "Leon":               5.12,
+    "Queretaro":          5.18,
+    "Atletico San Luis":  5.24,
+    "Atlas":              5.35,
+    "Puebla":             5.82,
+}
+CORNERS_DEFAULT_CONTRA = 4.63  # promedio real de liga (concedidos)
+
+# ─────────────────────────────────────────────────────────────────────────
+# FUERZA_ATAQUE/DEFENSA separado por LOCAL y VISITA — Clausura 2026, 18
+# equipos, verificado dígito por dígito contra los totales oficiales de
+# temporada (GF/GC ya cargados en FUERZA_ATAQUE_BASE/FUERZA_DEFENSA_BASE):
+# para cada equipo, gf_local+gf_visita y gc_local+gc_visita cuadran exacto
+# con el total real, así que se confía en el desglose. Fuente: consulta a
+# IA con verificación cruzada obligatoria contra los totales oficiales —
+# no es una fuente primaria (tipo FotMob), así que si alguna vez consigues
+# el dato de una fuente oficial (Liga MX, ESPN, Transfermarkt), reemplázalo.
+# Valores YA convertidos a promedio por partido (goles / partidos jugados
+# en esa categoría, local o visita).
+# ─────────────────────────────────────────────────────────────────────────
+FUERZA_ATAQUE_LOCAL = {
+    "America": 10/9, "Atlante": 14/8, "Atlas": 10/9, "Atletico San Luis": 14/9,
+    "Cruz Azul": 16/8, "Guadalajara": 20/8, "FC Juarez": 14/8, "Leon": 14/8,
+    "Monterrey": 13/9, "Necaxa": 10/9, "Pachuca": 16/9, "Puebla": 9/9,
+    "Pumas UNAM": 20/9, "Queretaro": 12/9, "Santos Laguna": 11/8, "Tijuana": 8/8,
+    "Tigres": 16/8, "Toluca": 16/8,
+}
+FUERZA_ATAQUE_VISITA = {
+    "America": 10/8, "Atlante": 8/9, "Atlas": 6/8, "Atletico San Luis": 10/8,
+    "Cruz Azul": 15/9, "Guadalajara": 13/9, "FC Juarez": 12/9, "Leon": 8/9,
+    "Monterrey": 9/8, "Necaxa": 9/8, "Pachuca": 9/8, "Puebla": 4/8,
+    "Pumas UNAM": 14/8, "Queretaro": 5/8, "Santos Laguna": 9/9, "Tijuana": 11/9,
+    "Tigres": 12/9, "Toluca": 12/9,
+}
+FUERZA_DEFENSA_LOCAL = {
+    "America": 11/9, "Atlante": 16/8, "Atlas": 7/9, "Atletico San Luis": 12/9,
+    "Cruz Azul": 6/8, "Guadalajara": 3/8, "FC Juarez": 14/8, "Leon": 12/8,
+    "Monterrey": 14/9, "Necaxa": 10/9, "Pachuca": 9/9, "Puebla": 13/9,
+    "Pumas UNAM": 10/9, "Queretaro": 9/9, "Santos Laguna": 12/8, "Tijuana": 6/8,
+    "Tigres": 6/8, "Toluca": 6/8,
+}
+FUERZA_DEFENSA_VISITA = {
+    "America": 6/8, "Atlante": 21/9, "Atlas": 11/8, "Atletico San Luis": 15/8,
+    "Cruz Azul": 12/9, "Guadalajara": 14/9, "FC Juarez": 18/9, "Leon": 20/9,
+    "Monterrey": 10/8, "Necaxa": 15/8, "Pachuca": 10/8, "Puebla": 13/8,
+    "Pumas UNAM": 7/8, "Queretaro": 12/8, "Santos Laguna": 26/9, "Tijuana": 11/9,
+    "Tigres": 12/9, "Toluca": 10/9,
+}
 
 # Remates totales y remates a puerta por equipo (mismo origen)
 REMATES_TOTALES_EQUIPO = {
