@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from liga_mx_predictor_skeleton import (
     EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
     ARBITROS_LIGA_MX, ARBITRO_DEFAULT,
+    FUERZA_ATAQUE_LOCAL, FUERZA_ATAQUE_VISITA, FUERZA_DEFENSA_LOCAL, FUERZA_DEFENSA_VISITA,
 )
 from liga_mx_elo_update import (
     actualizar_elo, actualizar_fuerza_ataque_defensa,
@@ -95,6 +96,26 @@ def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
     if partidos_jugados <= 0:
         return 0.0
     return tope_max * min(partidos_jugados / partidos_para_completo, 1.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# SESGO LOCAL/VISITA — cuánto mejor/peor rinde un equipo jugando en casa
+# vs. de visita, respecto a SU PROPIO promedio de temporada (Clausura
+# 2026). Viene de una fuente externa verificada contra los totales
+# oficiales (ver FUERZA_ATAQUE_LOCAL/VISITA en el skeleton), pero con
+# solo 8-9 partidos por categoría es una muestra chica — se topa a ±20%
+# para no sobre-corregir con ruido.
+# ─────────────────────────────────────────────────────────────────────────
+TOPE_SESGO_LOCAL_VISITA = 0.20
+
+
+def _razon_capada(valor: float, base: float, tope: float = TOPE_SESGO_LOCAL_VISITA) -> float:
+    """valor/base, acotado a [1-tope, 1+tope]. Si falta cualquiera de los
+    dos datos, devuelve 1.0 (sin ajuste)."""
+    if not valor or not base or base <= 0:
+        return 1.0
+    razon = valor / base
+    return max(1.0 - tope, min(1.0 + tope, razon))
 
 _elo_promedio = sum(ELO.values()) / len(ELO)
 
@@ -204,17 +225,29 @@ _PROMEDIO_LIGA_AMARILLAS_EQUIPO = sum(v[0] / v[2] for v in TARJETAS_EQUIPO_LIGAM
 # fatiga cuando un equipo jugó Leagues Cup en los 7 días previos a su
 # siguiente partido de Liga MX (relevante sobre todo para la Jornada 4,
 # 15-17 de agosto, justo después de esta fase de grupos).
+#
+# CUARTOS DE FINAL (25-27 agosto): solo 4 equipos de Liga MX avanzaron —
+# América (vs Columbus Crew), León (vs Real Salt Lake), Monterrey (vs
+# Chicago Fire FC) y Toluca (vs Austin FC). La hora exacta de cada
+# partido de cuartos todavía no está confirmada, así que se agregaron
+# las 3 fechas posibles (25/26/27) como candidatas — no afecta la
+# precisión del cálculo de fatiga, solo amplía un poco la ventana.
+# Si alguno de estos 4 avanza a semis (1-2 sep) o final (6 sep), hay que
+# agregar esas fechas también cuando se confirme.
 # ─────────────────────────────────────────────────────────────────────────
 LEAGUES_CUP_FECHAS = {
-    "America":            ["2026-08-06", "2026-08-09", "2026-08-13"],
+    "America":            ["2026-08-06", "2026-08-09", "2026-08-13",
+                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Columbus Crew (fecha exacta TBD)
     "Atlante":            ["2026-08-04", "2026-08-08", "2026-08-11"],
     "Atlas":              ["2026-08-04", "2026-08-07", "2026-08-11"],
     "Atletico San Luis":  ["2026-08-05", "2026-08-09", "2026-08-12"],
     "Cruz Azul":          ["2026-08-06", "2026-08-09", "2026-08-13"],
     "FC Juarez":          ["2026-08-04", "2026-08-07", "2026-08-11"],
     "Guadalajara":        ["2026-08-05", "2026-08-08", "2026-08-12"],
-    "Leon":               ["2026-08-05", "2026-08-08", "2026-08-12"],
-    "Monterrey":          ["2026-08-05", "2026-08-08", "2026-08-12"],
+    "Leon":               ["2026-08-05", "2026-08-08", "2026-08-12",
+                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Real Salt Lake (fecha exacta TBD)
+    "Monterrey":          ["2026-08-05", "2026-08-08", "2026-08-12",
+                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Chicago Fire FC (fecha exacta TBD)
     "Necaxa":             ["2026-08-06", "2026-08-09", "2026-08-13"],
     "Pachuca":            ["2026-08-04", "2026-08-07", "2026-08-11"],
     "Puebla":             ["2026-08-06", "2026-08-09", "2026-08-12"],
@@ -223,7 +256,8 @@ LEAGUES_CUP_FECHAS = {
     "Santos Laguna":      ["2026-08-06", "2026-08-09", "2026-08-13"],
     "Tigres":             ["2026-08-04", "2026-08-07", "2026-08-11"],
     "Tijuana":            ["2026-08-06", "2026-08-09", "2026-08-13"],
-    "Toluca":             ["2026-08-05", "2026-08-08", "2026-08-12"],
+    "Toluca":             ["2026-08-05", "2026-08-08", "2026-08-12",
+                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Austin FC (fecha exacta TBD)
 }
 FACTOR_FATIGA_LEAGUES_CUP = 0.90   # -10% lambda ofensivo, como pediste
 
@@ -294,7 +328,8 @@ def calcular_lambdas(home_team: str, away_team: str,
                       peso_altitud: float = 1.0,
                       peso_arbitro: float = 1.0,
                       peso_forma_elo: float = 1.0,
-                      factor_clima: float = 1.0) -> tuple:
+                      factor_clima: float = 1.0,
+                      peso_local_visita: float = 1.0) -> tuple:
     """
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
@@ -302,6 +337,11 @@ def calcular_lambdas(home_team: str, away_team: str,
          FUERZA_DEFENSA_ACTUALIZADA (ver liga_mx_elo_update.py): estos
          valores se recalibran solos con media móvil exponencial cada vez
          que agregas un resultado real a PARTIDOS.
+      1a. Sesgo local/visita — ajuste acotado (±20%) según qué tan mejor/
+         peor rinde CADA equipo jugando en casa vs. de visita, respecto a
+         su propio promedio de temporada (Clausura 2026, verificado contra
+         los totales oficiales). El local usa su sesgo de local, el
+         visitante el suyo de visitante — nunca se mezclan.
       1c. Momentum vía Elo — ajuste adicional y acotado (±8%) basado en
          cuánto se movió el Elo de cada equipo (actualizar_elo(), fórmula
          Elo estándar con ventaja de local y multiplicador por goleada)
@@ -332,6 +372,18 @@ def calcular_lambdas(home_team: str, away_team: str,
     defensa_home = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(home_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
     ataque_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_ATAQUE.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
     defensa_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
+
+    # 1a. Sesgo local/visita — el equipo LOCAL usa su propio sesgo "jugando
+    # en casa", el VISITANTE usa su propio sesgo "jugando fuera". No se
+    # mezclan (el sesgo de local de un equipo no le aplica cuando visita).
+    razon_ataque_home = _razon_capada(FUERZA_ATAQUE_LOCAL.get(home_team), FUERZA_ATAQUE_BASE.get(home_team))
+    razon_defensa_home = _razon_capada(FUERZA_DEFENSA_LOCAL.get(home_team), FUERZA_DEFENSA_BASE.get(home_team))
+    razon_ataque_away = _razon_capada(FUERZA_ATAQUE_VISITA.get(away_team), FUERZA_ATAQUE_BASE.get(away_team))
+    razon_defensa_away = _razon_capada(FUERZA_DEFENSA_VISITA.get(away_team), FUERZA_DEFENSA_BASE.get(away_team))
+    ataque_home *= 1.0 + peso_local_visita * (razon_ataque_home - 1.0)
+    defensa_home *= 1.0 + peso_local_visita * (razon_defensa_home - 1.0)
+    ataque_away *= 1.0 + peso_local_visita * (razon_ataque_away - 1.0)
+    defensa_away *= 1.0 + peso_local_visita * (razon_defensa_away - 1.0)
 
     # Modelo clásico tipo Dixon-Coles: goles esperados del local
     # dependen de SU ataque y de la defensa del VISITANTE (y viceversa).
@@ -691,7 +743,9 @@ def simular_temporada_montecarlo(n: int = 1000,
 # por defecto (igual que el Mundial), usando calcular_lambdas().
 # ─────────────────────────────────────────────────────────────────────────
 from collections import Counter
-from liga_mx_predictor_skeleton import CORNERS_EQUIPO, CORNERS_DEFAULT
+from liga_mx_predictor_skeleton import (
+    CORNERS_EQUIPO, CORNERS_DEFAULT, CORNERS_EQUIPO_CONTRA, CORNERS_DEFAULT_CONTRA,
+)
 
 PROMEDIO_LIGA_AMARILLAS = 4.3
 PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.15 (placeholder sin datos)
@@ -807,7 +861,17 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     del diff
 
     # ── Córners: varias líneas, igual que el Mundial ──────────────────
-    corners_esp = CORNERS_EQUIPO.get(home_team, CORNERS_DEFAULT) + CORNERS_EQUIPO.get(away_team, CORNERS_DEFAULT)
+    # Córners: ataque × defensa (mismo criterio que los goles) en vez de
+    # solo sumar los córners "a favor" de cada equipo — ahora sí se
+    # considera que un equipo con defensa sólida le baja los córners al
+    # rival, y uno flojo se los sube.
+    co_favor_home = CORNERS_EQUIPO.get(home_team, CORNERS_DEFAULT)
+    co_favor_away = CORNERS_EQUIPO.get(away_team, CORNERS_DEFAULT)
+    co_contra_home = CORNERS_EQUIPO_CONTRA.get(home_team, CORNERS_DEFAULT_CONTRA)
+    co_contra_away = CORNERS_EQUIPO_CONTRA.get(away_team, CORNERS_DEFAULT_CONTRA)
+    corners_esp_home = co_favor_home * (co_contra_away / CORNERS_DEFAULT_CONTRA)
+    corners_esp_away = co_favor_away * (co_contra_home / CORNERS_DEFAULT_CONTRA)
+    corners_esp = corners_esp_home + corners_esp_away
     corners_sim = rng.poisson(corners_esp, n).astype(np.int32)
     prob_corners_over65 = float(np.mean(corners_sim > 6) * 100)
     prob_corners_over75 = float(np.mean(corners_sim > 7) * 100)
