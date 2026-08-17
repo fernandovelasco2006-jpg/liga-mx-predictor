@@ -695,6 +695,24 @@ DATOS_REALES_LIGAMX = {
     "America_Santos Laguna":      {"am": 1,  "co": 15, "ro": 0},  # 0 AME + 1 SAN | 4 AME + 11 SAN
     "Cruz Azul_Atlante":          {"am": 3,  "co": 12, "ro": 0},  # 2 CAZ + 1 ATL | 7 CAZ + 5 ATL
     "Toluca_Necaxa":              {"am": 5,  "co": 8,  "ro": 2},  # 1 TOL + 4 NEC | 6 TOL + 2 NEC | 0 TOL + 2 NEC rojas
+
+    # Jornada 4 — resultados y estadísticas confirmados (fuente: BSD /
+    # Bzzoiro Sports Data, verificado en vivo agosto 2026). Los valores
+    # "am"/"ro" de BSD cuentan CADA tarjeta como evento individual —
+    # incluye la amarilla previa a una expulsión por doble amarilla o
+    # roja directa tras revisión VAR (ver Atlas_Tigres: la roja de J.
+    # Purata por "professional foul last man" viene junto con la
+    # amarilla que la originó), así que el total puede ser 1 más que el
+    # resumen "Yellow cards X/Y" que muestra el box score de Sofascore.
+    "Atlante_Toluca":             {"am": 2, "co": 15, "ro": 0},
+    "Monterrey_FC Juarez":        {"am": 0, "co": 10, "ro": 0},
+    "Atlas_Tigres":               {"am": 4, "co": 18, "ro": 1},
+    "Pumas UNAM_Queretaro":       {"am": 4, "co": 7,  "ro": 0},
+    "America_Atletico San Luis":  {"am": 3, "co": 15, "ro": 0},
+    "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 0},
+    "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0},
+    # Pendientes de la Jornada 4: Necaxa_Leon y Pachuca_Puebla (aún no
+    # se juegan a la fecha de esta actualización).
 }
 
 # ─────────────────────────────────────────────────────────────────────────
