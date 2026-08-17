@@ -28,4 +28,5 @@ jobs:
           SUPABASE_URL_LIGAMX: ${{ secrets.SUPABASE_URL_LIGAMX }}
           SUPABASE_KEY_LIGAMX: ${{ secrets.SUPABASE_KEY_LIGAMX }}
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python liga_mx_analisis_semanal.py
