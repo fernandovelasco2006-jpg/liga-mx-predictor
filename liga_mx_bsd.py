@@ -76,8 +76,16 @@ MAPA_NOMBRES_BSD_A_PROYECTO = {
     "Santos Laguna": "Santos Laguna", "Santos": "Santos Laguna",
     "Tijuana": "Tijuana", "Club Tijuana": "Tijuana", "Xolos": "Tijuana",
     "Tigres": "Tigres", "Tigres UANL": "Tigres",
-    "Toluca": "Toluca", "Deportivo Toluca": "Toluca",
+    "Toluca": "Toluca", "Deportivo Toluca": "Toluca", "CD Toluca": "Toluca",
 }
+
+# Mazatlán FC es el nombre histórico con el que BSD todavía identifica
+# la franquicia que ahora juega como Atlante (reubicación de club, no
+# equipo nuevo) — mismo criterio que ya usa liga_mx_predictor_skeleton.py
+# al heredar datos de Mazatlán para Atlante mientras no hay suficiente
+# historial propio.
+MAPA_NOMBRES_BSD_A_PROYECTO["Mazatlán FC"] = "Atlante"
+MAPA_NOMBRES_BSD_A_PROYECTO["Mazatlan FC"] = "Atlante"
 
 
 def _traducir_nombre_equipo(nombre_bsd: str) -> str:
@@ -141,7 +149,8 @@ def _resolver_nombre_arbitro(api_key: str, referee_id) -> str:
 
 def obtener_resultados_jornada(api_key: str, jornada: int,
                                 league_id: int = LEAGUE_ID_APERTURA,
-                                resolver_arbitros: bool = True) -> list:
+                                resolver_arbitros: bool = True,
+                                dias_ventana: int = 21) -> list:
     """
     Trae todos los partidos de una jornada (round_number). Devuelve una
     lista de dicts:
@@ -156,18 +165,30 @@ def obtener_resultados_jornada(api_key: str, jornada: int,
         automático, con caché en memoria para no repetir).
       - status observado en partidos futuros: "notstarted". El valor
         para partidos terminados aún no se ha confirmado contra un
-        response real — se compara con "finished" como mejor estimado;
-        generar_actualizacion_pendiente() also acepta cualquier partido
-        con home_score/away_score no nulos como señal alternativa de
-        que sí terminó, por si el valor exacto de status difiere.
+        response real — generar_actualizacion_pendiente() usa
+        home_score/away_score no nulos como señal de que ya terminó,
+        más robusto que depender de un string exacto de status.
       - round_number SÍ viene en la respuesta, pero no está confirmado
         como parámetro de filtro aceptado por el endpoint — por eso se
-        trae con paginación y se filtra en Python, no vía query param.
+        filtra en Python, no vía query param.
+      - date_from/date_to SÍ son parámetros de filtro confirmados
+        (documentación oficial de BSD, formato YYYY-MM-DD) — se usan
+        para acotar la búsqueda a una ventana de fechas alrededor de
+        HOY en vez de recorrer TODA la historia de la liga (miles de
+        partidos), que es lo que causaba que el script se colgara.
+        dias_ventana controla cuántos días hacia atrás y adelante se
+        buscan — 21 cubre de sobra una jornada reciente o próxima sin
+        traer partidos de temporadas pasadas.
     """
+    from datetime import date, timedelta
+    hoy = date.today()
+    date_from = (hoy - timedelta(days=dias_ventana)).isoformat()
+    date_to = (hoy + timedelta(days=dias_ventana)).isoformat()
+
     resultados = []
-    params = {"league_id": league_id, "limit": 100}
+    params = {"league_id": league_id, "limit": 100, "date_from": date_from, "date_to": date_to}
     offset = 0
-    max_paginas = 10  # margen de sobra: una temporada completa son ~17 rondas
+    max_paginas = 5  # con la ventana de fechas acotada, esto es más que suficiente
 
     for _ in range(max_paginas):
         data = _get("events/", api_key, {**params, "offset": offset})
@@ -203,6 +224,8 @@ def obtener_resultados_jornada(api_key: str, jornada: int,
         if not data.get("next"):
             break
         offset += 100
+
+    return resultados
 
     return resultados
 
