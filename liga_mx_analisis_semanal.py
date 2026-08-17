@@ -88,6 +88,54 @@ def _factor_clima_partido(local: str, visit: str, weather_api_key: str):
     return _calc(clima)
 
 
+def revisar_resultados_pendientes_via_api(api_football_key: str) -> dict:
+    """
+    Paso 0 (nuevo): antes de tocar Supabase o simular nada, revisa vía
+    API-Football si hay partidos que en PARTIDOS siguen como (None, None)
+    pero que en la realidad ya se jugaron. NO escribe nada — arma un
+    reporte para que lo revises y lo copies a mano a
+    liga_mx_predictor_skeleton.py, exactamente como ya hicimos con la
+    Jornada 4. Ver liga_mx_api_football.py para el porqué de no
+    auto-escribir.
+
+    Devuelve None si no hay API_FOOTBALL_KEY configurada (el resto del
+    script sigue funcionando igual, solo sin este paso extra).
+    """
+    if not api_football_key:
+        return None
+    try:
+        from liga_mx_api_football import generar_actualizacion_pendiente, imprimir_reporte
+    except ImportError:
+        _log("Aviso: liga_mx_api_football.py no disponible, se omite este paso")
+        return None
+
+    jornada = _proxima_jornada_pendiente()
+    if jornada is None:
+        return None
+
+    try:
+        actualizacion = generar_actualizacion_pendiente(api_football_key, jornada)
+    except Exception as e:
+        _log(f"Aviso: no se pudo consultar API-Football ({e}) — se sigue sin este paso")
+        return None
+
+    partidos_ya_en_skeleton = {(p[0], p[1]) for p in PARTIDOS if p[4] is not None}
+    nuevos = [p for p in actualizacion["partidos_terminados"]
+              if (p["local"], p["visitante"]) not in partidos_ya_en_skeleton]
+
+    if nuevos:
+        _log(f"⚠️ API-Football reporta {len(nuevos)} partido(s) de la Jornada {jornada} "
+             f"YA TERMINADOS que no están cargados en PARTIDOS todavía:")
+        for p in nuevos:
+            _log(f"    {p['local']} {p['gh']}-{p['ga']} {p['visitante']} · árbitro: {p['arbitro']}")
+        _log("  -> Revísalos y agrégalos a liga_mx_predictor_skeleton.py antes de "
+             "confiar en la próxima simulación (o pide que Claude los cargue).")
+    if actualizacion["equipos_no_reconocidos"]:
+        _log(f"⚠️ Equipos no reconocidos por el mapa de nombres: {actualizacion['equipos_no_reconocidos']}")
+
+    return actualizacion
+
+
 def actualizar_aciertos_de_jornadas_pasadas(url: str, key: str):
     """Paso 6 del docstring del módulo: pone al día el historial de
     apuestas/parlays de partidos que YA se jugaron pero cuya apuesta
@@ -177,11 +225,21 @@ def main():
     url = _env("SUPABASE_URL_LIGAMX")
     key = _env("SUPABASE_KEY_LIGAMX")
     weather_key = _env("WEATHER_API_KEY")
+    api_football_key = _env("API_FOOTBALL_KEY")
 
     if not (url and key):
         _log("AVISO: SUPABASE_URL_LIGAMX / SUPABASE_KEY_LIGAMX no configuradas — "
              "el análisis correrá pero NO se guardará nada. Configúralas como "
              "variables de entorno o secrets del cron para persistir resultados.")
+
+    # 0. Revisa (sin escribir nada) si hay resultados reales nuevos que
+    # falten cargar a mano en PARTIDOS — ver revisar_resultados_pendientes_via_api().
+    if api_football_key:
+        _log("Paso 0/2 — Revisando resultados nuevos vía API-Football...")
+        revisar_resultados_pendientes_via_api(api_football_key)
+    else:
+        _log("Aviso: API_FOOTBALL_KEY no configurada — se omite la revisión "
+             "automática de resultados nuevos (seguirás cargándolos a mano).")
 
     # 1. Al día con lo que ya se jugó antes de generar predicciones nuevas.
     if url and key:
