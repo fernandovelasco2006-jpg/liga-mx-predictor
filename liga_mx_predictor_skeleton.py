@@ -86,11 +86,11 @@ PARTIDOS = [
     ('Cruz Azul', 'Atlante', 3, 'Estadio Ciudad de los Deportes', (2, 3), 'Abraham De Jesus Quirarte Contreras'),
     ('America', 'Santos Laguna', 3, 'Estadio Azteca', (3, 0), 'Victor Alfonso Caceres Hernandez'),
     ('Toluca', 'Necaxa', 3, 'Estadio Nemesio Diez', (3, 1), 'Jesus Rafael Lopez Valle'),
-    ('Atlante', 'Toluca', 4, 'Estadio Banorte', None, None),
-    ('Monterrey', 'FC Juarez', 4, 'Estadio BBVA', None, None),
-    ('Atlas', 'Tigres', 4, 'Estadio Jalisco', None, None),
-    ('Pumas UNAM', 'Queretaro', 4, 'Estadio Olimpico Universitario', None, None),
-    ('America', 'Atletico San Luis', 4, 'Estadio Banorte', None, None),
+    ('Atlante', 'Toluca', 4, 'Estadio Banorte', (0, 0), 'Salvador Perez Villalobos'),
+    ('Monterrey', 'FC Juarez', 4, 'Estadio BBVA', (6, 1), 'Luis Alfredo Garcia Rodriguez'),
+    ('Atlas', 'Tigres', 4, 'Estadio Jalisco', (2, 1), 'Cesar Arturo Ramos Palazuelos'),
+    ('Pumas UNAM', 'Queretaro', 4, 'Estadio Olimpico Universitario', (0, 0), 'Karen Hernandez Andrade'),
+    ('America', 'Atletico San Luis', 4, 'Estadio Banorte', (3, 0), 'Maximiliano Quintero Hernandez'),
     ('Santos Laguna', 'Guadalajara', 4, 'Estadio TSM Corona', None, None),
     ('Tijuana', 'Cruz Azul', 4, 'Estadio Caliente', None, None),
     ('Necaxa', 'Leon', 4, 'Estadio Victoria', None, None),
@@ -441,16 +441,22 @@ ELO = {
 ARBITROS_LIGA_MX = {
     # "Nombre": (promedio_amarillas, partidos_dirigidos_Clausura2026)
     "Daniel Quintero Huitron":         (4.8, 15),
-    "Cesar Arturo Ramos Palazuelos":   (4.1, 14),
+    # Actualizado con el promedio histórico Sofascore mostrado en su
+    # ficha tras dirigir Atlas-Tigres (J4): Avg. cards 4.37 — reemplaza
+    # el valor anterior (4.1), que era nuestra propia media Clausura
+    # 2026 partido a partido; se prioriza el dato de Sofascore por venir
+    # de una muestra más amplia (histórico, no solo un torneo).
+    "Cesar Arturo Ramos Palazuelos":   (4.37, 15),
     "Adonai Escobedo Gonzalez":        (5.2, 11),
     "Ismael Rosario Lopez Peñuelas":   (4.5, 11),  # pitó la Final de Ida del Clausura 2026
-    "Karen Hernandez Andrade":         (3.50, 10),  # rojas prom. 0.22/partido
+    # Actualizado con Sofascore tras Pumas-Querétaro (J4): Avg. cards 3.60.
+    "Karen Hernandez Andrade":         (3.60, 11),  # rojas prom. 0.20/partido
     "Victor Alfonso Caceres Hernandez":(3.89, 10),  # rojas prom. 0.22/partido
-    # Los siguientes 2 vienen del promedio histórico que muestra la ficha
+    # Los siguientes vienen del promedio histórico que muestra la ficha
     # del árbitro en Sofascore (no de nuestro propio conteo Clausura
     # 2026 partido a partido como los de arriba) — por eso el "partidos
-    # dirigidos" se deja en 1: solo estoy seguro de que ese promedio
-    # aplica desde su partido de Jornada 3 (que sí confirmé a mano).
+    # dirigidos" se deja bajo: solo estoy seguro de que ese promedio
+    # aplica desde el partido donde lo confirmé a mano.
     "Vicente Jassiel Reynoso Arce":    (3.63, 1),
     "Mario Terrazas Chavez":           (4.74, 1),
     "Katia Itzel Garcia Mendoza":      (3.85, 1),
@@ -461,9 +467,15 @@ ARBITROS_LIGA_MX = {
     "Ivan Antonio Lopez Sanchez":      (5.61, 16),
     "Luis Enrique Santander Aguirre":  (3.87, 18),
     "Marco Antonio Ortiz Nava":        (4.92, 14),
-    "Maximiliano Quintero Hernandez":  (4.25, 8),
+    # Actualizado con Sofascore tras Monterrey-FC Juárez (J4): Avg. cards 3.73.
+    "Luis Alfredo Garcia Rodriguez":   (3.73, 1),
+    # Actualizado con Sofascore tras América-Atlético San Luis (J4): Avg. cards 4.47.
+    "Maximiliano Quintero Hernandez":  (4.47, 9),
+    # NUEVO — debutó en Liga MX (para efectos de este modelo) dirigiendo
+    # Atlante-Toluca (J4). Avg. cards histórico Sofascore: 5.00.
+    "Salvador Perez Villalobos":       (5.00, 1),
 }
-ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los 6 conocidos, como fallback razonable
+ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los conocidos, como fallback razonable
 
 # ─────────────────────────────────────────────────────────────────────────
 # CÓRNERS Y REMATES — proyección basada en plantillas actuales y estilo
