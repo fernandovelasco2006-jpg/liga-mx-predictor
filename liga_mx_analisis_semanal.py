@@ -131,10 +131,21 @@ def revisar_resultados_pendientes_via_api(bsd_api_key: str) -> dict:
     if nuevos:
         _log(f"⚠️ BSD reporta {len(nuevos)} partido(s) de la Jornada {jornada} "
              f"YA TERMINADOS que no están cargados en PARTIDOS todavía:")
+        _log("")
+        _log("  — Copia esto a PARTIDOS en liga_mx_predictor_skeleton.py —")
         for p in nuevos:
-            _log(f"    {p['local']} {p['gh']}-{p['ga']} {p['visitante']} · árbitro: {p['arbitro']}")
-        _log("  -> Revísalos y agrégalos a liga_mx_predictor_skeleton.py antes de "
-             "confiar en la próxima simulación (o pide que Claude los cargue).")
+            estadio_actual = next((pp[3] for pp in PARTIDOS if pp[0] == p["local"] and pp[1] == p["visitante"]), "")
+            _log(f"    ('{p['local']}', '{p['visitante']}', {jornada}, '{estadio_actual}', "
+                 f"({p['gh']}, {p['ga']}), '{p['arbitro'] or ''}'),")
+        _log("")
+        _log("  — Copia esto a DATOS_REALES_LIGAMX (si trae am/co/ro) —")
+        for p in nuevos:
+            campos = {k: p[k] for k in ("am", "co", "ro") if k in p}
+            if campos:
+                clave = f"{p['local']}_{p['visitante']}"
+                _log(f"    \"{clave}\": {campos},")
+        _log("")
+        _log("  -> Revísalo antes de copiarlo (o pide que Claude lo cargue).")
     if actualizacion["equipos_no_reconocidos"]:
         _log(f"⚠️ Equipos no reconocidos por el mapa de nombres: {actualizacion['equipos_no_reconocidos']}")
 
