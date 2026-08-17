@@ -91,8 +91,8 @@ PARTIDOS = [
     ('Atlas', 'Tigres', 4, 'Estadio Jalisco', (2, 1), 'Cesar Arturo Ramos Palazuelos'),
     ('Pumas UNAM', 'Queretaro', 4, 'Estadio Olimpico Universitario', (0, 0), 'Karen Hernandez Andrade'),
     ('America', 'Atletico San Luis', 4, 'Estadio Banorte', (3, 0), 'Maximiliano Quintero Hernandez'),
-    ('Santos Laguna', 'Guadalajara', 4, 'Estadio TSM Corona', None, None),
-    ('Tijuana', 'Cruz Azul', 4, 'Estadio Caliente', None, None),
+    ('Santos Laguna', 'Guadalajara', 4, 'Estadio TSM Corona', (0, 1), 'Vicente Jassiel Reynoso Arce'),
+    ('Tijuana', 'Cruz Azul', 4, 'Estadio Caliente', (2, 1), 'Victor Alfonso Caceres Hernandez'),
     ('Necaxa', 'Leon', 4, 'Estadio Victoria', None, None),
     ('Pachuca', 'Puebla', 4, 'Estadio Hidalgo', None, None),
     ('Puebla', 'Santos Laguna', 5, 'Estadio Cuauhtemoc', None, None),
@@ -451,13 +451,15 @@ ARBITROS_LIGA_MX = {
     "Ismael Rosario Lopez Peñuelas":   (4.5, 11),  # pitó la Final de Ida del Clausura 2026
     # Actualizado con Sofascore tras Pumas-Querétaro (J4): Avg. cards 3.60.
     "Karen Hernandez Andrade":         (3.60, 11),  # rojas prom. 0.20/partido
-    "Victor Alfonso Caceres Hernandez":(3.89, 10),  # rojas prom. 0.22/partido
+    # Actualizado con Sofascore tras Tijuana-Cruz Azul (J4): Avg. cards 3.85.
+    "Victor Alfonso Caceres Hernandez":(3.85, 11),  # rojas prom. 0.23/partido
     # Los siguientes vienen del promedio histórico que muestra la ficha
     # del árbitro en Sofascore (no de nuestro propio conteo Clausura
     # 2026 partido a partido como los de arriba) — por eso el "partidos
     # dirigidos" se deja bajo: solo estoy seguro de que ese promedio
     # aplica desde el partido donde lo confirmé a mano.
-    "Vicente Jassiel Reynoso Arce":    (3.63, 1),
+    # Actualizado con Sofascore tras Santos Laguna-Guadalajara (J4): Avg. cards 3.61.
+    "Vicente Jassiel Reynoso Arce":    (3.61, 2),
     "Mario Terrazas Chavez":           (4.74, 1),
     "Katia Itzel Garcia Mendoza":      (3.85, 1),
     "Jorge Abraham Camacho Peregrina": (4.52, 1),
