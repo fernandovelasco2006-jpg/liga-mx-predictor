@@ -1,0 +1,31 @@
+name: Análisis semanal Liga MX
+
+# Corre automáticamente cada lunes 12:00 UTC (6:00 AM hora Ciudad de
+# México) — ajusta el cron si prefieres otro día/hora. También se puede
+# disparar a mano desde la pestaña "Actions" de GitHub con "Run workflow".
+on:
+  schedule:
+    - cron: "0 12 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  analisis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Correr análisis semanal
+        env:
+          SUPABASE_URL_LIGAMX: ${{ secrets.SUPABASE_URL_LIGAMX }}
+          SUPABASE_KEY_LIGAMX: ${{ secrets.SUPABASE_KEY_LIGAMX }}
+          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+        run: python liga_mx_analisis_semanal.py
