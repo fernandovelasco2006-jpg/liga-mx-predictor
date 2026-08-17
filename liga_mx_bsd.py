@@ -227,17 +227,26 @@ def obtener_resultados_jornada(api_key: str, jornada: int,
 
     return resultados
 
-    return resultados
-
 
 def obtener_tarjetas_corners_partido(api_key: str, event_id: int) -> dict:
     """
-    Trae tarjetas amarillas/rojas de un partido vía /incidents/ (conteo
-    cronológico de eventos). BSD marca tarjetas anuladas con
-    "rescinded": true — esas NO se cuentan, mismo criterio que usaría un
-    conteo oficial. Los córners no vienen en /incidents/ (son parte de
-    /stats/ como "corner_kicks" si el proveedor los tiene para esa liga);
-    se intenta ahí como fallback.
+    Trae tarjetas amarillas/rojas de un partido vía /incidents/.
+
+    ESQUEMA REAL CONFIRMADO (agosto 2026, verificado contra la API en
+    vivo con un partido real — Atlante vs Toluca, event_id 211525):
+      - La respuesta NO trae {"results": [...]}, es directo
+        {"event_id": ..., "incidents": [...]}.
+      - Cada tarjeta tiene "type": "card" (no "yellow_card"/"red_card"
+        como se asumía antes) — el color va en un campo separado:
+        "card_type": "yellow" | "red".
+      - No se ha visto todavía un ejemplo con tarjeta anulada por VAR,
+        así que el campo exacto para eso (si existe) sigue sin
+        confirmar — se revisa best-effort por si aparece como
+        "rescinded" o "cancelled", pero no bloquea el conteo si no está.
+
+    Los córners no vienen en /incidents/; se intentan vía /stats/ como
+    antes (ya confirmado funcionando: co=11, co=12, etc. en la prueba
+    real de la Jornada 4).
 
     Devuelve {"am": total, "ro": total, "co": total} — solo con las
     claves que sí se pudieron determinar, igual patrón que
@@ -246,22 +255,30 @@ def obtener_tarjetas_corners_partido(api_key: str, event_id: int) -> dict:
     resultado = {}
 
     incidentes = _get(f"events/{event_id}/incidents/", api_key)
-    if incidentes:
+    lista = incidentes.get("incidents") if isinstance(incidentes, dict) else None
+    if isinstance(lista, list):
         am, ro = 0, 0
-        lista = incidentes.get("results", incidentes) if isinstance(incidentes, dict) else incidentes
-        if isinstance(lista, list):
-            for ev in lista:
-                if ev.get("rescinded"):
-                    continue  # tarjeta anulada en revisión, no cuenta
-                tipo = (ev.get("type") or "").lower()
-                if tipo in ("yellow_card", "yellow-card", "yellow"):
-                    am += 1
-                elif tipo in ("red_card", "red-card", "red", "second_yellow"):
-                    ro += 1
-                    if tipo == "second_yellow":
-                        am += 1  # la segunda amarilla también cuenta como amarilla individual
-            resultado["am"] = am
-            resultado["ro"] = ro
+        for ev in lista:
+            if not isinstance(ev, dict):
+                continue
+            # Best-effort: si algún día aparece un campo de anulación
+            # (VAR revierte la tarjeta), no la contamos. No confirmado
+            # aún contra un ejemplo real — se revisan ambos nombres
+            # plausibles por seguridad.
+            if ev.get("rescinded") or ev.get("cancelled"):
+                continue
+            if ev.get("type") != "card":
+                continue
+            card_type = (ev.get("card_type") or "").lower()
+            if card_type == "yellow":
+                am += 1
+            elif card_type == "red":
+                ro += 1
+            elif card_type in ("second_yellow", "yellow_red"):
+                am += 1
+                ro += 1
+        resultado["am"] = am
+        resultado["ro"] = ro
 
     stats = _get(f"events/{event_id}/stats/", api_key)
     if stats and "stats" in stats:
@@ -290,15 +307,12 @@ def generar_actualizacion_pendiente(api_key: str, jornada: int, league_id: int =
         if r["visitante"] not in MAPA_NOMBRES_BSD_A_PROYECTO.values():
             no_reconocidos.append(r["visitante"])
 
-        # Señal de "ya terminó": el marcador no es nulo. Es más robusto
-        # que comparar r["estado"] contra un string exacto como
-        # "finished", porque ese valor todavía no se ha confirmado
-        # contra un response real de un partido ya jugado (ver docstring
-        # de obtener_resultados_jornada). Si status trae algo como
-        # "live" con marcador parcial, igual se reporta — es
-        # responsabilidad de quien revisa el reporte confirmar que el
-        # partido ya se jugó por completo antes de copiarlo al skeleton.
-        if r["gh"] is not None and r["ga"] is not None:
+        # Señal de "ya terminó": status == "finished" — confirmado
+        # contra un response real (Atlante vs Toluca, event_id 211525,
+        # agosto 2026). Se exige también marcador no nulo como
+        # verificación extra: dos señales coincidiendo dan más
+        # confianza que una sola.
+        if r["estado"] == "finished" and r["gh"] is not None and r["ga"] is not None:
             fila = dict(r)
             if incluir_estadisticas and r["event_id"]:
                 stats = obtener_tarjetas_corners_partido(api_key, r["event_id"])
