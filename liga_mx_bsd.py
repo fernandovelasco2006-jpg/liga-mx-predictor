@@ -1,0 +1,267 @@
+# ─────────────────────────────────────────────────────────────────────────
+# liga_mx_bsd.py — Integración con Bzzoiro Sports Data (BSD,
+# sports.bzzoiro.com) para traer AUTOMÁTICAMENTE resultados, árbitros,
+# tarjetas y córners de cada jornada jugada de Liga MX.
+#
+# POR QUÉ ESTE PROVEEDOR Y NO API-FOOTBALL
+# El plan gratis de API-Football solo cubre 3 temporadas históricas
+# (a la fecha de escribir esto: 2022-2024) — NO incluye la temporada
+# 2026 en curso, así que era inservible para este proyecto. BSD es
+# gratis, sin límite de requests, y cubre la temporada actual completa,
+# incluyendo Liga MX Apertura (id 19) y Clausura (id 20) como ligas
+# separadas — más limpio que API-Football, que las mezcla en una sola
+# "Liga MX" con "rounds".
+#
+# Ver liga_mx_api_football.py (código anterior, aún funcional para otras
+# temporadas si algún día hace falta consultar 2022-2024) — este módulo
+# lo reemplaza como fuente principal para la temporada en curso.
+#
+# CÓMO CONSEGUIR LA API KEY (gratis, sin límite documentado de requests,
+# sin tarjeta):
+#   1. Regístrate en https://sports.bzzoiro.com/register/
+#   2. Ve a tu cuenta y copia el API key.
+#   3. Guárdala como variable de entorno BSD_API_KEY (o en st.secrets si
+#      usas Streamlit) — igual patrón que las demás keys del proyecto.
+#
+# LEAGUE_ID YA CONFIRMADO (verificado en sports.bzzoiro.com/leagues/,
+# agosto 2026):
+#   19 = Liga MX Apertura
+#   20 = Liga MX Clausura
+#
+# QUÉ TRAE:
+#   - obtener_resultados_jornada(): resultados + árbitro + venue de cada
+#     partido de una jornada (round_number).
+#   - obtener_tarjetas_corners_partido(): tarjetas amarillas/rojas y
+#     córners de un partido específico vía /incidents/ (para llenar
+#     DATOS_REALES_LIGAMX).
+#
+# QUÉ NO HACE (a propósito, mismo principio que liga_mx_api_football.py):
+#   Este módulo NUNCA escribe directo en liga_mx_predictor_skeleton.py.
+#   Devuelve los datos en un formato fácil de revisar — la escritura al
+#   archivo la hace un paso separado y explícito.
+# ─────────────────────────────────────────────────────────────────────────
+import os
+import sys
+import time
+import requests
+
+API_BASE = "https://sports.bzzoiro.com/api/v2"
+
+LEAGUE_ID_APERTURA = 19
+LEAGUE_ID_CLAUSURA = 20
+
+# ─────────────────────────────────────────────────────────────────────────
+# MAPA DE NOMBRES — BSD puede usar nombres distintos a los que ya
+# tenemos en EQUIPOS (liga_mx_predictor_skeleton.py). Igual criterio que
+# en liga_mx_api_football.py: traducir explícitamente, avisar si un
+# nombre no se reconoce, nunca adivinar en silencio.
+# ─────────────────────────────────────────────────────────────────────────
+MAPA_NOMBRES_BSD_A_PROYECTO = {
+    "America": "America", "Club America": "America", "Club América": "America",
+    "Atlante": "Atlante", "Atlante FC": "Atlante",
+    "Atlas": "Atlas", "Atlas FC": "Atlas",
+    "Atletico San Luis": "Atletico San Luis", "Atlético San Luis": "Atletico San Luis",
+    "San Luis": "Atletico San Luis",
+    "Cruz Azul": "Cruz Azul",
+    "Guadalajara": "Guadalajara", "Chivas Guadalajara": "Guadalajara", "Chivas": "Guadalajara",
+    "Juarez": "FC Juarez", "FC Juarez": "FC Juarez", "FC Juárez": "FC Juarez", "Club Juarez": "FC Juarez",
+    "Leon": "Leon", "León": "Leon", "Club Leon": "Leon", "Club León": "Leon",
+    "Monterrey": "Monterrey", "CF Monterrey": "Monterrey", "Rayados": "Monterrey",
+    "Necaxa": "Necaxa", "Club Necaxa": "Necaxa",
+    "Pachuca": "Pachuca", "CF Pachuca": "Pachuca",
+    "Puebla": "Puebla", "Club Puebla": "Puebla",
+    "Pumas UNAM": "Pumas UNAM", "Pumas": "Pumas UNAM", "UNAM": "Pumas UNAM",
+    "Queretaro": "Queretaro", "Querétaro": "Queretaro",
+    "Santos Laguna": "Santos Laguna", "Santos": "Santos Laguna",
+    "Tijuana": "Tijuana", "Club Tijuana": "Tijuana", "Xolos": "Tijuana",
+    "Tigres": "Tigres", "Tigres UANL": "Tigres",
+    "Toluca": "Toluca", "Deportivo Toluca": "Toluca",
+}
+
+
+def _traducir_nombre_equipo(nombre_bsd: str) -> str:
+    """Igual criterio que en liga_mx_api_football.py: si no reconoce el
+    nombre, lo deja tal cual y avisa por stderr — nunca cruza en
+    silencio con el equipo equivocado."""
+    if nombre_bsd in MAPA_NOMBRES_BSD_A_PROYECTO:
+        return MAPA_NOMBRES_BSD_A_PROYECTO[nombre_bsd]
+    print(f"AVISO: equipo '{nombre_bsd}' no está en MAPA_NOMBRES_BSD_A_PROYECTO — "
+          f"agrégalo antes de confiar en este dato.", file=sys.stderr)
+    return nombre_bsd
+
+
+def _headers(api_key: str) -> dict:
+    return {"Authorization": f"Token {api_key}"}
+
+
+def _get(endpoint: str, api_key: str, params: dict = None, reintentos: int = 2) -> dict:
+    """GET con reintento simple ante 429 (rate limit)."""
+    url = f"{API_BASE}/{endpoint.lstrip('/')}"
+    for intento in range(reintentos + 1):
+        try:
+            resp = requests.get(url, headers=_headers(api_key), params=params or {}, timeout=10)
+            if resp.status_code == 429 and intento < reintentos:
+                time.sleep(2)
+                continue
+            if resp.status_code == 401:
+                print("ERROR: API key inválida o faltante (401)", file=sys.stderr)
+                return {}
+            if resp.status_code == 402:
+                print("ERROR: este endpoint requiere un plan de pago (402)", file=sys.stderr)
+                return {}
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            if intento < reintentos:
+                time.sleep(2)
+                continue
+            print(f"ERROR llamando {endpoint}: {e}", file=sys.stderr)
+            return {}
+    return {}
+
+
+def obtener_resultados_jornada(api_key: str, jornada: int,
+                                league_id: int = LEAGUE_ID_APERTURA) -> list:
+    """
+    Trae todos los partidos de una jornada (round_number). Devuelve una
+    lista de dicts:
+      {event_id, local, visitante, gh, ga, arbitro, estado, fecha}
+    estado usa los valores de BSD: "upcoming" / "live" / "finished" /
+    "cancelled" / "postponed".
+    """
+    data = _get("events/", api_key, {
+        "league_id": league_id, "limit": 200,
+    })
+    resultados = []
+    for item in data.get("results", []):
+        if item.get("round_number") != jornada:
+            continue
+        home = item.get("home_team", {}) or {}
+        away = item.get("away_team", {}) or {}
+        resultados.append({
+            "event_id": item.get("id"),
+            "local": _traducir_nombre_equipo(home.get("name", "")),
+            "visitante": _traducir_nombre_equipo(away.get("name", "")),
+            "gh": item.get("home_score"),
+            "ga": item.get("away_score"),
+            "arbitro": item.get("referee", {}).get("name") if item.get("referee") else None,
+            "estado": item.get("status"),
+            "fecha": item.get("kickoff_time") or item.get("date"),
+        })
+    return resultados
+
+
+def obtener_tarjetas_corners_partido(api_key: str, event_id: int) -> dict:
+    """
+    Trae tarjetas amarillas/rojas de un partido vía /incidents/ (conteo
+    cronológico de eventos). BSD marca tarjetas anuladas con
+    "rescinded": true — esas NO se cuentan, mismo criterio que usaría un
+    conteo oficial. Los córners no vienen en /incidents/ (son parte de
+    /stats/ como "corner_kicks" si el proveedor los tiene para esa liga);
+    se intenta ahí como fallback.
+
+    Devuelve {"am": total, "ro": total, "co": total} — solo con las
+    claves que sí se pudieron determinar, igual patrón que
+    DATOS_REALES_LIGAMX cuando falta un dato.
+    """
+    resultado = {}
+
+    incidentes = _get(f"events/{event_id}/incidents/", api_key)
+    if incidentes:
+        am, ro = 0, 0
+        lista = incidentes.get("results", incidentes) if isinstance(incidentes, dict) else incidentes
+        if isinstance(lista, list):
+            for ev in lista:
+                if ev.get("rescinded"):
+                    continue  # tarjeta anulada en revisión, no cuenta
+                tipo = (ev.get("type") or "").lower()
+                if tipo in ("yellow_card", "yellow-card", "yellow"):
+                    am += 1
+                elif tipo in ("red_card", "red-card", "red", "second_yellow"):
+                    ro += 1
+                    if tipo == "second_yellow":
+                        am += 1  # la segunda amarilla también cuenta como amarilla individual
+            resultado["am"] = am
+            resultado["ro"] = ro
+
+    stats = _get(f"events/{event_id}/stats/", api_key)
+    if stats and "stats" in stats:
+        home_co = stats["stats"].get("home", {}).get("corner_kicks")
+        away_co = stats["stats"].get("away", {}).get("corner_kicks")
+        if home_co is not None and away_co is not None:
+            resultado["co"] = home_co + away_co
+
+    return resultado
+
+
+def generar_actualizacion_pendiente(api_key: str, jornada: int, league_id: int = LEAGUE_ID_APERTURA,
+                                     incluir_estadisticas: bool = True) -> dict:
+    """
+    Igual función que en liga_mx_api_football.py: junta resultados +
+    estadísticas de los partidos ya finalizados de una jornada, en un
+    dict pensado para REVISAR antes de escribir a mano en
+    liga_mx_predictor_skeleton.py.
+    """
+    resultados = obtener_resultados_jornada(api_key, jornada, league_id)
+    terminados, sin_terminar, no_reconocidos = [], [], []
+
+    for r in resultados:
+        if r["local"] not in MAPA_NOMBRES_BSD_A_PROYECTO.values():
+            no_reconocidos.append(r["local"])
+        if r["visitante"] not in MAPA_NOMBRES_BSD_A_PROYECTO.values():
+            no_reconocidos.append(r["visitante"])
+
+        if r["estado"] == "finished" and r["gh"] is not None:
+            fila = dict(r)
+            if incluir_estadisticas and r["event_id"]:
+                stats = obtener_tarjetas_corners_partido(api_key, r["event_id"])
+                fila.update(stats)
+            terminados.append(fila)
+        else:
+            sin_terminar.append(r)
+
+    return {
+        "jornada": jornada,
+        "partidos_terminados": terminados,
+        "partidos_sin_terminar": sin_terminar,
+        "equipos_no_reconocidos": sorted(set(no_reconocidos)),
+    }
+
+
+def imprimir_reporte(actualizacion: dict):
+    """Mismo formato que liga_mx_api_football.imprimir_reporte(), para
+    que el flujo de revisión manual sea idéntico sin importar cuál de
+    los dos módulos se use."""
+    j = actualizacion["jornada"]
+    print(f"\n── Jornada {j} — partidos terminados ──")
+    for p in actualizacion["partidos_terminados"]:
+        stats = []
+        if "am" in p:
+            stats.append(f"am={p['am']}")
+        if "co" in p:
+            stats.append(f"co={p['co']}")
+        if "ro" in p:
+            stats.append(f"ro={p['ro']}")
+        stats_str = f" [{', '.join(stats)}]" if stats else ""
+        print(f"  {p['local']} {p['gh']}-{p['ga']} {p['visitante']} "
+              f"· árbitro: {p['arbitro'] or 'sin dato'}{stats_str}")
+
+    if actualizacion["partidos_sin_terminar"]:
+        print(f"\n  Sin terminar todavía ({len(actualizacion['partidos_sin_terminar'])}):")
+        for p in actualizacion["partidos_sin_terminar"]:
+            print(f"    {p['local']} vs {p['visitante']} — estado: {p['estado']}")
+
+    if actualizacion["equipos_no_reconocidos"]:
+        print(f"\n  ⚠️ EQUIPOS NO RECONOCIDOS (revisar MAPA_NOMBRES_BSD_A_PROYECTO): "
+              f"{actualizacion['equipos_no_reconocidos']}")
+
+
+if __name__ == "__main__":
+    api_key = os.environ.get("BSD_API_KEY")
+    if not api_key:
+        print("Configura la variable de entorno BSD_API_KEY primero.")
+        sys.exit(1)
+
+    jornada = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+    actualizacion = generar_actualizacion_pendiente(api_key, jornada)
+    imprimir_reporte(actualizacion)
