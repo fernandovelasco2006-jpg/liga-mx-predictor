@@ -88,25 +88,30 @@ def _factor_clima_partido(local: str, visit: str, weather_api_key: str):
     return _calc(clima)
 
 
-def revisar_resultados_pendientes_via_api(api_football_key: str) -> dict:
+def revisar_resultados_pendientes_via_api(bsd_api_key: str) -> dict:
     """
-    Paso 0 (nuevo): antes de tocar Supabase o simular nada, revisa vía
-    API-Football si hay partidos que en PARTIDOS siguen como (None, None)
-    pero que en la realidad ya se jugaron. NO escribe nada — arma un
-    reporte para que lo revises y lo copies a mano a
+    Paso 0: antes de tocar Supabase o simular nada, revisa vía Bzzoiro
+    Sports Data (BSD) si hay partidos que en PARTIDOS siguen como
+    (None, None) pero que en la realidad ya se jugaron. NO escribe nada
+    — arma un reporte para que lo revises y lo copies a mano a
     liga_mx_predictor_skeleton.py, exactamente como ya hicimos con la
-    Jornada 4. Ver liga_mx_api_football.py para el porqué de no
-    auto-escribir.
+    Jornada 4. Ver liga_mx_bsd.py para el porqué de no auto-escribir.
 
-    Devuelve None si no hay API_FOOTBALL_KEY configurada (el resto del
+    NOTA: se usa BSD (sports.bzzoiro.com) en vez de API-Football porque
+    el plan gratis de API-Football no cubre la temporada 2026 en curso
+    (solo tiene histórico 2022-2024) — ver liga_mx_bsd.py para más
+    contexto. liga_mx_api_football.py se conserva por si en el futuro
+    hace falta consultar esas temporadas históricas.
+
+    Devuelve None si no hay BSD_API_KEY configurada (el resto del
     script sigue funcionando igual, solo sin este paso extra).
     """
-    if not api_football_key:
+    if not bsd_api_key:
         return None
     try:
-        from liga_mx_api_football import generar_actualizacion_pendiente, imprimir_reporte
+        from liga_mx_bsd import generar_actualizacion_pendiente, LEAGUE_ID_APERTURA
     except ImportError:
-        _log("Aviso: liga_mx_api_football.py no disponible, se omite este paso")
+        _log("Aviso: liga_mx_bsd.py no disponible, se omite este paso")
         return None
 
     jornada = _proxima_jornada_pendiente()
@@ -114,9 +119,9 @@ def revisar_resultados_pendientes_via_api(api_football_key: str) -> dict:
         return None
 
     try:
-        actualizacion = generar_actualizacion_pendiente(api_football_key, jornada)
+        actualizacion = generar_actualizacion_pendiente(bsd_api_key, jornada, LEAGUE_ID_APERTURA)
     except Exception as e:
-        _log(f"Aviso: no se pudo consultar API-Football ({e}) — se sigue sin este paso")
+        _log(f"Aviso: no se pudo consultar BSD ({e}) — se sigue sin este paso")
         return None
 
     partidos_ya_en_skeleton = {(p[0], p[1]) for p in PARTIDOS if p[4] is not None}
@@ -124,7 +129,7 @@ def revisar_resultados_pendientes_via_api(api_football_key: str) -> dict:
               if (p["local"], p["visitante"]) not in partidos_ya_en_skeleton]
 
     if nuevos:
-        _log(f"⚠️ API-Football reporta {len(nuevos)} partido(s) de la Jornada {jornada} "
+        _log(f"⚠️ BSD reporta {len(nuevos)} partido(s) de la Jornada {jornada} "
              f"YA TERMINADOS que no están cargados en PARTIDOS todavía:")
         for p in nuevos:
             _log(f"    {p['local']} {p['gh']}-{p['ga']} {p['visitante']} · árbitro: {p['arbitro']}")
@@ -225,7 +230,7 @@ def main():
     url = _env("SUPABASE_URL_LIGAMX")
     key = _env("SUPABASE_KEY_LIGAMX")
     weather_key = _env("WEATHER_API_KEY")
-    api_football_key = _env("API_FOOTBALL_KEY")
+    bsd_api_key = _env("BSD_API_KEY")
 
     if not (url and key):
         _log("AVISO: SUPABASE_URL_LIGAMX / SUPABASE_KEY_LIGAMX no configuradas — "
@@ -234,11 +239,11 @@ def main():
 
     # 0. Revisa (sin escribir nada) si hay resultados reales nuevos que
     # falten cargar a mano en PARTIDOS — ver revisar_resultados_pendientes_via_api().
-    if api_football_key:
-        _log("Paso 0/2 — Revisando resultados nuevos vía API-Football...")
-        revisar_resultados_pendientes_via_api(api_football_key)
+    if bsd_api_key:
+        _log("Paso 0/2 — Revisando resultados nuevos vía BSD...")
+        revisar_resultados_pendientes_via_api(bsd_api_key)
     else:
-        _log("Aviso: API_FOOTBALL_KEY no configurada — se omite la revisión "
+        _log("Aviso: BSD_API_KEY no configurada — se omite la revisión "
              "automática de resultados nuevos (seguirás cargándolos a mano).")
 
     # 1. Al día con lo que ya se jugó antes de generar predicciones nuevas.
