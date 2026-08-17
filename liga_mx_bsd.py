@@ -64,6 +64,7 @@ MAPA_NOMBRES_BSD_A_PROYECTO = {
     "San Luis": "Atletico San Luis",
     "Cruz Azul": "Cruz Azul",
     "Guadalajara": "Guadalajara", "Chivas Guadalajara": "Guadalajara", "Chivas": "Guadalajara",
+    "CD Guadalajara": "Guadalajara",
     "Juarez": "FC Juarez", "FC Juarez": "FC Juarez", "FC Juárez": "FC Juarez", "Club Juarez": "FC Juarez",
     "Leon": "Leon", "León": "Leon", "Club Leon": "Leon", "Club León": "Leon",
     "Monterrey": "Monterrey", "CF Monterrey": "Monterrey", "Rayados": "Monterrey",
@@ -71,7 +72,7 @@ MAPA_NOMBRES_BSD_A_PROYECTO = {
     "Pachuca": "Pachuca", "CF Pachuca": "Pachuca",
     "Puebla": "Puebla", "Club Puebla": "Puebla",
     "Pumas UNAM": "Pumas UNAM", "Pumas": "Pumas UNAM", "UNAM": "Pumas UNAM",
-    "Queretaro": "Queretaro", "Querétaro": "Queretaro",
+    "Queretaro": "Queretaro", "Querétaro": "Queretaro", "Querétaro FC": "Queretaro",
     "Santos Laguna": "Santos Laguna", "Santos": "Santos Laguna",
     "Tijuana": "Tijuana", "Club Tijuana": "Tijuana", "Xolos": "Tijuana",
     "Tigres": "Tigres", "Tigres UANL": "Tigres",
@@ -120,34 +121,89 @@ def _get(endpoint: str, api_key: str, params: dict = None, reintentos: int = 2) 
     return {}
 
 
+_CACHE_ARBITROS = {}  # referee_id -> nombre, para no repetir llamadas en la misma corrida
+
+
+def _resolver_nombre_arbitro(api_key: str, referee_id) -> str:
+    """referee_id viene como número en /events/, no el nombre — hay que
+    resolverlo aparte en /referees/{id}/. Se cachea en memoria durante
+    la corrida del script para no gastar requests de más si varios
+    partidos de la misma jornada comparten árbitro."""
+    if referee_id is None:
+        return None
+    if referee_id in _CACHE_ARBITROS:
+        return _CACHE_ARBITROS[referee_id]
+    data = _get(f"referees/{referee_id}/", api_key)
+    nombre = data.get("name") if isinstance(data, dict) else None
+    _CACHE_ARBITROS[referee_id] = nombre
+    return nombre
+
+
 def obtener_resultados_jornada(api_key: str, jornada: int,
-                                league_id: int = LEAGUE_ID_APERTURA) -> list:
+                                league_id: int = LEAGUE_ID_APERTURA,
+                                resolver_arbitros: bool = True) -> list:
     """
     Trae todos los partidos de una jornada (round_number). Devuelve una
     lista de dicts:
       {event_id, local, visitante, gh, ga, arbitro, estado, fecha}
-    estado usa los valores de BSD: "upcoming" / "live" / "finished" /
-    "cancelled" / "postponed".
+
+    ESQUEMA REAL CONFIRMADO (agosto 2026, verificado contra la API en
+    vivo — la documentación pública no coincidía en varios campos):
+      - home_team / away_team llegan como STRING con el nombre del
+        equipo, NO como objeto {"name": ...}.
+      - referee_id es un ID numérico; el nombre del árbitro requiere una
+        llamada aparte a /referees/{id}/ (resolver_arbitros=True la hace
+        automático, con caché en memoria para no repetir).
+      - status observado en partidos futuros: "notstarted". El valor
+        para partidos terminados aún no se ha confirmado contra un
+        response real — se compara con "finished" como mejor estimado;
+        generar_actualizacion_pendiente() also acepta cualquier partido
+        con home_score/away_score no nulos como señal alternativa de
+        que sí terminó, por si el valor exacto de status difiere.
+      - round_number SÍ viene en la respuesta, pero no está confirmado
+        como parámetro de filtro aceptado por el endpoint — por eso se
+        trae con paginación y se filtra en Python, no vía query param.
     """
-    data = _get("events/", api_key, {
-        "league_id": league_id, "limit": 200,
-    })
     resultados = []
-    for item in data.get("results", []):
-        if item.get("round_number") != jornada:
-            continue
-        home = item.get("home_team", {}) or {}
-        away = item.get("away_team", {}) or {}
-        resultados.append({
-            "event_id": item.get("id"),
-            "local": _traducir_nombre_equipo(home.get("name", "")),
-            "visitante": _traducir_nombre_equipo(away.get("name", "")),
-            "gh": item.get("home_score"),
-            "ga": item.get("away_score"),
-            "arbitro": item.get("referee", {}).get("name") if item.get("referee") else None,
-            "estado": item.get("status"),
-            "fecha": item.get("kickoff_time") or item.get("date"),
-        })
+    params = {"league_id": league_id, "limit": 100}
+    offset = 0
+    max_paginas = 10  # margen de sobra: una temporada completa son ~17 rondas
+
+    for _ in range(max_paginas):
+        data = _get("events/", api_key, {**params, "offset": offset})
+        items = data.get("results", []) if isinstance(data, dict) else []
+        if not items:
+            break
+
+        for item in items:
+            if item.get("round_number") != jornada:
+                continue
+            local_raw = item.get("home_team")
+            visit_raw = item.get("away_team")
+            # Defensivo: si algún día la API cambia a objeto, seguimos
+            # funcionando en vez de tronar.
+            local_nombre = local_raw.get("name") if isinstance(local_raw, dict) else local_raw
+            visit_nombre = visit_raw.get("name") if isinstance(visit_raw, dict) else visit_raw
+
+            arbitro = None
+            if resolver_arbitros and item.get("referee_id"):
+                arbitro = _resolver_nombre_arbitro(api_key, item.get("referee_id"))
+
+            resultados.append({
+                "event_id": item.get("id"),
+                "local": _traducir_nombre_equipo(local_nombre or ""),
+                "visitante": _traducir_nombre_equipo(visit_nombre or ""),
+                "gh": item.get("home_score"),
+                "ga": item.get("away_score"),
+                "arbitro": arbitro,
+                "estado": item.get("status"),
+                "fecha": item.get("event_date"),
+            })
+
+        if not data.get("next"):
+            break
+        offset += 100
+
     return resultados
 
 
@@ -211,7 +267,15 @@ def generar_actualizacion_pendiente(api_key: str, jornada: int, league_id: int =
         if r["visitante"] not in MAPA_NOMBRES_BSD_A_PROYECTO.values():
             no_reconocidos.append(r["visitante"])
 
-        if r["estado"] == "finished" and r["gh"] is not None:
+        # Señal de "ya terminó": el marcador no es nulo. Es más robusto
+        # que comparar r["estado"] contra un string exacto como
+        # "finished", porque ese valor todavía no se ha confirmado
+        # contra un response real de un partido ya jugado (ver docstring
+        # de obtener_resultados_jornada). Si status trae algo como
+        # "live" con marcador parcial, igual se reporta — es
+        # responsabilidad de quien revisa el reporte confirmar que el
+        # partido ya se jugó por completo antes de copiarlo al skeleton.
+        if r["gh"] is not None and r["ga"] is not None:
             fila = dict(r)
             if incluir_estadisticas and r["event_id"]:
                 stats = obtener_tarjetas_corners_partido(api_key, r["event_id"])
@@ -233,7 +297,7 @@ def imprimir_reporte(actualizacion: dict):
     que el flujo de revisión manual sea idéntico sin importar cuál de
     los dos módulos se use."""
     j = actualizacion["jornada"]
-    print(f"\n── Jornada {j} — partidos terminados ──")
+    print(f"\n── Jornada {j} — partidos con marcador (revisa 'estado' la primera vez) ──")
     for p in actualizacion["partidos_terminados"]:
         stats = []
         if "am" in p:
@@ -244,7 +308,7 @@ def imprimir_reporte(actualizacion: dict):
             stats.append(f"ro={p['ro']}")
         stats_str = f" [{', '.join(stats)}]" if stats else ""
         print(f"  {p['local']} {p['gh']}-{p['ga']} {p['visitante']} "
-              f"· árbitro: {p['arbitro'] or 'sin dato'}{stats_str}")
+              f"· árbitro: {p['arbitro'] or 'sin dato'} · estado: {p['estado']}{stats_str}")
 
     if actualizacion["partidos_sin_terminar"]:
         print(f"\n  Sin terminar todavía ({len(actualizacion['partidos_sin_terminar'])}):")
