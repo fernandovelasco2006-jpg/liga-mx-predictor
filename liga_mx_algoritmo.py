@@ -923,17 +923,65 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# analizar_apuestas() — MISMAS REGLAS que el Mundial: umbrales dinámicos
-# según qué tan "cerrado" pinta el partido, un mercado por categoría
-# (para no repetir 3 líneas de córners), y nivel ALTA/MEDIA.
+# UMBRAL DINÁMICO POR CONFIANZA DE MUESTRA — el modelo exige más certeza
+# cuando tiene poca evidencia real del torneo actual (jornada 1-2,
+# apoyándose solo en datos heredados del Clausura 2026) y se relaja
+# conforme se acumulan partidos jugados y la Forma real / Momentum Elo
+# (ver calcular_lambdas()) empiezan a pesar de verdad.
+#
+# Mismo principio que _tope_shrinkage(): interpolación lineal entre un
+# piso y un techo, según PJ del torneo. Aquí va en sentido inverso (más
+# PJ = umbral MÁS BAJO) porque más partidos jugados = más confianza en
+# el modelo, no menos.
+#
+# UMBRAL_MAX_RECOMENDACION (90%) = con 0 partidos jugados del Apertura
+# 2026, toda la fuerza del cálculo viene de datos heredados (Clausura
+# 2026 + Elo base) — exige el mayor margen de error.
+# UMBRAL_MIN_RECOMENDACION (80%) = a partir de PJ_PARA_UMBRAL_MIN
+# partidos jugados por AMBOS equipos, la Forma real ya alcanzó su tope
+# completo de ajuste (mismo umbral que usa _tope_shrinkage para llegar a
+# TOPE_MAX_FORMA) — el modelo ya opera con evidencia sólida del torneo.
+# ─────────────────────────────────────────────────────────────────────────
+UMBRAL_MAX_RECOMENDACION = 90.0
+UMBRAL_MIN_RECOMENDACION = 80.0
+PJ_PARA_UMBRAL_MIN = 10  # mismo valor que PARTIDOS_PARA_TOPE_COMPLETO
+
+
+def _umbral_dinamico(home_team: str, away_team: str) -> float:
+    """
+    Umbral de confianza requerido para que una apuesta se recomiende,
+    interpolado linealmente entre UMBRAL_MAX_RECOMENDACION (0 PJ) y
+    UMBRAL_MIN_RECOMENDACION (PJ_PARA_UMBRAL_MIN+ PJ), usando el PROMEDIO
+    de partidos jugados en el torneo por ambos equipos — si un equipo
+    lleva 2 PJ y el otro 5, se interpola con 3.5.
+    """
+    forma = _forma_real_liga_mx()
+    pj_home = forma.get(home_team, (0, 0, 0))[2]
+    pj_away = forma.get(away_team, (0, 0, 0))[2]
+    pj_promedio = (pj_home + pj_away) / 2.0
+
+    fraccion = min(pj_promedio / PJ_PARA_UMBRAL_MIN, 1.0)
+    return UMBRAL_MAX_RECOMENDACION - fraccion * (UMBRAL_MAX_RECOMENDACION - UMBRAL_MIN_RECOMENDACION)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# analizar_apuestas() — umbral dinámico (ver _umbral_dinamico()) y SIN
+# deduplicar por categoría: se muestran TODAS las líneas que cumplen el
+# umbral (ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez, si las 3 pasan).
 # ─────────────────────────────────────────────────────────────────────────
 def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset()) -> list:
     """
     Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
-    llega o supera UMBRAL_RECOMENDACION (80%) — un solo criterio parejo
-    para las 8 familias de mercado que soporta el modelo: Resultado (1X2),
-    Doble Oportunidad, Empate Sin Apuesta (Draw No Bet), Hándicap
-    Asiático, Total de Goles, Ambos Marcan, Tarjetas y Córners.
+    llega o supera el umbral dinámico calculado por _umbral_dinamico()
+    (80%-90% según cuántos partidos reales del Apertura 2026 ya jugaron
+    ambos equipos) — para las 8 familias de mercado que soporta el
+    modelo: Resultado (1X2), Doble Oportunidad, Empate Sin Apuesta (Draw
+    No Bet), Hándicap Asiático, Total de Goles, Ambos Marcan, Tarjetas y
+    Córners.
+
+    IMPORTANTE — sin deduplicar por categoría: se devuelven TODAS las
+    líneas que cumplen el umbral, no solo una por categoría, para no
+    ocultar señales fuertes que sí tienen la confianza requerida.
 
     Nota sobre Hándicap Europeo: en este modelo la probabilidad de
     "cubrir" un hándicap Europeo -1/-2 (ganar por 2+/3+) es el MISMO
@@ -949,20 +997,21 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     hay datos reales de qué tan probable es cada marcador al descanso.
 
     mercados_suspendidos: set con nombres de mercado (ej. {"Total Goles"})
-    que se excluyen del resultado aunque hayan cumplido el 80% — viene de
-    liga_mx_supabase.calcular_mercados_suspendidos(), la retroalimentación
-    automática que apaga temporalmente un mercado si su acierto real
-    viene rindiendo muy por debajo de lo que promete.
+    que se excluyen del resultado aunque hayan cumplido el umbral — viene
+    de liga_mx_supabase.calcular_mercados_suspendidos(), la
+    retroalimentación automática que apaga temporalmente un mercado si su
+    acierto real viene rindiendo muy por debajo de lo que promete.
     """
     apuestas = []
-    UMBRAL_RECOMENDACION = 80.0
+    UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
 
     def ap(mercado, seleccion, confianza, nota):
         apuestas.append({
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
-            "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el 80%
+            "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el umbral
             "nota": nota,
+            "umbral_aplicado": round(UMBRAL_RECOMENDACION, 1),
         })
 
     pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
@@ -1051,35 +1100,9 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
 
-    # Un solo mercado por categoría (evita repetir 3 líneas de la misma
-    # cosa, ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez). Dentro de cada
-    # categoría se conserva la de MENOR confianza — que, como todas ya
-    # cumplieron el 80%, es exactamente la línea más "atrevida"/específica
-    # que aún se sostiene (Over 2.5 en vez de Over 0.5 si ambas pasan;
-    # Under 1.5 en vez de Under 2.5 si ambas pasan — la relación es la
-    # misma en ambos sentidos: la línea más floja siempre tiene la mayor
-    # confianza porque el evento que describe es un superconjunto del más
-    # estricto). Antes se quedaba con la de MAYOR confianza (la más
-    # floja), lo que escondía señales más fuertes cuando también pasaban
-    # el 80% — ej. Over 2.5 al 82% quedaba tapado por Over 0.5 al 98%.
-    mejor_por_categoria = {}
-    for a in apuestas:
-        merc = a["mercado"]
-        sel = a["seleccion"].lower()
-        if merc == "Tarjetas":
-            cat = "tarj_over" if "over" in sel else "tarj_under"
-        elif merc == "Córners":
-            cat = "co_over" if "over" in sel else "co_under"
-        elif merc == "Total Goles":
-            cat = "goles_over" if "over" in sel else "goles_under"
-        elif merc == "Hándicap Asiático":
-            cat = f"hcap_{home_team}" if home_team in a["seleccion"] else f"hcap_{away_team}"
-        else:
-            cat = merc
-        if cat not in mejor_por_categoria or a["confianza"] < mejor_por_categoria[cat]["confianza"]:
-            mejor_por_categoria[cat] = a
-
-    filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
+    # Sin deduplicación por categoría — se devuelven TODAS las que
+    # cumplieron el umbral dinámico, ordenadas de mayor a menor confianza.
+    filtradas = sorted(apuestas, key=lambda x: x["confianza"], reverse=True)
     if mercados_suspendidos:
         filtradas = [a for a in filtradas if a["mercado"] not in mercados_suspendidos]
     return filtradas
