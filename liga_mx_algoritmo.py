@@ -191,10 +191,19 @@ FUERZA_ATAQUE = FUERZA_ATAQUE_ACTUALIZADA
 FUERZA_DEFENSA = FUERZA_DEFENSA_ACTUALIZADA
 
 # ─────────────────────────────────────────────────────────────────────────
-# TARJETAS POR EQUIPO — datos reales del Clausura 2026 (fuente FotMob):
-# (amarillas_totales, rojas_totales, partidos_jugados). Se usa para
-# ajustar la expectativa de tarjetas combinando "carácter" del equipo
-# con el promedio del árbitro asignado (ver _tarjetas_esperadas()).
+# TARJETAS POR EQUIPO — Clausura 2026 (fuente FotMob, 17 PJ, ver arriba)
+# vs. Apertura 2026 EN VIVO (fuente ligamx.net, tabla oficial de
+# Tarjetas Amarillas/Rojas por Club).
+#
+# A diferencia de FUERZA_ATAQUE/FUERZA_DEFENSA (que se recalibran solas
+# vía liga_mx_elo_update.py leyendo PARTIDOS), este dato NO tiene fuente
+# automática en el modelo — ligamx.net no expone una API pública, así
+# que se actualiza pegando la tabla manualmente aquí cada cierto número
+# de jornadas. _factor_tarjetas_equipo() mezcla ambos con el MISMO
+# shrinkage progresivo que usa _tope_shrinkage() para Forma real/Elo:
+# con pocos PJ del Apertura pesa más el Clausura (dato robusto, 17 PJ),
+# y conforme se acumulan partidos el Apertura gana peso hasta dominar
+# por completo a partir de PARTIDOS_PARA_TOPE_COMPLETO.
 # ─────────────────────────────────────────────────────────────────────────
 TARJETAS_EQUIPO_LIGAMX = {
     "Santos Laguna":      (50, 5, 17),
@@ -217,6 +226,72 @@ TARJETAS_EQUIPO_LIGAMX = {
     "Monterrey":          (26, 1, 17),
 }
 _PROMEDIO_LIGA_AMARILLAS_EQUIPO = sum(v[0] / v[2] for v in TARJETAS_EQUIPO_LIGAMX.values()) / len(TARJETAS_EQUIPO_LIGAMX)
+
+# Apertura 2026 EN VIVO — (amarillas_totales, rojas_totales, partidos_jugados)
+# Fuente: ligamx.net, tabla "Tarjetas Amarillas"/"Tarjetas Rojas" por
+# club, consultada tras la Jornada 5 (5 PJ para todos los equipos).
+# ACTUALIZAR estos números (y el "5" del comentario de arriba) cada vez
+# que se pegue una tabla nueva de ligamx.net.
+TARJETAS_EQUIPO_APERTURA = {
+    "Atlas":              (21, 3, 5),
+    "Pachuca":            (11, 2, 5),
+    "FC Juarez":          (10, 0, 5),
+    "Leon":               (10, 3, 5),
+    "Necaxa":             (10, 2, 5),
+    "Tigres":             (10, 1, 5),
+    "America":            (9, 1, 5),
+    "Cruz Azul":          (9, 0, 5),
+    "Monterrey":          (7, 2, 5),
+    "Tijuana":            (7, 0, 5),
+    "Toluca":             (7, 1, 5),
+    "Guadalajara":        (6, 1, 5),
+    "Pumas UNAM":         (6, 0, 5),
+    "Atletico San Luis":  (5, 1, 5),
+    "Santos Laguna":      (5, 0, 5),
+    "Puebla":             (4, 1, 5),
+    # Atlante y Queretaro no traían conteo propio en la tabla pegada (0
+    # tarjetas registradas) — se dejan fuera a propósito para que
+    # _factor_tarjetas_equipo() caiga de vuelta al dato de Clausura sin
+    # mezclar un "0 tarjetas" engañoso.
+}
+
+
+def _factor_tarjetas_equipo(equipo: str) -> float:
+    """
+    Qué tan por encima/debajo del promedio de liga está el ESTILO
+    disciplinario del equipo (independiente del árbitro). 1.0 = promedio
+    de liga. Tope [0.7, 1.4] para no sobre-ajustar con muestras chicas.
+
+    Mezcla Clausura 2026 (base robusta, 17 PJ) con Apertura 2026 EN VIVO
+    (TARJETAS_EQUIPO_APERTURA) usando el mismo shrinkage progresivo que
+    _tope_shrinkage(): con 0 PJ del Apertura, 100% Clausura; a partir de
+    PARTIDOS_PARA_TOPE_COMPLETO PJ del Apertura, 100% Apertura.
+    """
+    datos_clausura = TARJETAS_EQUIPO_LIGAMX.get(equipo)
+    datos_apertura = TARJETAS_EQUIPO_APERTURA.get(equipo)
+
+    prom_clausura = None
+    if datos_clausura and datos_clausura[2] > 0:
+        am_c, _ro_c, pj_c = datos_clausura
+        prom_clausura = am_c / pj_c
+
+    prom_apertura = None
+    pj_apertura = 0
+    if datos_apertura and datos_apertura[2] > 0:
+        am_a, _ro_a, pj_apertura = datos_apertura
+        prom_apertura = am_a / pj_apertura
+
+    if prom_clausura is None and prom_apertura is None:
+        return 1.0
+    if prom_clausura is None:
+        promedio_mezclado = prom_apertura
+    elif prom_apertura is None:
+        promedio_mezclado = prom_clausura
+    else:
+        peso_apertura = min(pj_apertura / PARTIDOS_PARA_TOPE_COMPLETO, 1.0)
+        promedio_mezclado = (1 - peso_apertura) * prom_clausura + peso_apertura * prom_apertura
+
+    return max(0.7, min(1.4, promedio_mezclado / _PROMEDIO_LIGA_AMARILLAS_EQUIPO))
 
 # ─────────────────────────────────────────────────────────────────────────
 # FECHAS DE LEAGUES CUP POR EQUIPO — fase de grupos confirmada (4-13 de
@@ -750,18 +825,6 @@ from liga_mx_predictor_skeleton import (
 PROMEDIO_LIGA_AMARILLAS = 4.3
 PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.15 (placeholder sin datos)
 
-
-def _factor_tarjetas_equipo(equipo: str) -> float:
-    """
-    Qué tan por encima/debajo del promedio de liga está el ESTILO
-    disciplinario del equipo (independiente del árbitro). 1.0 = promedio
-    de liga. Tope [0.7, 1.4] para no sobre-ajustar con muestras chicas.
-    """
-    datos = TARJETAS_EQUIPO_LIGAMX.get(equipo)
-    if not datos or datos[2] == 0:
-        return 1.0
-    am, ro, pj = datos
-    return max(0.7, min(1.4, (am / pj) / _PROMEDIO_LIGA_AMARILLAS_EQUIPO))
 
 
 def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
