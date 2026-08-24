@@ -93,17 +93,17 @@ PARTIDOS = [
     ('America', 'Atletico San Luis', 4, 'Estadio Banorte', (3, 0), 'Maximiliano Quintero Hernandez'),
     ('Santos Laguna', 'Guadalajara', 4, 'Estadio TSM Corona', (0, 1), 'Vicente Jassiel Reynoso Arce'),
     ('Tijuana', 'Cruz Azul', 4, 'Estadio Caliente', (2, 1), 'Victor Alfonso Caceres Hernandez'),
-    ('Necaxa', 'Leon', 4, 'Estadio Victoria', None, None),
-    ('Pachuca', 'Puebla', 4, 'Estadio Hidalgo', None, None),
-    ('Puebla', 'Santos Laguna', 5, 'Estadio Cuauhtemoc', None, None),
-    ('FC Juarez', 'America', 5, 'Estadio Olimpico Benito Juarez', None, None),
-    ('Guadalajara', 'Tijuana', 5, 'Estadio Akron', None, None),
-    ('Queretaro', 'Toluca', 5, 'Estadio Corregidora', None, None),
-    ('Leon', 'Monterrey', 5, 'Estadio Nou Camp', None, None),
-    ('Tigres', 'Atlante', 5, 'Estadio Universitario', None, None),
-    ('Cruz Azul', 'Atlas', 5, 'Estadio Banorte', None, None),
-    ('Atletico San Luis', 'Pachuca', 5, 'Estadio Libertad Financiera', None, None),
-    ('Pumas UNAM', 'Necaxa', 5, 'Estadio Olimpico Universitario', None, None),
+    ('Necaxa', 'Leon', 4, 'Estadio Victoria', (1, 2), 'Luis Enrique Santander Aguirre'),
+    ('Pachuca', 'Puebla', 4, 'Estadio Hidalgo', (2, 3), 'Aldo Ballesteros Barba'),
+    ('Puebla', 'Santos Laguna', 5, 'Estadio Cuauhtemoc', (3, 2), 'Daniel Quintero Huitron'),
+    ('FC Juarez', 'America', 5, 'Estadio Olimpico Benito Juarez', (1, 2), 'Ismael Rosario Lopez Peñuelas'),
+    ('Guadalajara', 'Tijuana', 5, 'Estadio Akron', (5, 2), 'Mario Terrazas Chavez'),
+    ('Queretaro', 'Toluca', 5, 'Estadio Corregidora', (1, 2), 'Yonatan Peinado Aguirre'),
+    ('Leon', 'Monterrey', 5, 'Estadio Leon', (2, 0), 'Cesar Arturo Ramos Palazuelos'),
+    ('Tigres', 'Atlante', 5, 'Estadio Universitario', (2, 0), 'Fernando Hernandez Gomez'),
+    ('Cruz Azul', 'Atlas', 5, 'Estadio Ciudad de los Deportes', (0, 2), 'Guillermo Pacheco Larios'),
+    ('Atletico San Luis', 'Pachuca', 5, 'Alfonso Lastras Ramirez', (1, 1), 'Adonai Escobedo Gonzalez'),
+    ('Pumas UNAM', 'Necaxa', 5, 'Estadio Olimpico Universitario', (1, 1), 'Marco Antonio Ortiz Nava'),
     ('Atlante', 'Leon', 6, 'Estadio Banorte', None, None),
     ('Necaxa', 'Cruz Azul', 6, 'Estadio Victoria', None, None),
     ('Tijuana', 'Pumas UNAM', 6, 'Estadio Caliente', None, None),
@@ -476,6 +476,18 @@ ARBITROS_LIGA_MX = {
     # NUEVO — debutó en Liga MX (para efectos de este modelo) dirigiendo
     # Atlante-Toluca (J4). Avg. cards histórico Sofascore: 5.00.
     "Salvador Perez Villalobos":       (5.00, 1),
+    # NUEVO — debutó en Liga MX (para efectos de este modelo) dirigiendo
+    # Cruz Azul-Atlas (J5). Avg. cards histórico Sofascore: 4.44.
+    "Guillermo Pacheco Larios":        (4.44, 1),
+    # Faltaba en el diccionario aunque ya pitaba desde J1 (Necaxa-Atlante)
+    # y J5 (Querétaro-Toluca). Avg. cards histórico Sofascore: 5.47.
+    "Yonatan Peinado Aguirre":         (5.47, 1),
+    # NUEVO — debutó en Liga MX (para efectos de este modelo) dirigiendo
+    # Pachuca-Puebla (J4). Sofascore mostró "Avg. cards 0.00" en su
+    # ficha, que claramente es un placeholder sin muestra (no un
+    # promedio real de 0 tarjetas/partido) — se usa el fallback general
+    # en su lugar hasta tener un dato histórico confiable.
+    "Aldo Ballesteros Barba":          (4.5, 1),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los conocidos, como fallback razonable
 
@@ -711,8 +723,19 @@ DATOS_REALES_LIGAMX = {
     "America_Atletico San Luis":  {"am": 3, "co": 15, "ro": 0},
     "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 0},
     "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0},
-    # Pendientes de la Jornada 4: Necaxa_Leon y Pachuca_Puebla (aún no
-    # se juegan a la fecha de esta actualización).
+    "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 1 NEC + 0 LEO roja (Echeverría, doble amarilla)
+    "Pachuca_Puebla":             {"co": 8},  # amarillas no confirmadas: Sofascore no mostró esa fila en el resumen (córners sí: 5 PAC + 3 PUE)
+
+    # Jornada 5 — resultados y estadísticas confirmados (fuente: Sofascore)
+    "Pumas UNAM_Necaxa":          {"am": 4,  "co": 12, "ro": 0},  # 2 PUM + 2 NEC | 8 PUM + 4 NEC
+    "Leon_Monterrey":             {"am": 4,  "co": 13, "ro": 1},  # 1 LEO + 3 MTY | 3 LEO + 10 MTY | 0 LEO + 1 MTY roja
+    "Tigres_Atlante":             {"am": 2,  "co": 6,  "ro": 1},  # 0 TIG + 2 ATL | 5 TIG + 1 ATL | 1 TIG + 0 ATL roja
+    "FC Juarez_America":          {"am": 6,  "co": 12, "ro": 0},  # 5 JUA + 1 AME | 5 JUA + 7 AME
+    "Queretaro_Toluca":           {"am": 6,  "co": 13, "ro": 1},  # 3 QRO + 3 TOL | 7 QRO + 6 TOL | 0 QRO + 1 TOL roja
+    "Puebla_Santos Laguna":       {"am": 1,  "co": 13, "ro": 0},  # 0 PUE + 1 SAN | 6 PUE + 7 SAN
+    "Guadalajara_Tijuana":        {"am": 4,  "co": 8,  "ro": 0},  # 3 GDL + 1 TIJ | 4 GDL + 4 TIJ
+    "Cruz Azul_Atlas":            {"am": 1,  "co": 13, "ro": 0},  # 0 CAZ + 1 ATA | 9 CAZ + 4 ATA
+    "Atletico San Luis_Pachuca":  {"am": 2,  "co": 5,  "ro": 1},  # 0 ASL + 2 PAC | 1 ASL + 4 PAC | 0 ASL + 1 PAC roja
 }
 
 # ─────────────────────────────────────────────────────────────────────────
