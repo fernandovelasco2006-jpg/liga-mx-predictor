@@ -104,15 +104,15 @@ PARTIDOS = [
     ('Cruz Azul', 'Atlas', 5, 'Estadio Ciudad de los Deportes', (0, 2), 'Guillermo Pacheco Larios'),
     ('Atletico San Luis', 'Pachuca', 5, 'Alfonso Lastras Ramirez', (1, 1), 'Adonai Escobedo Gonzalez'),
     ('Pumas UNAM', 'Necaxa', 5, 'Estadio Olimpico Universitario', (1, 1), 'Marco Antonio Ortiz Nava'),
-    ('Atlante', 'Leon', 6, 'Estadio Banorte', None, None),
-    ('Necaxa', 'Cruz Azul', 6, 'Estadio Victoria', None, None),
-    ('Tijuana', 'Pumas UNAM', 6, 'Estadio Caliente', None, None),
-    ('Pachuca', 'Guadalajara', 6, 'Estadio Hidalgo', None, None),
-    ('Atlas', 'Queretaro', 6, 'Estadio Jalisco', None, None),
-    ('America', 'Puebla', 6, 'Estadio Banorte', None, None),
-    ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', None, None),
-    ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', None, None),
-    ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', None, None),
+    ('Atlante', 'Leon', 6, 'Estadio Banorte', None, 'Martin Molina Astorga'),
+    ('Necaxa', 'Cruz Azul', 6, 'Estadio Victoria', None, 'Ismael Rosario Lopez Peñuelas'),
+    ('Tijuana', 'Pumas UNAM', 6, 'Estadio Caliente', None, 'Cesar Arturo Ramos Palazuelos'),
+    ('Pachuca', 'Guadalajara', 6, 'Estadio Hidalgo', None, 'Victor Alfonso Caceres Hernandez'),
+    ('Atlas', 'Queretaro', 6, 'Estadio Jalisco', None, 'Marco Antonio Ortiz Nava'),
+    ('America', 'Puebla', 6, 'Estadio Banorte', None, 'Salvador Perez Villalobos'),
+    ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', None, 'Jesus Rafael Lopez Valle'),
+    ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', None, 'Abraham De Jesus Quirarte Contreras'),
+    ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', None, 'Luis Enrique Santander Aguirre'),
     ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, None),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', None, None),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', None, None),
@@ -488,6 +488,11 @@ ARBITROS_LIGA_MX = {
     # promedio real de 0 tarjetas/partido) — se usa el fallback general
     # en su lugar hasta tener un dato histórico confiable.
     "Aldo Ballesteros Barba":          (4.5, 1),
+    # NUEVO — debuta en Liga MX (para efectos de este modelo) dirigiendo
+    # Atlante-León (J6, 28/ago/2026). No se encontró ficha con promedio
+    # histórico confiable al momento de agregarlo — usa el fallback
+    # general hasta tener un dato real que reemplace este placeholder.
+    "Martin Molina Astorga":           (4.5, 0.15),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los conocidos, como fallback razonable
 
