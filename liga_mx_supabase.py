@@ -476,7 +476,51 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
     return actualizados
 
 
-def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -> int:
+def guardar_jornada_completa(url: str, key: str, resultado_simulacion: dict) -> dict:
+    """
+    Guarda en el historial TODOS los partidos que vienen en el paquete
+    devuelto por liga_mx_algoritmo.simular_jornada_completa() — un
+    guardar_prediccion() + guardar_apuestas() por partido, reutilizando
+    exactamente las mismas funciones (y por lo tanto el mismo formato de
+    fila) que ya usa el flujo de "un partido a la vez".
+
+    No introduce ninguna tabla ni columna nueva: es un for-loop sobre
+    partidos que llama a lo que ya existe, así que
+    calcular_mercados_suspendidos() y el resto del panel de
+    auto-calibración funcionan sin cambios sobre estas filas.
+
+    resultado_simulacion = salida de simular_jornada_completa().
+
+    Devuelve un resumen para mostrar en la interfaz:
+        {
+          "jornada": int,
+          "partidos_guardados": int,
+          "apuestas_guardadas": int,
+          "errores": [str, ...],   # local-visitante que fallaron al guardar
+        }
+    """
+    jornada = resultado_simulacion.get("jornada")
+    partidos = resultado_simulacion.get("partidos", [])
+
+    resumen = {"jornada": jornada, "partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
+    if jornada is None or not (url and key):
+        return resumen
+
+    for p in partidos:
+        local, visit = p["local"], p["visitante"]
+        r = p["resultado_sim"]
+        apuestas = p["apuestas"]
+        try:
+            ok_pred = guardar_prediccion(url, key, local, visit, jornada, r)
+            n_ap = guardar_apuestas(url, key, local, visit, jornada, apuestas)
+            if ok_pred:
+                resumen["partidos_guardados"] += 1
+            resumen["apuestas_guardadas"] += n_ap
+        except Exception as e:
+            resumen["errores"].append(f"{local}-{visit}: {e}")
+
+    return resumen
+
     """
     Recorre PARTIDOS ya jugados y actualiza el campo 'acierto' de
     cualquier apuesta guardada que siga pendiente (acierto=null).
