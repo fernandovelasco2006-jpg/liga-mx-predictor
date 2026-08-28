@@ -1163,9 +1163,38 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
 
-    # Sin deduplicación por categoría — se devuelven TODAS las que
-    # cumplieron el umbral dinámico, ordenadas de mayor a menor confianza.
-    filtradas = sorted(apuestas, key=lambda x: x["confianza"], reverse=True)
+    # Una sola línea por RUBRO/categoría (Resultado, Doble Oportunidad,
+    # Total Goles, Ambos Marcan, Hándicap, Tarjetas, Córners) — evita
+    # mostrar "Over 0.5" y "Over 1.5" a la vez dentro de Total Goles,
+    # pero SÍ permite que salgan simultáneamente apuestas de rubros
+    # distintos (ej. una de Total Goles + una de Tarjetas + una de
+    # Córners), siempre que cada una cumpla el umbral dinámico.
+    #
+    # Dentro de cada categoría se conserva la de MAYOR confianza (la
+    # línea más "segura"/menos específica que sostiene la categoría) —
+    # ej. entre Over 0.5 al 95% y Over 1.5 al 85.5%, se muestra Over 0.5.
+    # Ojo: para Under es al revés en términos de "línea", pero el
+    # criterio se mantiene igual (mayor % de confianza gana), porque el
+    # número de confianza ya captura qué tan sólida es cada selección —
+    # no hace falta lógica especial por dirección Over/Under.
+    mejor_por_categoria = {}
+    for a in apuestas:
+        merc = a["mercado"]
+        sel = a["seleccion"].lower()
+        if merc == "Tarjetas":
+            cat = "tarj_over" if "over" in sel else "tarj_under"
+        elif merc == "Córners":
+            cat = "co_over" if "over" in sel else "co_under"
+        elif merc == "Total Goles":
+            cat = "goles_over" if "over" in sel else "goles_under"
+        elif merc == "Hándicap Asiático":
+            cat = f"hcap_{home_team}" if home_team in a["seleccion"] else f"hcap_{away_team}"
+        else:
+            cat = merc
+        if cat not in mejor_por_categoria or a["confianza"] > mejor_por_categoria[cat]["confianza"]:
+            mejor_por_categoria[cat] = a
+
+    filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
     if mercados_suspendidos:
         filtradas = [a for a in filtradas if a["mercado"] not in mercados_suspendidos]
     return filtradas
@@ -1209,7 +1238,96 @@ def armar_parlay(sugerencias: list) -> dict:
     }
 
 
-if __name__ == "__main__":
+# ─────────────────────────────────────────────────────────────────────────
+# detectar_jornada_actual() + simular_jornada_completa() — soporte para
+# el botón "Simular Jornada" de la interfaz: detecta automáticamente cuál
+# es la jornada pendiente más próxima (según los resultados que ya están
+# cargados en PARTIDOS, no según la fecha de hoy — evita errores si algún
+# partido se pospuso o adelantó) y corre simular_partido() +
+# analizar_apuestas() para todos sus partidos de un jalón.
+# ─────────────────────────────────────────────────────────────────────────
+def detectar_jornada_actual() -> int:
+    """
+    Devuelve el número de la primera jornada que todavía tiene al menos
+    un partido con resultado=None en PARTIDOS — es decir, la próxima
+    jornada por jugar/simular. Si todos los partidos ya tienen
+    resultado (temporada terminada), devuelve None.
+    """
+    jornadas_pendientes = sorted({
+        jornada for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
+        if resultado is None
+    })
+    return jornadas_pendientes[0] if jornadas_pendientes else None
+
+
+def partidos_de_jornada(jornada: int) -> list:
+    """Devuelve las tuplas de PARTIDOS que pertenecen a esa jornada,
+    en el mismo orden en que aparecen en PARTIDOS."""
+    return [p for p in PARTIDOS if p[2] == jornada]
+
+
+def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
+                              peso_elo: float = 1.0, peso_altitud: float = 1.0,
+                              peso_arbitro: float = 1.0, factor_clima: float = 1.0,
+                              mercados_suspendidos: frozenset = frozenset()) -> dict:
+    """
+    Corre simular_partido() + analizar_apuestas() para TODOS los
+    partidos de una jornada (por defecto, la detectada automáticamente
+    por detectar_jornada_actual() — la próxima jornada pendiente).
+
+    n=2,000,000 por defecto (en vez de los 10M de simular_partido() para
+    un solo partido) para que simular 9 partidos de un jalón sea ágil en
+    la interfaz — sigue siendo una muestra grande, el error estándar de
+    Monte Carlo con 2M sims es despreciable para fines de recomendación
+    de apuestas (ver nota en simular_partido()).
+
+    NO guarda nada en Supabase — solo simula y arma el paquete de
+    resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
+    de liga_mx_supabase.py) se hace aparte, en app.py o en
+    liga_mx_supabase.guardar_jornada_completa(), para no acoplar este
+    módulo (que no sabe nada de Supabase) con la capa de persistencia.
+
+    Devuelve:
+        {
+          "jornada": int,
+          "partidos": [
+              {
+                "local": str, "visitante": str, "arbitro": str,
+                "resultado_sim": dict,      # salida de simular_partido()
+                "apuestas": list,           # salida de analizar_apuestas()
+                "parlay": dict | None,      # salida de armar_parlay()
+              },
+              ...
+          ],
+        }
+    """
+    if jornada is None:
+        jornada = detectar_jornada_actual()
+    if jornada is None:
+        return {"jornada": None, "partidos": []}
+
+    resultados = []
+    for local, visit, jorn, estadio, resultado_real, arbitro in partidos_de_jornada(jornada):
+        if resultado_real is not None:
+            # ya se jugó de verdad — no tiene caso "simular" un resultado
+            # que ya conocemos; se omite del paquete de simulación.
+            continue
+        r = simular_partido(local, visit, n=n, peso_elo=peso_elo,
+                             peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
+                             factor_clima=factor_clima)
+        apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos)
+        parlay = armar_parlay(apuestas)
+        resultados.append({
+            "local": local, "visitante": visit,
+            "arbitro": r.get("arbitro", "Sin asignar"),
+            "resultado_sim": r,
+            "apuestas": apuestas,
+            "parlay": parlay,
+        })
+
+    return {"jornada": jornada, "partidos": resultados}
+
+
     print("── calcular_lambdas() de ejemplo ──")
     for h, a in [("Toluca", "Tijuana"), ("America", "Guadalajara"), ("Atlante", "Tigres")]:
         lh, la = calcular_lambdas(h, a)
