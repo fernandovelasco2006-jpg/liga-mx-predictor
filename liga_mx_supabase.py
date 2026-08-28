@@ -248,7 +248,158 @@ def cargar_historial_apuestas(url: str, key: str) -> list:
         return []
 
 
-def calcular_stats_apuestas(historial: list) -> dict:
+def cargar_historial_predicciones(url: str, key: str) -> list:
+    """
+    Trae todo el historial de predicciones 1X2 guardadas (tabla
+    predicciones_ligamx) — mismo patrón que cargar_historial_apuestas(),
+    pero para las probabilidades crudas de simular_partido() en vez de
+    las selecciones de analizar_apuestas(). Es la fuente de datos para
+    calcular_brier_score() y calcular_calibracion_por_bin(): ahí es
+    donde viven prob_local/prob_empate/prob_visitante junto con
+    goles_local/goles_visitante reales una vez jugado el partido.
+    """
+    if not (url and key):
+        return []
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/predicciones_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "*", "order": "guardada_en.desc", "limit": 500},
+            timeout=10,
+        )
+        return resp.json() if resp.status_code == 200 else []
+    except Exception:
+        return []
+
+
+def calcular_brier_score(historial_predicciones: list) -> dict:
+    """
+    Brier score multi-clase (1X2) sobre todas las predicciones ya
+    evaluadas (con resultado_real != None) en predicciones_ligamx.
+
+    Fórmula estándar para 3 categorías (local/empate/visitante):
+        Brier = promedio( (p_local - y_local)² + (p_empate - y_empate)²
+                           + (p_visita - y_visita)² )
+    donde y_x vale 1 si esa categoría ocurrió y 0 si no. Rango: 0
+    (predicciones perfectas) a 2 (el peor caso posible en 3 clases) —
+    para referencia, "tirar una moneda pareja entre las 3" (33/33/33
+    siempre) da Brier ≈ 0.667, así que cualquier valor claramente por
+    debajo de eso indica que el modelo aporta información real y no
+    solo ruido con forma de porcentaje.
+
+    Devuelve también el desglose de Brier POR EQUIPO (como local y como
+    visitante por separado) para detectar si el modelo está mal
+    calibrado específicamente para algunos equipos — insumo directo
+    para la futura corrección de sesgo por equipo (ver
+    calcular_sesgo_por_equipo(), pendiente de construir cuando haya más
+    historial evaluado).
+    """
+    evaluadas = [
+        p for p in historial_predicciones
+        if p.get("goles_local") is not None and p.get("goles_visitante") is not None
+        and p.get("prob_local") is not None
+    ]
+    if not evaluadas:
+        return {"brier": None, "n_evaluadas": 0, "por_equipo": []}
+
+    suma_brier = 0.0
+    brier_por_equipo = {}  # equipo -> [suma_brier, n]
+
+    for p in evaluadas:
+        gh, ga = p["goles_local"], p["goles_visitante"]
+        y_local = 1.0 if gh > ga else 0.0
+        y_empate = 1.0 if gh == ga else 0.0
+        y_visita = 1.0 if gh < ga else 0.0
+
+        p_local = p["prob_local"] / 100.0
+        p_empate = p["prob_empate"] / 100.0
+        p_visita = p["prob_visitante"] / 100.0
+
+        brier_partido = (p_local - y_local) ** 2 + (p_empate - y_empate) ** 2 + (p_visita - y_visita) ** 2
+        suma_brier += brier_partido
+
+        for equipo in (p["local"], p["visitante"]):
+            if equipo not in brier_por_equipo:
+                brier_por_equipo[equipo] = [0.0, 0]
+            brier_por_equipo[equipo][0] += brier_partido
+            brier_por_equipo[equipo][1] += 1
+
+    por_equipo = [
+        {"equipo": eq, "brier_promedio": round(suma / n, 3), "n_partidos": n}
+        for eq, (suma, n) in brier_por_equipo.items()
+    ]
+    por_equipo.sort(key=lambda f: f["brier_promedio"], reverse=True)
+
+    return {
+        "brier": round(suma_brier / len(evaluadas), 3),
+        "n_evaluadas": len(evaluadas),
+        "por_equipo": por_equipo,
+    }
+
+
+def calcular_calibracion_por_bin(historial_predicciones: list, ancho_bin: int = 10) -> list:
+    """
+    Panel de calibración: agrupa TODAS las probabilidades emitidas por
+    el modelo (una entrada por cada una de las 3 categorías —
+    local/empate/visitante— de cada predicción evaluada) en bins de
+    ancho `ancho_bin` (10 puntos por defecto: 50-60%, 60-70%, etc.) y
+    compara, dentro de cada bin, el promedio de probabilidad prometida
+    contra la frecuencia real con la que esa categoría ocurrió.
+
+    Esto responde la pregunta de fondo de calibración: "de todas las
+    veces que el modelo dijo, por ejemplo, 70-80% de confianza en algo,
+    ¿de verdad ocurrió ~70-80% de las veces?" — si un bin muestra
+    prometido=75% pero real=50%, el modelo está siendo overconfident
+    justo en ese rango, y es evidencia dura y accionable (más que solo
+    un Brier score global) para decidir, por ejemplo, subir
+    UMBRAL_MIN_RECOMENDACION en liga_mx_algoritmo.py.
+
+    Solo incluye bins con al menos 3 observaciones — con menos, el
+    porcentaje "real" es demasiado ruidoso para decir algo.
+    """
+    evaluadas = [
+        p for p in historial_predicciones
+        if p.get("goles_local") is not None and p.get("goles_visitante") is not None
+        and p.get("prob_local") is not None
+    ]
+
+    observaciones = []  # (prob_prometida, ocurrio: bool)
+    for p in evaluadas:
+        gh, ga = p["goles_local"], p["goles_visitante"]
+        observaciones.append((p["prob_local"], gh > ga))
+        observaciones.append((p["prob_empate"], gh == ga))
+        observaciones.append((p["prob_visitante"], gh < ga))
+
+    bins = {}
+    for prob, ocurrio in observaciones:
+        techo_bin = min(int(prob // ancho_bin) * ancho_bin + ancho_bin, 100)
+        piso_bin = techo_bin - ancho_bin
+        clave = (piso_bin, techo_bin)
+        if clave not in bins:
+            bins[clave] = {"suma_prometida": 0.0, "n_ocurrio": 0, "n_total": 0}
+        bins[clave]["suma_prometida"] += prob
+        bins[clave]["n_total"] += 1
+        if ocurrio:
+            bins[clave]["n_ocurrio"] += 1
+
+    filas = []
+    for (piso, techo), datos in sorted(bins.items()):
+        if datos["n_total"] < 3:
+            continue
+        prometido = datos["suma_prometida"] / datos["n_total"]
+        real = datos["n_ocurrio"] / datos["n_total"] * 100
+        filas.append({
+            "rango": f"{piso}-{techo}%",
+            "prometido_promedio": round(prometido, 1),
+            "real_pct": round(real, 1),
+            "brecha": round(prometido - real, 1),
+            "n_observaciones": datos["n_total"],
+        })
+
+    return filas
+
+
+
     evaluadas = [a for a in historial if a.get("acierto") is not None]
     pendientes = [a for a in historial if a.get("acierto") is None]
     aciertos = [a for a in evaluadas if a["acierto"]]
