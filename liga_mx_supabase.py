@@ -675,6 +675,104 @@ def cargar_historial_parlays(url: str, key: str) -> list:
         return []
 
 
+def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -> int:
+    """
+    Barrido masivo al arrancar la sesión (mismo rol que
+    actualizar_parlays_pendientes(), pero para predicciones_ligamx y
+    apuestas_historial_ligamx): recorre TODAS las predicciones y
+    apuestas que todavía no tienen resultado_real cargado en Supabase,
+    y si el partido correspondiente ya aparece con resultado en
+    partidos_jugados (viene de PARTIDOS, filtrado por p[4] is not None
+    en app.py), les llena goles_local/goles_visitante/resultado_real —
+    y en el caso de las apuestas, también el campo acierto vía
+    evaluar_acierto() (igual que ya hace guardar_apuestas() cuando se
+    le pasa resultado_real al momento de simular).
+
+    Esto cubre el caso de partidos que se jugaron mientras el usuario
+    no tenía la app abierta — sin este barrido, esas filas se quedarían
+    con goles_local=None para siempre, ya que guardar_prediccion()/
+    guardar_apuestas() solo actualizan el partido que está en pantalla
+    en ese momento.
+
+    Devuelve el número total de filas actualizadas (predicciones +
+    apuestas).
+    """
+    if not (url and key):
+        return 0
+    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+    if not mapa_resultados:
+        return 0
+
+    actualizadas = 0
+
+    # ── 1. predicciones_ligamx pendientes ──────────────────────────────
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/predicciones_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "id,local,visitante", "goles_local": "is.null", "limit": 200},
+            timeout=10,
+        )
+        pendientes_pred = resp.json() if resp.status_code == 200 else []
+    except Exception:
+        pendientes_pred = []
+
+    for pred in pendientes_pred:
+        clave = (pred.get("local"), pred.get("visitante"))
+        resultado = mapa_resultados.get(clave)
+        if resultado is None:
+            continue
+        gh, ga = resultado
+        try:
+            requests.patch(
+                f"{url}/rest/v1/predicciones_ligamx",
+                headers=_headers(key, prefer=""),
+                params={"id": f"eq.{pred['id']}"},
+                json={"resultado_real": f"{gh}-{ga}", "goles_local": gh, "goles_visitante": ga},
+                timeout=5,
+            )
+            actualizadas += 1
+        except Exception:
+            continue
+
+    # ── 2. apuestas_historial_ligamx pendientes ────────────────────────
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/apuestas_historial_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "*", "acierto": "is.null", "limit": 500},
+            timeout=10,
+        )
+        pendientes_ap = resp.json() if resp.status_code == 200 else []
+    except Exception:
+        pendientes_ap = []
+
+    for ap in pendientes_ap:
+        clave = (ap.get("local"), ap.get("visitante"))
+        resultado = mapa_resultados.get(clave)
+        if resultado is None:
+            continue
+        gh, ga = resultado
+        datos = DATOS_REALES_LIGAMX.get(f"{ap.get('local')}_{ap.get('visitante')}", {})
+        acierto = evaluar_acierto(ap, ap.get("local"), ap.get("visitante"), gh, ga,
+                                   am_reales=datos.get("am"), co_reales=datos.get("co"))
+        if acierto is None:
+            continue  # sigue sin poder evaluarse (ej. falta dato real de tarjetas/córners)
+        try:
+            requests.patch(
+                f"{url}/rest/v1/apuestas_historial_ligamx",
+                headers=_headers(key, prefer=""),
+                params={"id": f"eq.{ap['id']}"},
+                json={"resultado_real": f"{gh}-{ga}", "goles_local": gh, "goles_visitante": ga, "acierto": acierto},
+                timeout=5,
+            )
+            actualizadas += 1
+        except Exception:
+            continue
+
+    return actualizadas
+
+
 def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) -> int:
     """
     Revisa cada parlay pendiente: si TODAS sus patas ya tienen
