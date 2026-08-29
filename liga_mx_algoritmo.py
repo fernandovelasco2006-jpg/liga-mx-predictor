@@ -404,7 +404,8 @@ def calcular_lambdas(home_team: str, away_team: str,
                       peso_arbitro: float = 1.0,
                       peso_forma_elo: float = 1.0,
                       factor_clima: float = 1.0,
-                      peso_local_visita: float = 1.0) -> tuple:
+                      peso_local_visita: float = 1.0,
+                      sesgo_por_equipo: dict = None) -> tuple:
     """
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
@@ -423,6 +424,15 @@ def calcular_lambdas(home_team: str, away_team: str,
          desde el arranque del torneo. Complementa a Forma real: mientras
          Forma real mira el promedio de goles reales, este factor mira
          resultados/margen relativo a la fuerza del rival enfrentado.
+      1d. Corrección de sesgo del propio modelo (retroalimentación) —
+         ajuste acotado (±15%, ver liga_mx_supabase.calcular_sesgo_por_
+         equipo()) basado en cuánto se ha equivocado ESTE modelo en
+         particular prediciendo a este equipo, comparando goles_esp
+         guardados en predicciones_ligamx contra los goles reales que
+         anotó — separado por local/visita. Solo se aplica si el
+         llamador pasa sesgo_por_equipo (ver parámetro) Y ese equipo ya
+         acumuló el mínimo de partidos evaluados (8 por defecto); si no
+         hay dato, este paso no hace nada (factor 1.0, sin sorpresas).
       2. Forma real — goles reales anotados/recibidos en partidos ya
          jugados de este torneo (se auto-actualiza con cada resultado
          que agregues a PARTIDOS)
@@ -436,6 +446,13 @@ def calcular_lambdas(home_team: str, away_team: str,
     tiene efecto. 2.0 = el doble de efecto que el calibrado. Pensados
     para conectarse directo a st.slider en la interfaz — sin tocar
     variables globales.
+
+    sesgo_por_equipo: diccionario opcional, salida directa de
+    liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
+    Si se omite (None, el default), este paso simplemente no se aplica
+    — así calcular_lambdas() sigue funcionando exactamente igual que
+    antes para quien no le pase este dato (retrocompatible, sin romper
+    ninguna llamada existente en simular_partido()/simular_temporada()).
 
     Devuelve (lambda_home, lambda_away) listos para simular goles con
     una distribución de Poisson.
@@ -502,6 +519,19 @@ def calcular_lambdas(home_team: str, away_team: str,
     ajuste_elo_away = max(min(delta_elo_away / 1000, tope_elo_away), -tope_elo_away) * peso_forma_elo
     lam_home *= (1.0 + ajuste_elo_home)
     lam_away *= (1.0 + ajuste_elo_away)
+
+    # 1d. Corrección de sesgo del propio modelo (retroalimentación) —
+    # ver liga_mx_supabase.calcular_sesgo_por_equipo(). Solo actúa si el
+    # llamador pasó el diccionario Y el equipo/rol ya tiene suficiente
+    # muestra evaluada (calcular_sesgo_por_equipo() ya filtra eso, así
+    # que aquí basta con comprobar que la clave exista).
+    if sesgo_por_equipo:
+        sesgo_home = sesgo_por_equipo.get(home_team, {})
+        sesgo_away = sesgo_por_equipo.get(away_team, {})
+        if "factor_ataque_local" in sesgo_home:
+            lam_home *= sesgo_home["factor_ataque_local"]
+        if "factor_ataque_visita" in sesgo_away:
+            lam_away *= sesgo_away["factor_ataque_visita"]
 
     # Ventaja de localía estándar (típico ~10-15% en fútbol de liga)
     lam_home *= 1.12
@@ -852,18 +882,25 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
 
 def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
                      peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                     peso_arbitro: float = 1.0, factor_clima: float = 1.0) -> dict:
+                     peso_arbitro: float = 1.0, factor_clima: float = 1.0,
+                     sesgo_por_equipo: dict = None) -> dict:
     """
     Corre N simulaciones Monte Carlo de UN partido (10,000,000 por
     defecto, igual que en tu predictor del Mundial) y agrega
     probabilidades por mercado: 1X2, doble oportunidad, total de goles,
     ambos marcan, tarjetas totales (amarilla=1pt, roja=2pts, convención
     de casas de apuestas) y córners.
+
+    sesgo_por_equipo: opcional, se pasa tal cual a calcular_lambdas()
+    (ver ahí el detalle) — normalmente la salida de
+    liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
+    Si se omite, el modelo funciona exactamente igual que antes.
     """
     rng = np.random.default_rng()
     lam_h, lam_a = calcular_lambdas(home_team, away_team,
                                      peso_elo=peso_elo, peso_altitud=peso_altitud,
-                                     peso_arbitro=peso_arbitro, factor_clima=factor_clima)
+                                     peso_arbitro=peso_arbitro, factor_clima=factor_clima,
+                                     sesgo_por_equipo=sesgo_por_equipo)
 
     goles_h = rng.poisson(lam_h, n).astype(np.int32)
     goles_a = rng.poisson(lam_a, n).astype(np.int32)
@@ -1269,7 +1306,8 @@ def partidos_de_jornada(jornada: int) -> list:
 def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
                               peso_elo: float = 1.0, peso_altitud: float = 1.0,
                               peso_arbitro: float = 1.0, factor_clima: float = 1.0,
-                              mercados_suspendidos: frozenset = frozenset()) -> dict:
+                              mercados_suspendidos: frozenset = frozenset(),
+                              sesgo_por_equipo: dict = None) -> dict:
     """
     Corre simular_partido() + analizar_apuestas() para TODOS los
     partidos de una jornada (por defecto, la detectada automáticamente
@@ -1280,6 +1318,11 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     la interfaz — sigue siendo una muestra grande, el error estándar de
     Monte Carlo con 2M sims es despreciable para fines de recomendación
     de apuestas (ver nota en simular_partido()).
+
+    sesgo_por_equipo: opcional, se pasa tal cual a cada llamada de
+    simular_partido() (ver calcular_lambdas() para el detalle) —
+    normalmente la salida de
+    liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
 
     NO guarda nada en Supabase — solo simula y arma el paquete de
     resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
@@ -1314,7 +1357,7 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
             continue
         r = simular_partido(local, visit, n=n, peso_elo=peso_elo,
                              peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
-                             factor_clima=factor_clima)
+                             factor_clima=factor_clima, sesgo_por_equipo=sesgo_por_equipo)
         apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos)
         parlay = armar_parlay(apuestas)
         resultados.append({
