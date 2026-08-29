@@ -13,6 +13,7 @@ from liga_mx_algoritmo import (
     ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
     PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
     ELO_BASE, ELO_ACTUALIZADO, resumen_movimiento_elo, n_partidos_procesados,
+    simular_jornada_completa, detectar_jornada_actual,
 )
 
 try:
@@ -21,6 +22,8 @@ try:
         calcular_stats_apuestas, calcular_stats_por_mercado, calcular_mercados_suspendidos,
         actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
+        cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
+        calcular_sesgo_por_equipo, guardar_jornada_completa,
     )
     SUPABASE_MODULO_DISPONIBLE = True
 except ImportError:
@@ -184,9 +187,15 @@ if SUPABASE_DISPONIBLE and not st.session_state.get("aciertos_lm_actualizados"):
 # ─────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
 def _simular_partido_cached(local, visit, n, peso_elo, peso_altitud, peso_arbitro, factor_clima=1.0):
+    # Nota: el sesgo por equipo (_sesgo_equipo_cached, TTL 15 min) se lee
+    # aquí dentro de una función cacheada por 1 hora — si el sesgo cambia
+    # a mitad de esa hora (un equipo cruza el umbral de 8 PJ evaluados),
+    # este resultado sigue sirviendo la versión vieja hasta que expire el
+    # caché de 1 hora. Aceptable: el sesgo por equipo cambia jornada a
+    # jornada, no dentro de la misma hora.
     return simular_partido(local, visit, n=n, peso_elo=peso_elo,
                             peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
-                            factor_clima=factor_clima)
+                            factor_clima=factor_clima, sesgo_por_equipo=_sesgo_equipo_cached())
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -201,6 +210,23 @@ def _mercados_suspendidos_cached():
         return frozenset()
     historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
     return frozenset(calcular_mercados_suspendidos(historial))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CORRECCIÓN DE SESGO POR EQUIPO — retroalimentación real: compara,
+# equipo por equipo (separado por rol local/visita), los goles esperados
+# que el modelo guardó en predicciones_ligamx contra los que anotó de
+# verdad, y devuelve un factor de ajuste acotado (±15%) sólo para
+# equipos con 8+ partidos evaluados en ese rol. Cacheado 15 min, mismo
+# TTL que _mercados_suspendidos_cached() por el mismo motivo: cambia
+# conforme se evalúan apuestas jornada a jornada, no de un minuto a otro.
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=900, show_spinner=False)
+def _sesgo_equipo_cached():
+    if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
+        return {}
+    historial_pred = cargar_historial_predicciones(SUPABASE_URL, SUPABASE_KEY)
+    return calcular_sesgo_por_equipo(historial_pred)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -398,7 +424,7 @@ with tab_pred:
                 _fc, _clima_info = _factor_clima_cached(local, visit)
                 r = simular_partido(local, visit, n=N_SIMS_PARTIDO,
                                      peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
-                                     factor_clima=_fc)
+                                     factor_clima=_fc, sesgo_por_equipo=_sesgo_equipo_cached())
 
             pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
             st.markdown(
@@ -469,7 +495,7 @@ with tab_pred:
                 st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
                             'letter-spacing:2px;color:#e5007d;margin-bottom:0.75rem">🎰 APUESTAS SUGERIDAS</div>',
                             unsafe_allow_html=True)
-                # Todas las que cumplan el 80% — en filas de hasta 3 columnas
+                # Todas las que cumplan el umbral (dinámico) — en filas de hasta 3 columnas
                 for fila_inicio in range(0, len(sugs), 3):
                     fila = sugs[fila_inicio:fila_inicio + 3]
                     cols_ap = st.columns(3)
@@ -543,12 +569,12 @@ with tab_apuestas:
             )
             _fc_dia, _ = _factor_clima_cached(local, visit)
             r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc_dia)
-            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())  # ya vienen solo las que cumplen 80%+
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())  # ya vienen solo las que cumplen el umbral dinámico
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
             else:
-                # Todas las que cumplan el 80% — en filas de hasta 3 columnas
+                # Todas las que cumplan el umbral dinámico — en filas de hasta 3 columnas
                 for fila_inicio in range(0, len(sugs), 3):
                     fila = sugs[fila_inicio:fila_inicio + 3]
                     cols_ap = st.columns(3)
@@ -702,6 +728,38 @@ with tab_hist_ap:
                             unsafe_allow_html=True,
                         )
 
+            # ── Panel de Brier Score / Calibración global (1X2) ──────────
+            historial_predicciones = cargar_historial_predicciones(SUPABASE_URL, SUPABASE_KEY)
+            brier_data = calcular_brier_score(historial_predicciones)
+            if brier_data["n_evaluadas"] > 0:
+                with st.expander("📐 Calibración del modelo (Brier Score) — ¿qué tan confiables son los %?", expanded=False):
+                    st.caption(
+                        "Brier Score mide qué tan bien calibradas están las probabilidades del modelo, no "
+                        "solo si acertó el ganador. 0 = predicciones perfectas · 0.667 = igual que tirar una "
+                        "moneda entre 3 opciones · valores claramente por debajo de 0.667 indican que el "
+                        "modelo aporta información real."
+                    )
+                    color_brier = "#4ade80" if brier_data["brier"] < 0.55 else ("#f0c040" if brier_data["brier"] < 0.667 else "#f87171")
+                    st.markdown(
+                        f'<div class="metric-box" style="max-width:220px"><div class="metric-val" style="color:{color_brier}">'
+                        f'{brier_data["brier"]}</div><div class="metric-lbl">Brier Score global · {brier_data["n_evaluadas"]} evaluadas</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    if brier_data["por_equipo"]:
+                        st.markdown("###### Peor calibrados (más partidos primero para que el número sea confiable)")
+                        df_brier = pd.DataFrame(brier_data["por_equipo"])
+                        df_brier.insert(0, "", df_brier["equipo"].map(flag))
+                        df_brier.columns = ["", "Equipo", "Brier promedio", "Partidos evaluados"]
+                        st.dataframe(df_brier, use_container_width=True, hide_index=True)
+
+                    calibracion = calcular_calibracion_por_bin(historial_predicciones)
+                    if calibracion:
+                        st.markdown("###### Calibración por rango de confianza")
+                        st.caption("Brecha negativa = el modelo es prudente (dice menos de lo que en realidad acierta). Brecha positiva = el modelo es sobreconfiado (promete más de lo que cumple).")
+                        df_calib = pd.DataFrame(calibracion)
+                        df_calib.columns = ["Rango prometido", "Prometido promedio (%)", "Real (%)", "Brecha", "N observaciones"]
+                        st.dataframe(df_calib, use_container_width=True, hide_index=True)
+
             if stats["evaluadas"]:
                 st.markdown("##### ✅ Apuestas evaluadas")
                 for ap in stats["evaluadas"]:
@@ -841,6 +899,94 @@ with tab_tabla:
         st.caption(f"📅 {n_jugados} partido(s) jugado(s) hasta ahora · empatados comparten posición, igual que la tabla oficial")
 
     st.markdown("---")
+
+    # ─────────────────────────────────────────────────────────────────
+    # SIMULAR JORNADA COMPLETA — detecta la jornada pendiente más
+    # próxima (según fechas oficiales ya cargadas en PARTIDOS/HORARIOS_
+    # PARTIDO) y simula sus partidos de un jalón, guardando todo en el
+    # historial de Supabase con el mismo formato que ya usa el flujo de
+    # "un partido a la vez".
+    # ─────────────────────────────────────────────────────────────────
+    st.markdown("### ⚽ Simular Jornada")
+    _jornada_detectada = detectar_jornada_actual()
+    if _jornada_detectada is None:
+        st.info("No hay jornadas pendientes — la temporada ya terminó (todos los partidos tienen resultado).")
+    else:
+        st.caption(f"Jornada detectada automáticamente: **Jornada {_jornada_detectada}** · 2,000,000 simulaciones por partido")
+        if st.button("⚽ Simular Jornada", key="btn_simular_jornada", type="primary"):
+            with st.spinner(f"Simulando Jornada {_jornada_detectada} completa..."):
+                sesgo_actual = _sesgo_equipo_cached()
+                resultado_jornada = simular_jornada_completa(
+                    jornada=_jornada_detectada, n=2_000_000,
+                    peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
+                    mercados_suspendidos=_mercados_suspendidos_cached(),
+                    sesgo_por_equipo=sesgo_actual,
+                )
+                resumen_guardado = {"partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
+                if SUPABASE_DISPONIBLE:
+                    resumen_guardado = guardar_jornada_completa(SUPABASE_URL, SUPABASE_KEY, resultado_jornada)
+            st.session_state["resultado_jornada_simulada"] = resultado_jornada
+            st.session_state["resumen_guardado_jornada"] = resumen_guardado
+
+        if "resultado_jornada_simulada" in st.session_state:
+            resultado_jornada = st.session_state["resultado_jornada_simulada"]
+            resumen_guardado = st.session_state.get("resumen_guardado_jornada", {})
+
+            if SUPABASE_DISPONIBLE:
+                if resumen_guardado.get("errores"):
+                    st.warning(f"⚠️ Guardado parcial: {resumen_guardado['partidos_guardados']} partidos guardados, "
+                               f"{len(resumen_guardado['errores'])} con error.")
+                else:
+                    st.success(f"✅ Jornada {resultado_jornada['jornada']}: {resumen_guardado.get('partidos_guardados', 0)} "
+                               f"partidos guardados en el historial · {resumen_guardado.get('apuestas_guardadas', 0)} apuestas registradas.")
+            else:
+                st.info("Supabase no está conectado — la simulación se muestra abajo pero no se guarda en el historial.")
+
+            for p in resultado_jornada["partidos"]:
+                r_p = p["resultado_sim"]
+                pa_p, pd_p, pb_p = r_p["prob_home"], r_p["prob_draw"], r_p["prob_away"]
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:0.5rem;margin:1rem 0 0.3rem;'
+                    f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
+                    f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">'
+                    f'{flag(p["local"])} {p["local"]} vs {flag(p["visitante"])} {p["visitante"]}</span>'
+                    f'<span style="font-size:0.68rem;color:#6b9b7d">🧑‍⚖️ {p["arbitro"]}</span></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<div class="prob-bar"><div class="bar-a" style="width:{pa_p:.1f}%"></div>'
+                    f'<div class="bar-draw" style="width:{pd_p:.1f}%"></div>'
+                    f'<div class="bar-b" style="width:{pb_p:.1f}%"></div></div>'
+                    f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
+                    f'{p["local"]} {pa_p:.1f}% · Empate {pd_p:.1f}% · {p["visitante"]} {pb_p:.1f}%</div>',
+                    unsafe_allow_html=True,
+                )
+                if p["apuestas"]:
+                    for fila_inicio in range(0, len(p["apuestas"]), 3):
+                        fila = p["apuestas"][fila_inicio:fila_inicio + 3]
+                        cols_j = st.columns(3)
+                        for i_ap, ap in enumerate(fila):
+                            with cols_j[i_ap]:
+                                st.markdown(
+                                    f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                                    f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                    f'<div style="font-size:0.85rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                    f'<div style="font-size:0.6rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                                    unsafe_allow_html=True,
+                                )
+                else:
+                    st.caption("Sin señales de confianza para este partido.")
+                if p["parlay"]:
+                    st.markdown(
+                        f'<div class="parlay-card" style="padding:0.5rem 0.8rem"><span style="font-size:0.55rem;'
+                        f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                        f'<div style="font-size:0.76rem;color:#e5007d;margin:0.15rem 0">{p["parlay"]["texto"]}</div>'
+                        f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
+                        f'<b style="color:#e5007d">{p["parlay"]["prob_combinada"]:.1f}%</b></div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+    st.markdown("---")
     st.markdown("### 🔮 Proyección de fin de temporada (simulada)")
     st.caption(
         "Esto SÍ mezcla los resultados reales de arriba con una simulación del resto de la "
@@ -935,6 +1081,10 @@ por partido, el mismo enfoque que casas de apuestas y modelos académicos serios
 - **Momentum vía Elo** — ajuste acotado (±8%) según cuánto se movió el Elo de cada equipo desde el
   arranque del torneo (fórmula Elo estándar de fútbol, con ventaja de local y multiplicador por goleada)
 - **Forma real** — promedio real de goles anotados/recibidos en los partidos ya jugados (tope ±8%)
+- **Corrección de sesgo del propio modelo** — ajuste acotado (±15%) basado en qué tan bien (o mal) ha
+  venido prediciendo el modelo a CADA equipo en particular, comparando goles esperados guardados en el
+  historial contra los goles reales — separado por local/visita. Solo se activa una vez que un equipo
+  acumula 8+ partidos evaluados en ese rol; antes de eso, no tiene efecto.
 - **Altitud** — bono de +{BONUS_ALTITUD_LOCAL} al λ del local si su ciudad está a ≥{ALTITUD_UMBRAL:,}m
   y el visitante no está aclimatado a la altura
 - **Árbitro** — promedio real de tarjetas del árbitro asignado (cuando lo tenemos) vs. el promedio de
@@ -942,14 +1092,19 @@ por partido, el mismo enfoque que casas de apuestas y modelos académicos serios
 - **Fatiga Leagues Cup** — reduce el λ ofensivo {(1-FACTOR_FATIGA_LEAGUES_CUP)*100:.0f}% si el equipo jugó
   Leagues Cup en los 7 días previos
 
-Los tres primeros factores (Ataque/Defensa, Momentum vía Elo, Forma real) se recalculan solos cada vez
-que arranca la app, reproduciendo todos los partidos que ya tienen resultado en `PARTIDOS` — no hay que
-tocar código ni una base de datos aparte, basta con seguir agregando los resultados reales jornada a jornada.
+Los factores de Ataque/Defensa, Momentum vía Elo y Forma real se recalculan solos cada vez que arranca la
+app, reproduciendo todos los partidos que ya tienen resultado en `PARTIDOS` — no hay que tocar código ni
+una base de datos aparte, basta con seguir agregando los resultados reales jornada a jornada. La
+corrección de sesgo del propio modelo se recalcula igual de automático, leyendo el historial de
+predicciones ya evaluadas de Supabase.
 
 **¿Qué se recomienda como apuesta?**
-Un solo criterio parejo: cualquier mercado con **80% de probabilidad o más** según las simulaciones —
-no importa cuál sea. Todo lo que llegue a ese umbral aparece en "Apuestas sugeridas" (por partido) y en
-"Apuestas más fuertes de hoy" (todos los partidos del día), sin límite de cuántas se muestran.
+Un umbral **dinámico**: entre 80% y 90% de probabilidad según qué tan avanzado está el torneo (más
+partidos jugados = el modelo tiene más evidencia real y el umbral baja hasta el piso de 80%; al arranque
+de temporada exige hasta 90%). Todo lo que llegue a ese umbral aparece en "Apuestas sugeridas" (por
+partido) y en "Apuestas más fuertes de hoy" (todos los partidos del día) — una sola línea por rubro
+(ej. solo la mejor de Total Goles), pero varios rubros distintos pueden aparecer juntos (ej. Total Goles
++ Tarjetas + Córners a la vez si los tres cumplen).
 
 Mercados que evalúa: Resultado (1X2) · Doble Oportunidad (1X/X2) · Empate Sin Apuesta (DNB) · Hándicap
 Asiático (-1.0/-2.0 del favorito) · Total de Goles (Over/Under) · Ambos Marcan · Tarjetas · Córners.
