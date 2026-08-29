@@ -104,9 +104,9 @@ PARTIDOS = [
     ('Cruz Azul', 'Atlas', 5, 'Estadio Ciudad de los Deportes', (0, 2), 'Guillermo Pacheco Larios'),
     ('Atletico San Luis', 'Pachuca', 5, 'Alfonso Lastras Ramirez', (1, 1), 'Adonai Escobedo Gonzalez'),
     ('Pumas UNAM', 'Necaxa', 5, 'Estadio Olimpico Universitario', (1, 1), 'Marco Antonio Ortiz Nava'),
-    ('Atlante', 'Leon', 6, 'Estadio Banorte', None, 'Martin Molina Astorga'),
-    ('Necaxa', 'Cruz Azul', 6, 'Estadio Victoria', None, 'Ismael Rosario Lopez Peñuelas'),
-    ('Tijuana', 'Pumas UNAM', 6, 'Estadio Caliente', None, 'Cesar Arturo Ramos Palazuelos'),
+    ('Atlante', 'Leon', 6, 'Estadio Banorte', (1, 1), 'Martin Molina Astorga'),
+    ('Necaxa', 'Cruz Azul', 6, 'Estadio Victoria', (1, 3), 'Ismael Rosario Lopez Peñuelas'),
+    ('Tijuana', 'Pumas UNAM', 6, 'Estadio Caliente', (2, 0), 'Cesar Arturo Ramos Palazuelos'),
     ('Pachuca', 'Guadalajara', 6, 'Estadio Hidalgo', None, 'Victor Alfonso Caceres Hernandez'),
     ('Atlas', 'Queretaro', 6, 'Estadio Jalisco', None, 'Marco Antonio Ortiz Nava'),
     ('America', 'Puebla', 6, 'Estadio Banorte', None, 'Salvador Perez Villalobos'),
@@ -741,6 +741,11 @@ DATOS_REALES_LIGAMX = {
     "Guadalajara_Tijuana":        {"am": 4,  "co": 8,  "ro": 0},  # 3 GDL + 1 TIJ | 4 GDL + 4 TIJ
     "Cruz Azul_Atlas":            {"am": 1,  "co": 13, "ro": 0},  # 0 CAZ + 1 ATA | 9 CAZ + 4 ATA
     "Atletico San Luis_Pachuca":  {"am": 2,  "co": 5,  "ro": 1},  # 0 ASL + 2 PAC | 1 ASL + 4 PAC | 0 ASL + 1 PAC roja
+
+    # Jornada 6 — resultados y estadísticas confirmados (fuente: Sofascore)
+    "Atlante_Leon":               {"am": 3,  "co": 6,  "ro": 0},  # 2 ATL + 1 LEO | 3 ATL + 3 LEO
+    "Necaxa_Cruz Azul":           {"am": 7,  "co": 14, "ro": 0},  # 5 NEC + 2 CAZ | 7 NEC + 7 CAZ
+    "Tijuana_Pumas UNAM":         {"am": 2,  "co": 9,  "ro": 1},  # 1 TIJ + 1 PUM | 3 TIJ + 6 PUM | 0 TIJ + 1 PUM roja
 }
 
 # ─────────────────────────────────────────────────────────────────────────
