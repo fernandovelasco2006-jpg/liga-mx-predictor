@@ -400,6 +400,22 @@ with tab_pred:
         st.caption(f"⚡ {N_SIMS_PARTIDO:,} simulaciones")
         btn = st.button("⚽ Simular partido", key="btn_simular")
 
+        # ─────────────────────────────────────────────────────────────
+        # SIMULAR JORNADA COMPLETA — detecta la jornada pendiente más
+        # próxima (según fechas oficiales ya cargadas en PARTIDOS/
+        # HORARIOS_PARTIDO) y simula sus partidos de un jalón, guardando
+        # todo en el historial de Supabase con el mismo formato que ya
+        # usa el flujo de "un partido a la vez".
+        # ─────────────────────────────────────────────────────────────
+        st.markdown("---")
+        _jornada_detectada = detectar_jornada_actual()
+        btn_jornada = False
+        if _jornada_detectada is None:
+            st.caption("No hay jornadas pendientes — temporada terminada.")
+        else:
+            st.caption(f"Jornada detectada: **Jornada {_jornada_detectada}** · 2,000,000 sims/partido")
+            btn_jornada = st.button("⚽ Simular Jornada", key="btn_simular_jornada", type="primary")
+
     with col_der:
         alt = ALTITUD_EQUIPO.get(local)
         estado_tag = tag("tag-played", "✓ Jugado") if resultado_real else tag("tag-pending", "⏳ Por jugarse")
@@ -520,6 +536,89 @@ with tab_pred:
                     )
             else:
                 st.info("Sin señales claras de apuesta para este partido — modelo conservador.")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Resultado de "Simular Jornada" — a todo el ancho del tab, debajo
+    # de las columnas del partido individual (el botón vive en col_izq,
+    # pero el resultado no cabe bien en 1/3.5 del ancho de pantalla).
+    # ─────────────────────────────────────────────────────────────────
+    if btn_jornada:
+        with st.spinner(f"Simulando Jornada {_jornada_detectada} completa..."):
+            sesgo_actual = _sesgo_equipo_cached()
+            resultado_jornada = simular_jornada_completa(
+                jornada=_jornada_detectada, n=2_000_000,
+                peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
+                mercados_suspendidos=_mercados_suspendidos_cached(),
+                sesgo_por_equipo=sesgo_actual,
+            )
+            resumen_guardado = {"partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
+            if SUPABASE_DISPONIBLE:
+                resumen_guardado = guardar_jornada_completa(SUPABASE_URL, SUPABASE_KEY, resultado_jornada)
+        st.session_state["resultado_jornada_simulada"] = resultado_jornada
+        st.session_state["resumen_guardado_jornada"] = resumen_guardado
+
+    if "resultado_jornada_simulada" in st.session_state:
+        st.markdown("---")
+        resultado_jornada = st.session_state["resultado_jornada_simulada"]
+        resumen_guardado = st.session_state.get("resumen_guardado_jornada", {})
+
+        st.markdown(f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
+                    f'letter-spacing:2px;color:#e5007d;margin-bottom:0.5rem">⚽ JORNADA {resultado_jornada["jornada"]} SIMULADA</div>',
+                    unsafe_allow_html=True)
+
+        if SUPABASE_DISPONIBLE:
+            if resumen_guardado.get("errores"):
+                st.warning(f"⚠️ Guardado parcial: {resumen_guardado['partidos_guardados']} partidos guardados, "
+                           f"{len(resumen_guardado['errores'])} con error.")
+            else:
+                st.success(f"✅ {resumen_guardado.get('partidos_guardados', 0)} partidos guardados en el "
+                           f"historial · {resumen_guardado.get('apuestas_guardadas', 0)} apuestas registradas.")
+        else:
+            st.info("Supabase no está conectado — la simulación se muestra abajo pero no se guarda en el historial.")
+
+        for p in resultado_jornada["partidos"]:
+            r_p = p["resultado_sim"]
+            pa_p, pd_p, pb_p = r_p["prob_home"], r_p["prob_draw"], r_p["prob_away"]
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.5rem;margin:1rem 0 0.3rem;'
+                f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
+                f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">'
+                f'{flag(p["local"])} {p["local"]} vs {flag(p["visitante"])} {p["visitante"]}</span>'
+                f'<span style="font-size:0.68rem;color:#6b9b7d">🧑‍⚖️ {p["arbitro"]}</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="prob-bar"><div class="bar-a" style="width:{pa_p:.1f}%"></div>'
+                f'<div class="bar-draw" style="width:{pd_p:.1f}%"></div>'
+                f'<div class="bar-b" style="width:{pb_p:.1f}%"></div></div>'
+                f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
+                f'{p["local"]} {pa_p:.1f}% · Empate {pd_p:.1f}% · {p["visitante"]} {pb_p:.1f}%</div>',
+                unsafe_allow_html=True,
+            )
+            if p["apuestas"]:
+                for fila_inicio in range(0, len(p["apuestas"]), 3):
+                    fila = p["apuestas"][fila_inicio:fila_inicio + 3]
+                    cols_j = st.columns(3)
+                    for i_ap, ap in enumerate(fila):
+                        with cols_j[i_ap]:
+                            st.markdown(
+                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                f'<div style="font-size:0.85rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                f'<div style="font-size:0.6rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                                unsafe_allow_html=True,
+                            )
+            else:
+                st.caption("Sin señales de confianza para este partido.")
+            if p["parlay"]:
+                st.markdown(
+                    f'<div class="parlay-card" style="padding:0.5rem 0.8rem"><span style="font-size:0.55rem;'
+                    f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                    f'<div style="font-size:0.76rem;color:#e5007d;margin:0.15rem 0">{p["parlay"]["texto"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
+                    f'<b style="color:#e5007d">{p["parlay"]["prob_combinada"]:.1f}%</b></div></div>',
+                    unsafe_allow_html=True,
+                )
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Resultados reales
@@ -897,94 +996,6 @@ with tab_tabla:
             column_config={"#": st.column_config.NumberColumn(width="small")},
         )
         st.caption(f"📅 {n_jugados} partido(s) jugado(s) hasta ahora · empatados comparten posición, igual que la tabla oficial")
-
-    st.markdown("---")
-
-    # ─────────────────────────────────────────────────────────────────
-    # SIMULAR JORNADA COMPLETA — detecta la jornada pendiente más
-    # próxima (según fechas oficiales ya cargadas en PARTIDOS/HORARIOS_
-    # PARTIDO) y simula sus partidos de un jalón, guardando todo en el
-    # historial de Supabase con el mismo formato que ya usa el flujo de
-    # "un partido a la vez".
-    # ─────────────────────────────────────────────────────────────────
-    st.markdown("### ⚽ Simular Jornada")
-    _jornada_detectada = detectar_jornada_actual()
-    if _jornada_detectada is None:
-        st.info("No hay jornadas pendientes — la temporada ya terminó (todos los partidos tienen resultado).")
-    else:
-        st.caption(f"Jornada detectada automáticamente: **Jornada {_jornada_detectada}** · 2,000,000 simulaciones por partido")
-        if st.button("⚽ Simular Jornada", key="btn_simular_jornada", type="primary"):
-            with st.spinner(f"Simulando Jornada {_jornada_detectada} completa..."):
-                sesgo_actual = _sesgo_equipo_cached()
-                resultado_jornada = simular_jornada_completa(
-                    jornada=_jornada_detectada, n=2_000_000,
-                    peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
-                    mercados_suspendidos=_mercados_suspendidos_cached(),
-                    sesgo_por_equipo=sesgo_actual,
-                )
-                resumen_guardado = {"partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
-                if SUPABASE_DISPONIBLE:
-                    resumen_guardado = guardar_jornada_completa(SUPABASE_URL, SUPABASE_KEY, resultado_jornada)
-            st.session_state["resultado_jornada_simulada"] = resultado_jornada
-            st.session_state["resumen_guardado_jornada"] = resumen_guardado
-
-        if "resultado_jornada_simulada" in st.session_state:
-            resultado_jornada = st.session_state["resultado_jornada_simulada"]
-            resumen_guardado = st.session_state.get("resumen_guardado_jornada", {})
-
-            if SUPABASE_DISPONIBLE:
-                if resumen_guardado.get("errores"):
-                    st.warning(f"⚠️ Guardado parcial: {resumen_guardado['partidos_guardados']} partidos guardados, "
-                               f"{len(resumen_guardado['errores'])} con error.")
-                else:
-                    st.success(f"✅ Jornada {resultado_jornada['jornada']}: {resumen_guardado.get('partidos_guardados', 0)} "
-                               f"partidos guardados en el historial · {resumen_guardado.get('apuestas_guardadas', 0)} apuestas registradas.")
-            else:
-                st.info("Supabase no está conectado — la simulación se muestra abajo pero no se guarda en el historial.")
-
-            for p in resultado_jornada["partidos"]:
-                r_p = p["resultado_sim"]
-                pa_p, pd_p, pb_p = r_p["prob_home"], r_p["prob_draw"], r_p["prob_away"]
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:0.5rem;margin:1rem 0 0.3rem;'
-                    f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
-                    f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">'
-                    f'{flag(p["local"])} {p["local"]} vs {flag(p["visitante"])} {p["visitante"]}</span>'
-                    f'<span style="font-size:0.68rem;color:#6b9b7d">🧑‍⚖️ {p["arbitro"]}</span></div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    f'<div class="prob-bar"><div class="bar-a" style="width:{pa_p:.1f}%"></div>'
-                    f'<div class="bar-draw" style="width:{pd_p:.1f}%"></div>'
-                    f'<div class="bar-b" style="width:{pb_p:.1f}%"></div></div>'
-                    f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
-                    f'{p["local"]} {pa_p:.1f}% · Empate {pd_p:.1f}% · {p["visitante"]} {pb_p:.1f}%</div>',
-                    unsafe_allow_html=True,
-                )
-                if p["apuestas"]:
-                    for fila_inicio in range(0, len(p["apuestas"]), 3):
-                        fila = p["apuestas"][fila_inicio:fila_inicio + 3]
-                        cols_j = st.columns(3)
-                        for i_ap, ap in enumerate(fila):
-                            with cols_j[i_ap]:
-                                st.markdown(
-                                    f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
-                                    f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
-                                    f'<div style="font-size:0.85rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                                    f'<div style="font-size:0.6rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
-                                    unsafe_allow_html=True,
-                                )
-                else:
-                    st.caption("Sin señales de confianza para este partido.")
-                if p["parlay"]:
-                    st.markdown(
-                        f'<div class="parlay-card" style="padding:0.5rem 0.8rem"><span style="font-size:0.55rem;'
-                        f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
-                        f'<div style="font-size:0.76rem;color:#e5007d;margin:0.15rem 0">{p["parlay"]["texto"]}</div>'
-                        f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
-                        f'<b style="color:#e5007d">{p["parlay"]["prob_combinada"]:.1f}%</b></div></div>',
-                        unsafe_allow_html=True,
-                    )
 
     st.markdown("---")
     st.markdown("### 🔮 Proyección de fin de temporada (simulada)")
