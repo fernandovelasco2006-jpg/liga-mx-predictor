@@ -287,6 +287,12 @@ def calcular_brier_score(historial_predicciones: list) -> dict:
     debajo de eso indica que el modelo aporta información real y no
     solo ruido con forma de porcentaje.
 
+    Nota de tipos: Supabase/PostgREST devuelve las columnas numeric
+    (prob_local, prob_empate, prob_visitante) como STRING en el JSON
+    ("34.5", no 34.5) — cada valor se convierte con float() antes de
+    operar; una fila con un valor no convertible se descarta en vez de
+    tronar toda la función.
+
     Devuelve también el desglose de Brier POR EQUIPO (como local y como
     visitante por separado) para detectar si el modelo está mal
     calibrado específicamente para algunos equipos — insumo directo
@@ -303,26 +309,34 @@ def calcular_brier_score(historial_predicciones: list) -> dict:
         return {"brier": None, "n_evaluadas": 0, "por_equipo": []}
 
     suma_brier = 0.0
+    n_validas = 0
     brier_por_equipo = {}  # equipo -> [suma_brier, n]
 
     for p in evaluadas:
-        gh, ga = p["goles_local"], p["goles_visitante"]
+        try:
+            gh, ga = int(p["goles_local"]), int(p["goles_visitante"])
+            p_local = float(p["prob_local"]) / 100.0
+            p_empate = float(p["prob_empate"]) / 100.0
+            p_visita = float(p["prob_visitante"]) / 100.0
+        except (TypeError, ValueError):
+            continue  # fila con dato faltante/corrupto — se omite, no tumba el cálculo
+
         y_local = 1.0 if gh > ga else 0.0
         y_empate = 1.0 if gh == ga else 0.0
         y_visita = 1.0 if gh < ga else 0.0
 
-        p_local = p["prob_local"] / 100.0
-        p_empate = p["prob_empate"] / 100.0
-        p_visita = p["prob_visitante"] / 100.0
-
         brier_partido = (p_local - y_local) ** 2 + (p_empate - y_empate) ** 2 + (p_visita - y_visita) ** 2
         suma_brier += brier_partido
+        n_validas += 1
 
         for equipo in (p["local"], p["visitante"]):
             if equipo not in brier_por_equipo:
                 brier_por_equipo[equipo] = [0.0, 0]
             brier_por_equipo[equipo][0] += brier_partido
             brier_por_equipo[equipo][1] += 1
+
+    if n_validas == 0:
+        return {"brier": None, "n_evaluadas": 0, "por_equipo": []}
 
     por_equipo = [
         {"equipo": eq, "brier_promedio": round(suma / n, 3), "n_partidos": n}
@@ -331,8 +345,8 @@ def calcular_brier_score(historial_predicciones: list) -> dict:
     por_equipo.sort(key=lambda f: f["brier_promedio"], reverse=True)
 
     return {
-        "brier": round(suma_brier / len(evaluadas), 3),
-        "n_evaluadas": len(evaluadas),
+        "brier": round(suma_brier / n_validas, 3),
+        "n_evaluadas": n_validas,
         "por_equipo": por_equipo,
     }
 
@@ -365,10 +379,16 @@ def calcular_calibracion_por_bin(historial_predicciones: list, ancho_bin: int = 
 
     observaciones = []  # (prob_prometida, ocurrio: bool)
     for p in evaluadas:
-        gh, ga = p["goles_local"], p["goles_visitante"]
-        observaciones.append((p["prob_local"], gh > ga))
-        observaciones.append((p["prob_empate"], gh == ga))
-        observaciones.append((p["prob_visitante"], gh < ga))
+        try:
+            gh, ga = int(p["goles_local"]), int(p["goles_visitante"])
+            p_local = float(p["prob_local"])
+            p_empate = float(p["prob_empate"])
+            p_visita = float(p["prob_visitante"])
+        except (TypeError, ValueError):
+            continue  # fila con dato faltante/corrupto — se omite
+        observaciones.append((p_local, gh > ga))
+        observaciones.append((p_empate, gh == ga))
+        observaciones.append((p_visita, gh < ga))
 
     bins = {}
     for prob, ocurrio in observaciones:
@@ -399,7 +419,102 @@ def calcular_calibracion_por_bin(historial_predicciones: list, ancho_bin: int = 
     return filas
 
 
+PJ_MINIMO_SESGO_EQUIPO = 8  # partidos evaluados mínimo por equipo/rol antes de corregir sesgo
+TOPE_CORRECCION_SESGO = 0.15  # ±15% máx — mismo espíritu de tope que el resto del modelo
 
+
+def calcular_sesgo_por_equipo(historial_predicciones: list,
+                               pj_minimo: int = PJ_MINIMO_SESGO_EQUIPO,
+                               tope: float = TOPE_CORRECCION_SESGO) -> dict:
+    """
+    Compara, para cada equipo, cuánto esperaba el modelo que anotara
+    (goles_local_esp / goles_visita_esp, guardados en
+    predicciones_ligamx por guardar_prediccion()) contra cuánto anotó
+    de verdad (goles_local / goles_visitante) — SEPARADO por rol (local
+    vs. visitante), porque un equipo puede estar sobreestimado jugando
+    en casa y subestimado de visita al mismo tiempo, son sesgos
+    independientes.
+
+    Solo devuelve corrección para equipos/rol con pj_minimo (8 por
+    defecto) partidos evaluados o más — con menos muestra, la
+    diferencia observada es ruido, no señal, y aplicarla metería más
+    error del que corrige (el mismo criterio de minimo_evaluadas que ya
+    usa calcular_stats_por_mercado(), aquí más estricto porque el
+    número que se ajusta —FUERZA_ATAQUE/DEFENSA— alimenta directamente
+    a calcular_lambdas() de TODOS los partidos futuros de ese equipo).
+
+    Nota de tipos: igual que calcular_brier_score(), convierte con
+    float() cada valor (Supabase/PostgREST los entrega como string) y
+    descarta filas con datos faltantes/corruptos en vez de tronar.
+
+    Devuelve:
+        {
+          "America": {
+              "factor_ataque_local": 1.08,   # >1 = anotó más de lo esperado de local
+              "factor_ataque_visita": 0.94,  # <1 = anotó menos de lo esperado de visita
+              "pj_local": 9, "pj_visita": 8,
+          },
+          ...
+        }
+    Solo incluye equipos con al menos un rol (local o visita) que
+    alcanzó pj_minimo — los que no, simplemente no aparecen en el
+    diccionario, y el llamador (calcular_lambdas()) debe tratar la
+    ausencia como "sin corrección" (factor 1.0), nunca como error.
+    """
+    # acumuladores separados por rol: equipo -> [suma_esp, suma_real, n]
+    local_stats = {}
+    visita_stats = {}
+
+    for p in historial_predicciones:
+        if p.get("goles_local") is None or p.get("goles_visitante") is None:
+            continue
+        try:
+            gh, ga = int(p["goles_local"]), int(p["goles_visitante"])
+            esp_local = float(p["goles_local_esp"])
+            esp_visita = float(p["goles_visita_esp"])
+        except (TypeError, ValueError, KeyError):
+            continue
+
+        local = p.get("local")
+        visit = p.get("visitante")
+        if not local or not visit:
+            continue
+
+        if local not in local_stats:
+            local_stats[local] = [0.0, 0, 0]
+        local_stats[local][0] += esp_local
+        local_stats[local][1] += gh
+        local_stats[local][2] += 1
+
+        if visit not in visita_stats:
+            visita_stats[visit] = [0.0, 0, 0]
+        visita_stats[visit][0] += esp_visita
+        visita_stats[visit][1] += ga
+        visita_stats[visit][2] += 1
+
+    resultado = {}
+    equipos = set(local_stats) | set(visita_stats)
+    for equipo in equipos:
+        entrada = {}
+        if equipo in local_stats:
+            suma_esp, suma_real, n = local_stats[equipo]
+            if n >= pj_minimo and suma_esp > 0:
+                razon = suma_real / suma_esp
+                entrada["factor_ataque_local"] = max(1 - tope, min(1 + tope, razon))
+                entrada["pj_local"] = n
+        if equipo in visita_stats:
+            suma_esp, suma_real, n = visita_stats[equipo]
+            if n >= pj_minimo and suma_esp > 0:
+                razon = suma_real / suma_esp
+                entrada["factor_ataque_visita"] = max(1 - tope, min(1 + tope, razon))
+                entrada["pj_visita"] = n
+        if entrada:
+            resultado[equipo] = entrada
+
+    return resultado
+
+
+def calcular_stats_apuestas(historial: list) -> dict:
     evaluadas = [a for a in historial if a.get("acierto") is not None]
     pendientes = [a for a in historial if a.get("acierto") is None]
     aciertos = [a for a in evaluadas if a["acierto"]]
