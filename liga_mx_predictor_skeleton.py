@@ -107,10 +107,10 @@ PARTIDOS = [
     ('Atlante', 'Leon', 6, 'Estadio Banorte', (1, 1), 'Martin Molina Astorga'),
     ('Necaxa', 'Cruz Azul', 6, 'Estadio Victoria', (1, 3), 'Ismael Rosario Lopez Peñuelas'),
     ('Tijuana', 'Pumas UNAM', 6, 'Estadio Caliente', (2, 0), 'Cesar Arturo Ramos Palazuelos'),
-    ('Pachuca', 'Guadalajara', 6, 'Estadio Hidalgo', None, 'Victor Alfonso Caceres Hernandez'),
-    ('Atlas', 'Queretaro', 6, 'Estadio Jalisco', None, 'Marco Antonio Ortiz Nava'),
-    ('America', 'Puebla', 6, 'Estadio Banorte', None, 'Salvador Perez Villalobos'),
-    ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', None, 'Jesus Rafael Lopez Valle'),
+    ('Pachuca', 'Guadalajara', 6, 'Estadio Hidalgo', (1, 1), 'Victor Alfonso Caceres Hernandez'),
+    ('Atlas', 'Queretaro', 6, 'Estadio Jalisco', (1, 3), 'Marco Antonio Ortiz Nava'),
+    ('America', 'Puebla', 6, 'Estadio Banorte', (2, 0), 'Salvador Perez Villalobos'),
+    ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', (0, 0), 'Jesus Rafael Lopez Valle'),
     ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', None, 'Abraham De Jesus Quirarte Contreras'),
     ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', None, 'Luis Enrique Santander Aguirre'),
     ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, None),
@@ -746,6 +746,10 @@ DATOS_REALES_LIGAMX = {
     "Atlante_Leon":               {"am": 3,  "co": 6,  "ro": 0},  # 2 ATL + 1 LEO | 3 ATL + 3 LEO
     "Necaxa_Cruz Azul":           {"am": 7,  "co": 14, "ro": 0},  # 5 NEC + 2 CAZ | 7 NEC + 7 CAZ
     "Tijuana_Pumas UNAM":         {"am": 2,  "co": 9,  "ro": 1},  # 1 TIJ + 1 PUM | 3 TIJ + 6 PUM | 0 TIJ + 1 PUM roja
+    "Atlas_Queretaro":            {"am": 2,  "co": 8,  "ro": 1},  # 0 ATL + 2 QRO | 6 ATL + 2 QRO | 1 ATL + 0 QRO roja
+    "Santos Laguna_Tigres":       {"am": 6,  "co": 15, "ro": 1},  # 4 SAN + 2 TIG | 12 SAN + 3 TIG | 0 SAN + 1 TIG roja
+    "America_Puebla":             {"am": 1,  "co": 11, "ro": 0},  # 0 AME + 1 PUE | 3 AME + 8 PUE
+    "Pachuca_Guadalajara":        {"am": 4,  "co": 15, "ro": 0},  # 4 PAC + 0 GDL | 8 PAC + 7 GDL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
