@@ -36,6 +36,12 @@ except ImportError:
     CLIMA_MODULO_DISPONIBLE = False
 
 try:
+    from liga_mx_cuotas import obtener_cuotas_jornada
+    CUOTAS_MODULO_DISPONIBLE = True
+except ImportError:
+    CUOTAS_MODULO_DISPONIBLE = False
+
+try:
     SUPABASE_URL = st.secrets.get("SUPABASE_URL_LIGAMX", None)
     SUPABASE_KEY = st.secrets.get("SUPABASE_KEY_LIGAMX", None)
 except Exception:
@@ -46,6 +52,11 @@ try:
     WEATHER_API_KEY = st.secrets.get("WEATHER_API_KEY", None)
 except Exception:
     WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
+
+try:
+    ODDS_API_KEY = st.secrets.get("ODDS_API_KEY", None)
+except Exception:
+    ODDS_API_KEY = os.environ.get("ODDS_API_KEY", None)
 
 SUPABASE_DISPONIBLE = SUPABASE_MODULO_DISPONIBLE and SUPABASE_URL and SUPABASE_KEY
 
@@ -100,6 +111,7 @@ h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 .model-note { background:#0d1a12; border-left:3px solid #006341; border-radius:0 8px 8px 0; padding:0.7rem 1rem; font-size:0.75rem; color:#8fbfa0; margin-top:1.2rem; }
 .bet-card { border-radius:10px; padding:0.9rem; height:100%; }
 .bet-card-alta { background:#0d2818; border:1px solid #2d6b45; }
+.value-bet-badge { display:inline-block; background:linear-gradient(135deg,#3a2a00,#5a4000); border:1px solid #f0c040; color:#f0c040; border-radius:6px; padding:1px 8px; font-size:0.58rem; letter-spacing:1px; text-transform:uppercase; margin-top:0.3rem; font-weight:600; }
 .bet-card-media { background:#12241a; border:1px solid #1f4a2e; }
 .parlay-card { background:linear-gradient(135deg,#1a1500,#2a2000); border:1px solid #e5007d; border-radius:10px; padding:0.8rem 1rem; margin-top:0.75rem; }
 .disclaimer-banner { background: linear-gradient(135deg, #2a1500, #3a1e00); border: 1px solid #5a3a00; border-radius: 10px; padding: 0.7rem 1.2rem; margin-bottom: 1rem; font-size: 0.75rem; color: #f0c040; line-height: 1.5; text-align: center; }
@@ -136,6 +148,22 @@ def flag(t):
 
 def tag(cls, txt):
     return f'<span class="tag {cls}">{txt}</span>'
+
+
+def _badge_value_bet(ap: dict) -> str:
+    """
+    HTML del badge "💰 VALUE BET" para una apuesta, si trae value_bet
+    con tiene_valor=True (ver liga_mx_algoritmo.analizar_apuestas() y
+    liga_mx_cuotas.calcular_value_bet()). Cadena vacía si no aplica —
+    ninguna cuota disponible, o el EV no superó el umbral configurado en
+    liga_mx_cuotas.UMBRAL_VALUE_EV — para poder insertarlo directo en
+    cualquier f-string de tarjeta sin condicionales repetidos.
+    """
+    vb = ap.get("value_bet")
+    if not vb or not vb.get("tiene_valor"):
+        return ""
+    ev = vb.get("ev_pct")
+    return f'<div class="value-bet-badge">💰 Value Bet · EV +{ev:.1f}%</div>'
 
 if "historial_apuestas_sesion" not in st.session_state:
     st.session_state["historial_apuestas_sesion"] = []
@@ -246,6 +274,32 @@ def _factor_clima_cached(local, visit):
     return _calc_factor_clima(clima), clima
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# CUOTAS REALES (Value Betting) — The Odds API solo lista partidos
+# próximos/en vivo, así que se trae UNA vez toda la jornada disponible y
+# se indexa por (local, visita) en un dict — más barato que pedir cuota
+# partido por partido, y respeta el quota de la API (1 crédito por
+# consulta a /odds sin importar cuántos partidos traiga). Cacheado 1
+# hora, mismo criterio que el clima: las cuotas se mueven, pero no tanto
+# como para justificar refrescar en cada rerun de Streamlit.
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cuotas_jornada_cached():
+    if not (CUOTAS_MODULO_DISPONIBLE and ODDS_API_KEY):
+        return {}
+    partidos_con_cuota = obtener_cuotas_jornada(ODDS_API_KEY)
+    return {(p["home_team"], p["away_team"]): p["cuotas"] for p in partidos_con_cuota}
+
+
+def _cuota_partido(local, visit):
+    """Devuelve el dict de cuotas para (local, visit) si The Odds API lo
+    tiene listado, o None si no hay cuota disponible para ese partido
+    (todavía muy lejano, ya jugado, o el partido no aparece en ninguna
+    casa de la región consultada) — analizar_apuestas() ya maneja
+    cuotas=None sin problema (retrocompatible)."""
+    return _cuotas_jornada_cached().get((local, visit))
+
+
 def _partidos_de_hoy():
     tz_mx = timezone(timedelta(hours=-6))
     hoy = datetime.now(tz_mx).strftime("%Y-%m-%d")
@@ -282,7 +336,8 @@ if partidos_hoy_global:
             hora_str = horario[11:] if horario else ""
             _fc, _ = _factor_clima_cached(local, visit)
             r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc)
-            sugs_hoy = analizar_apuestas(local, visit, r_hoy, mercados_suspendidos=_mercados_suspendidos_cached())
+            sugs_hoy = analizar_apuestas(local, visit, r_hoy, mercados_suspendidos=_mercados_suspendidos_cached(),
+                                          cuotas=_cuota_partido(local, visit))
             _registrar_apuestas_sesion(local, visit, jornada, sugs_hoy, r=r_hoy, resultado_real=None)
             sugs_alta_hoy = [s for s in sugs_hoy if s["nivel"] == "ALTA"]
             if not sugs_alta_hoy:
@@ -312,7 +367,8 @@ if partidos_hoy_global:
                             f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
                             f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
                             f'<div style="font-size:0.88rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                            f'<div style="font-size:0.62rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                            f'<div style="font-size:0.62rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                            f'{_badge_value_bet(ap)}</div>',
                             unsafe_allow_html=True,
                         )
             parlay_hoy = armar_parlay(sugs_alta_hoy)
@@ -505,7 +561,8 @@ with tab_pred:
                 )
 
             st.markdown("<br>", unsafe_allow_html=True)
-            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
+                                      cuotas=_cuota_partido(local, visit))
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado_real)
             if sugs:
                 st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
@@ -522,7 +579,8 @@ with tab_pred:
                                 f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
                                 f'<div style="font-size:0.95rem;color:#e8f0ea;margin:0.3rem 0;font-weight:600">{ap["seleccion"]}</div>'
                                 f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
-                                f'<div style="font-size:0.6rem;color:#6b9b7d;margin-top:0.3rem">{ap["nota"]}</div></div>',
+                                f'<div style="font-size:0.6rem;color:#6b9b7d;margin-top:0.3rem">{ap["nota"]}</div>'
+                                f'{_badge_value_bet(ap)}</div>',
                                 unsafe_allow_html=True,
                             )
                 parlay = armar_parlay(sugs)
@@ -550,6 +608,7 @@ with tab_pred:
                 peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
                 mercados_suspendidos=_mercados_suspendidos_cached(),
                 sesgo_por_equipo=sesgo_actual,
+                cuotas_por_partido=_cuotas_jornada_cached(),
             )
             resumen_guardado = {"partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
             if SUPABASE_DISPONIBLE:
@@ -605,7 +664,8 @@ with tab_pred:
                                 f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
                                 f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
                                 f'<div style="font-size:0.85rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                                f'<div style="font-size:0.6rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                                f'<div style="font-size:0.6rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                                f'{_badge_value_bet(ap)}</div>',
                                 unsafe_allow_html=True,
                             )
             else:
@@ -668,7 +728,8 @@ with tab_apuestas:
             )
             _fc_dia, _ = _factor_clima_cached(local, visit)
             r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc_dia)
-            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached())  # ya vienen solo las que cumplen el umbral dinámico
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
+                                      cuotas=_cuota_partido(local, visit))  # ya vienen solo las que cumplen el umbral dinámico
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
@@ -683,7 +744,8 @@ with tab_apuestas:
                                 f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
                                 f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
                                 f'<div style="font-size:0.9rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div></div>',
+                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                                f'{_badge_value_bet(ap)}</div>',
                                 unsafe_allow_html=True,
                             )
                 parlay = armar_parlay(sugs)
