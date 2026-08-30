@@ -23,6 +23,17 @@ from liga_mx_elo_update import (
     resumen_movimiento_elo, n_partidos_procesados,
 )
 
+# Import opcional — liga_mx_cuotas.py depende de requests y de tener una
+# API key de The Odds API configurada en algún lado; si el módulo no
+# está presente (entorno de pruebas, o el usuario aún no lo agregó al
+# repo), analizar_apuestas() sigue funcionando exactamente igual, solo
+# que sin la sección de value_bet.
+try:
+    from liga_mx_cuotas import calcular_value_bet
+except ImportError:
+    def calcular_value_bet(prob_modelo_pct, cuota_decimal):
+        return {"ev_pct": None, "prob_implicita_pct": None, "tiene_valor": False}
+
 # ─────────────────────────────────────────────────────────────────────────
 # FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
 # (fuente FotMob: "goals_per_match" / "goals_conceded_per_match" — el
@@ -1069,7 +1080,8 @@ def _umbral_dinamico(home_team: str, away_team: str) -> float:
 # deduplicar por categoría: se muestran TODAS las líneas que cumplen el
 # umbral (ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez, si las 3 pasan).
 # ─────────────────────────────────────────────────────────────────────────
-def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset()) -> list:
+def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset(),
+                       cuotas: dict = None) -> list:
     """
     Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
     llega o supera el umbral dinámico calculado por _umbral_dinamico()
@@ -1101,26 +1113,55 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     de liga_mx_supabase.calcular_mercados_suspendidos(), la
     retroalimentación automática que apaga temporalmente un mercado si su
     acierto real viene rindiendo muy por debajo de lo que promete.
+
+    cuotas: opcional, dict de cuotas reales para ESTE partido (formato
+    {"home": float, "draw": float, "away": float, "casa": str} — ver
+    liga_mx_cuotas.obtener_cuotas_jornada()). Si se pasa, se calcula
+    Value Betting (liga_mx_cuotas.calcular_value_bet()) SOLO para el
+    mercado Resultado (1X2): The Odds API en el plan gratis únicamente
+    trae el mercado h2h para Liga MX (spreads/totals están limitados a
+    deportes de EE.UU. en su documentación), así que no hay cuota real
+    con la que comparar Total Goles, Tarjetas, Córners, etc. — esos
+    mercados siguen funcionando exactamente igual que sin este parámetro.
+    Si se omite (None, default), el comportamiento es idéntico al de
+    antes de agregar value betting — retrocompatible.
+
+    DECISIÓN DE DISEÑO explícita: el value bet de 1X2 SOLO se calcula
+    sobre selecciones que YA superaron UMBRAL_RECOMENDACION (80-90%
+    dinámico) — no se expone un mercado aparte de "underdogs con valor"
+    para resultados poco probables aunque tengan EV positivo (ej. 30% de
+    probabilidad con una cuota que pague mucho). El value bet funciona
+    como una validación adicional sobre las recomendaciones de alta
+    confianza que el modelo ya hace, no como un criterio independiente
+    de selección — así que una apuesta de 1X2 con EV negativo puede
+    seguir apareciendo en "Apuestas sugeridas" si su confianza superó el
+    umbral; el campo "value_bet" simplemente informa si, además de ser
+    probable, también es un buen negocio contra la cuota real.
     """
     apuestas = []
     UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
 
-    def ap(mercado, seleccion, confianza, nota):
-        apuestas.append({
+    def ap(mercado, seleccion, confianza, nota, cuota_decimal=None):
+        entrada = {
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
             "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el umbral
             "nota": nota,
             "umbral_aplicado": round(UMBRAL_RECOMENDACION, 1),
-        })
+        }
+        if cuota_decimal is not None:
+            entrada["value_bet"] = calcular_value_bet(confianza, cuota_decimal)
+        apuestas.append(entrada)
 
     pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
 
-    # 1. Resultado (1X2)
+    # 1. Resultado (1X2) — único mercado con value betting (ver docstring)
+    cuota_home = cuotas.get("home") if cuotas else None
+    cuota_away = cuotas.get("away") if cuotas else None
     if pa >= UMBRAL_RECOMENDACION:
-        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones")
+        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
     if pb >= UMBRAL_RECOMENDACION:
-        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones")
+        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
 
     # 2. Doble Oportunidad (1X / X2)
     conf_1x = min(pa + pd_, 99)
