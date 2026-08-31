@@ -1348,7 +1348,8 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
                               peso_elo: float = 1.0, peso_altitud: float = 1.0,
                               peso_arbitro: float = 1.0, factor_clima: float = 1.0,
                               mercados_suspendidos: frozenset = frozenset(),
-                              sesgo_por_equipo: dict = None) -> dict:
+                              sesgo_por_equipo: dict = None,
+                              cuotas_por_partido: dict = None) -> dict:
     """
     Corre simular_partido() + analizar_apuestas() para TODOS los
     partidos de una jornada (por defecto, la detectada automáticamente
@@ -1364,6 +1365,13 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     simular_partido() (ver calcular_lambdas() para el detalle) —
     normalmente la salida de
     liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
+
+    cuotas_por_partido: opcional, dict {(local, visit): {"home":...,
+    "draw":..., "away":..., "casa":...}} — normalmente construido en
+    app.py indexando la salida de
+    liga_mx_cuotas.obtener_cuotas_jornada(). Si el partido no tiene
+    cuota en el dict, analizar_apuestas() recibe cuotas=None para ese
+    partido y sigue funcionando igual (sin value_bet en 1X2).
 
     NO guarda nada en Supabase — solo simula y arma el paquete de
     resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
@@ -1390,6 +1398,7 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     if jornada is None:
         return {"jornada": None, "partidos": []}
 
+    cuotas_por_partido = cuotas_por_partido or {}
     resultados = []
     for local, visit, jorn, estadio, resultado_real, arbitro in partidos_de_jornada(jornada):
         if resultado_real is not None:
@@ -1399,7 +1408,8 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
         r = simular_partido(local, visit, n=n, peso_elo=peso_elo,
                              peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
                              factor_clima=factor_clima, sesgo_por_equipo=sesgo_por_equipo)
-        apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos)
+        apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos,
+                                      cuotas=cuotas_por_partido.get((local, visit)))
         parlay = armar_parlay(apuestas)
         resultados.append({
             "local": local, "visitante": visit,
