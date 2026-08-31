@@ -75,9 +75,23 @@ def _buscar_sport_key_ligamx(api_key: str) -> str:
 
 def obtener_cuotas_jornada(api_key: str, sport_key: str = None) -> list:
     """
-    Trae las cuotas 1X2 (mercado h2h) de todos los partidos de Liga MX
-    actualmente listados por la API (solo próximos/en curso — The Odds
-    API no expone partidos ya jugados en el endpoint de odds en vivo).
+    Trae las cuotas 1X2 (h2h) Y Total de Goles (totals) de todos los
+    partidos de Liga MX actualmente listados por la API (solo
+    próximos/en curso — The Odds API no expone partidos ya jugados en
+    el endpoint de odds en vivo).
+
+    Nota sobre totals: confirmado con una consulta real el 31/ago/2026
+    que SÍ hay cobertura de totals para Liga MX (líneas típicas: 2.5,
+    2.75, 3.0, 3.25, 3.5 según la casa) — la documentación general de
+    la API sugiere que totals está "limitado a deportes de EE.UU.", pero
+    eso no aplicó en la práctica para este sport_key. Ninguna casa
+    consultada ofreció una línea de 0.5 goles — el modelo puede seguir
+    calculando que Over 0.5 es 95%+ probable, pero esa selección no es
+    apostable en ninguna casa real, así que analizar_apuestas() debe
+    evitar mostrarla como value bet (ver calcular_value_bet_totales()).
+
+    Costo: 2 créditos por consulta (1 mercado h2h + 1 mercado totals,
+    1 región) — de sobra dentro del plan gratis de 500/mes.
 
     sport_key: opcional — si se omite, usa el key confirmado
     SPORT_KEY_LIGAMX ("soccer_mexico_ligamx") directamente, sin gastar
@@ -85,8 +99,11 @@ def obtener_cuotas_jornada(api_key: str, sport_key: str = None) -> list:
 
     Devuelve una lista de dicts, uno por partido:
         [{"home_team": str, "away_team": str, "commence_time": str,
-          "cuotas": {"home": float, "draw": float, "away": float, "casa": str}},
+          "cuotas": {"home": float, "draw": float, "away": float, "casa": str},
+          "cuotas_totales": [{"point": float, "over": float, "under": float, "casa": str}, ...]},
          ...]
+    "cuotas_totales" es una lista (puede haber varias líneas distintas
+    entre casas — 2.5 en una, 3.0 en otra) ordenada por "point" ascendente.
     Lista vacía si no hay api_key, no se encuentra el sport_key, o la
     petición falla por cualquier motivo — nunca truena la app.
     """
@@ -99,7 +116,7 @@ def obtener_cuotas_jornada(api_key: str, sport_key: str = None) -> list:
             params={
                 "apiKey": api_key,
                 "regions": REGION_CUOTAS,
-                "markets": "h2h",
+                "markets": "h2h,totals",
                 "oddsFormat": "decimal",
             },
             timeout=10,
@@ -129,8 +146,41 @@ def obtener_cuotas_jornada(api_key: str, sport_key: str = None) -> list:
             "away_team": away_interno,
             "commence_time": p.get("commence_time"),
             "cuotas": cuotas,
+            "cuotas_totales": _extraer_cuotas_totales(p),
         })
     return resultado
+
+
+def _extraer_cuotas_totales(partido: dict) -> list:
+    """
+    Extrae todas las líneas de Total de Goles (mercado "totals") que
+    trae el partido, una entrada por (casa, point) distinto — a
+    diferencia de h2h, aquí NO se elige "la mejor casa" porque cada casa
+    puede ofrecer una línea (point) distinta, y el objetivo es poder
+    verificar contra CUALQUIER línea real disponible, no solo una.
+
+    Devuelve lista ordenada por "point" ascendente:
+        [{"point": 2.5, "over": 1.51, "under": 2.38, "casa": "Pinnacle"}, ...]
+    Lista vacía si el partido no trae mercado totals en ninguna casa.
+    """
+    lineas = []
+    for b in partido.get("bookmakers", []):
+        mercado_totals = next((m for m in b.get("markets", []) if m.get("key") == "totals"), None)
+        if not mercado_totals:
+            continue
+        outcomes = {o.get("name"): (o.get("price"), o.get("point")) for o in mercado_totals.get("outcomes", [])}
+        over_price, point_over = outcomes.get("Over", (None, None))
+        under_price, point_under = outcomes.get("Under", (None, None))
+        if over_price is None or under_price is None or point_over is None:
+            continue
+        lineas.append({
+            "point": point_over,
+            "over": over_price,
+            "under": under_price,
+            "casa": b.get("title", b.get("key")),
+        })
+    lineas.sort(key=lambda l: l["point"])
+    return lineas
 
 
 def _extraer_mejor_cuota_h2h(partido: dict) -> dict:
@@ -231,6 +281,57 @@ MAPA_NOMBRES_ODDS_API = {
 
 
 UMBRAL_VALUE_EV = 5.0  # % mínimo de EV para marcar una apuesta como "con valor"
+
+
+def calcular_value_bet_totales(linea_modelo: float, direccion: str, cuotas_totales: list) -> dict:
+    """
+    Verifica si una línea de Total de Goles que el modelo quiere
+    recomendar (ej. "Over 0.5", "Over 2.5") es REALMENTE apostable en
+    alguna casa real, y si es así, calcula su EV — resuelve el problema
+    de que el modelo puede calcular con alta confianza un mercado que
+    ninguna casa ofrece (confirmado con datos reales: ninguna casa
+    consultada tiene línea de 0.5 goles, la más baja disponible ronda
+    2.5).
+
+    linea_modelo: el número de la línea que evaluó el modelo (0.5, 1.5,
+    2.5, 3.5 — los que ya generan analizar_apuestas()).
+    direccion: "over" o "under".
+    cuotas_totales: salida de obtener_cuotas_jornada()[i]["cuotas_totales"].
+
+    Busca la línea real con el "point" MÁS CERCANO a linea_modelo, con
+    tolerancia de ±0.25 (para permitir 2.5 vs 2.75 de casas distintas
+    como "razonablemente la misma línea", pero NO 0.5 vs 2.5, que son
+    apuestas completamente distintas en la práctica).
+
+    Devuelve:
+        {"apostable": bool, "point_real": float | None, "ev_pct": float | None,
+         "prob_implicita_pct": float | None, "tiene_valor": bool, "casa": str | None}
+    "apostable": False cuando ninguna casa ofrece una línea suficientemente
+    cercana — en ese caso el resto de los campos son None y
+    "tiene_valor" es False, para que el llamador sepa que debe evitar
+    presentar esa selección como una recomendación accionable con cuota.
+    """
+    TOLERANCIA_LINEA = 0.25
+    if not cuotas_totales:
+        return {"apostable": False, "point_real": None, "ev_pct": None,
+                "prob_implicita_pct": None, "tiene_valor": False, "casa": None}
+
+    mas_cercana = min(cuotas_totales, key=lambda l: abs(l["point"] - linea_modelo))
+    if abs(mas_cercana["point"] - linea_modelo) > TOLERANCIA_LINEA:
+        return {"apostable": False, "point_real": mas_cercana["point"], "ev_pct": None,
+                "prob_implicita_pct": None, "tiene_valor": False, "casa": None}
+
+    # Esto requiere que el llamador ya sepa la probabilidad del modelo
+    # PARA ESA LÍNEA REAL (no la línea original) — se resuelve en
+    # liga_mx_algoritmo.analizar_apuestas(), que tiene acceso directo a
+    # las probabilidades de simular_partido() para cualquier línea.
+    cuota = mas_cercana["over"] if direccion == "over" else mas_cercana["under"]
+    return {
+        "apostable": True,
+        "point_real": mas_cercana["point"],
+        "cuota": cuota,
+        "casa": mas_cercana["casa"],
+    }
 
 
 def calcular_value_bet(prob_modelo_pct: float, cuota_decimal: float) -> dict:
