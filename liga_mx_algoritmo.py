@@ -1099,15 +1099,22 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 # PJ = umbral MÁS BAJO) porque más partidos jugados = más confianza en
 # el modelo, no menos.
 #
-# UMBRAL_MAX_RECOMENDACION (90%) = con 0 partidos jugados del Apertura
-# 2026, toda la fuerza del cálculo viene de datos heredados (Clausura
-# 2026 + Elo base) — exige el mayor margen de error.
+# UMBRAL_MAX_RECOMENDACION (85%, antes 90%) = con 0 partidos jugados del
+# Apertura 2026, toda la fuerza del cálculo viene de datos heredados
+# (Clausura 2026 + Elo base) — sigue exigiendo el mayor margen de error
+# del rango, pero se relajó de 90 a 85 por decisión explícita del
+# usuario: con 90% el modelo casi no sugería nada apostable en las
+# primeras jornadas, y bajar solo el techo (no el piso de 80%) evita
+# hacerlo más permisivo justo cuando menos evidencia real hay del
+# torneo — el Brier score real medido hasta la fecha (0.748 con 5
+# partidos evaluados, peor que 0.667 = azar) sugiere que el modelo
+# todavía no está sobrado de margen como para relajar también el piso.
 # UMBRAL_MIN_RECOMENDACION (80%) = a partir de PJ_PARA_UMBRAL_MIN
 # partidos jugados por AMBOS equipos, la Forma real ya alcanzó su tope
 # completo de ajuste (mismo umbral que usa _tope_shrinkage para llegar a
 # TOPE_MAX_FORMA) — el modelo ya opera con evidencia sólida del torneo.
 # ─────────────────────────────────────────────────────────────────────────
-UMBRAL_MAX_RECOMENDACION = 90.0
+UMBRAL_MAX_RECOMENDACION = 85.0
 UMBRAL_MIN_RECOMENDACION = 80.0
 PJ_PARA_UMBRAL_MIN = 10  # mismo valor que PARTIDOS_PARA_TOPE_COMPLETO
 
