@@ -111,8 +111,8 @@ PARTIDOS = [
     ('Atlas', 'Queretaro', 6, 'Estadio Jalisco', (1, 3), 'Marco Antonio Ortiz Nava'),
     ('America', 'Puebla', 6, 'Estadio Banorte', (2, 0), 'Salvador Perez Villalobos'),
     ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', (0, 0), 'Jesus Rafael Lopez Valle'),
-    ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', None, 'Abraham De Jesus Quirarte Contreras'),
-    ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', None, 'Luis Enrique Santander Aguirre'),
+    ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', (4, 0), 'Abraham De Jesus Quirarte Contreras'),
+    ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', (1, 3), 'Luis Enrique Santander Aguirre'),
     ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, None),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', None, None),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', None, None),
@@ -750,6 +750,8 @@ DATOS_REALES_LIGAMX = {
     "Santos Laguna_Tigres":       {"am": 6,  "co": 15, "ro": 1},  # 4 SAN + 2 TIG | 12 SAN + 3 TIG | 0 SAN + 1 TIG roja
     "America_Puebla":             {"am": 1,  "co": 11, "ro": 0},  # 0 AME + 1 PUE | 3 AME + 8 PUE
     "Pachuca_Guadalajara":        {"am": 4,  "co": 15, "ro": 0},  # 4 PAC + 0 GDL | 8 PAC + 7 GDL
+    "Toluca_FC Juarez":           {"am": 2,  "co": 8,  "ro": 0},  # 1 TOL + 1 JUA | 5 TOL + 3 JUA
+    "Monterrey_Atletico San Luis": {"am": 3, "co": 15, "ro": 0},  # 1 MTY + 2 ASL | 14 MTY + 1 ASL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
