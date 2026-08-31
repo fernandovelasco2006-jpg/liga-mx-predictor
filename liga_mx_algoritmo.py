@@ -861,11 +861,54 @@ def simular_temporada_montecarlo(n: int = 1000,
 from collections import Counter
 from liga_mx_predictor_skeleton import (
     CORNERS_EQUIPO, CORNERS_DEFAULT, CORNERS_EQUIPO_CONTRA, CORNERS_DEFAULT_CONTRA,
+    DATOS_REALES_LIGAMX,
 )
 
 PROMEDIO_LIGA_AMARILLAS = 4.3
 PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.15 (placeholder sin datos)
 
+# ─────────────────────────────────────────────────────────────────────────
+# ROJAS REALES POR ÁRBITRO — derivado automáticamente, no hardcodeado.
+# Sofascore no publica una tabla agregada de "promedio de rojas por
+# árbitro" como sí tiene para amarillas, así que este dato se construye
+# solo, cruzando dos cosas que YA se cargan jornada a jornada de todas
+# formas: el árbitro asignado en PARTIDOS y el conteo real de rojas en
+# DATOS_REALES_LIGAMX ("ro"). Se recalcula cada vez que se llama (barato,
+# mismo criterio que _forma_real_liga_mx()) — así que conforme se van
+# agregando jornadas con su árbitro y su dato de rojas, este número se
+# actualiza solo sin tocar código.
+#
+# PJ_MINIMO_ROJAS_ARBITRO: las rojas son eventos raros (~0.4/partido en
+# liga) — con 1-3 partidos dirigidos, un árbitro que sacó una sola roja
+# puede parecer "3x más tarjetero" que el promedio de liga sin serlo
+# realmente. Se exige un mínimo de partidos antes de confiar en el
+# promedio real de ESE árbitro; con menos, se usa PROMEDIO_LIGA_ROJAS
+# como fallback (igual que ya hacía la versión placeholder).
+# ─────────────────────────────────────────────────────────────────────────
+PJ_MINIMO_ROJAS_ARBITRO = 8
+
+
+def _rojas_reales_por_arbitro() -> dict:
+    """
+    Calcula (rojas_totales, partidos_dirigidos) REAL por árbitro,
+    cruzando PARTIDOS (para saber quién dirigió cada partido jugado) con
+    DATOS_REALES_LIGAMX (para el conteo real de rojas de ese partido).
+    Solo cuenta partidos que tienen AMBOS datos — árbitro asignado Y
+    "ro" cargado en DATOS_REALES_LIGAMX; partidos con roja no confirmada
+    todavía se omiten en vez de asumir 0.
+    """
+    conteo = {}
+    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
+        if resultado is None or not arbitro:
+            continue
+        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+        if datos is None or "ro" not in datos:
+            continue
+        if arbitro not in conteo:
+            conteo[arbitro] = [0, 0]
+        conteo[arbitro][0] += datos["ro"]
+        conteo[arbitro][1] += 1
+    return conteo
 
 
 def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
@@ -885,9 +928,16 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
     amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
     amarillas_esp = max(amarillas_esp, 1.5)
 
-    # rojas escaladas proporcionalmente al "carácter" del árbitro (placeholder,
-    # reemplazar cuando tengas promedio real de rojas por árbitro)
-    rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / PROMEDIO_LIGA_AMARILLAS)
+    # Rojas — usa el promedio REAL del árbitro (ver _rojas_reales_por_
+    # arbitro()) si ya dirigió PJ_MINIMO_ROJAS_ARBITRO partidos con dato
+    # confirmado; si no, cae al placeholder proporcional anterior
+    # (escalado según qué tan "tarjetero" resultó en amarillas).
+    rojas_arbitro = _rojas_reales_por_arbitro().get(arbitro)
+    if rojas_arbitro and rojas_arbitro[1] >= PJ_MINIMO_ROJAS_ARBITRO:
+        rojas_totales, pj = rojas_arbitro
+        rojas_esp = rojas_totales / pj
+    else:
+        rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / PROMEDIO_LIGA_AMARILLAS)
     return amarillas_esp, rojas_esp
 
 
