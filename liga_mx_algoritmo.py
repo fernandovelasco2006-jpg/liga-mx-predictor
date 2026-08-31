@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from liga_mx_predictor_skeleton import (
     EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
-    ARBITROS_LIGA_MX, ARBITRO_DEFAULT,
+    ARBITROS_LIGA_MX, ARBITRO_DEFAULT, ARBITROS_LIGA_MX_TRANSFERMARKT,
     FUERZA_ATAQUE_LOCAL, FUERZA_ATAQUE_VISITA, FUERZA_DEFENSA_LOCAL, FUERZA_DEFENSA_VISITA,
     DATOS_REALES_LIGAMX,
 )
@@ -619,11 +619,12 @@ def calcular_lambdas(home_team: str, away_team: str,
     # partidos más cortados/físicos → baja un poco el ritmo ofensivo de
     # ambos equipos (más faltas, menos fluidez, defensas más agresivas).
     arbitro = _buscar_arbitro(home_team, away_team)
-    if arbitro and arbitro in ARBITROS_LIGA_MX:
-        # Usa el promedio del árbitro ya mezclado con su Apertura 2026
+    if arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT):
+        # Usa el promedio del árbitro ya mezclado entre ambas fuentes
+        # históricas (Sofascore + Transfermarkt) y con su Apertura 2026
         # real (ver _promedio_arbitro_dinamico(), definida más abajo en
         # este archivo junto con las demás funciones de tarjetas) — no
-        # la ficha histórica fija.
+        # la ficha histórica fija de una sola fuente.
         prom_amarillas = _promedio_arbitro_dinamico(arbitro)
     else:
         prom_amarillas = ARBITRO_DEFAULT[0]
@@ -1012,19 +1013,43 @@ def _amarillas_reales_por_arbitro() -> dict:
     return conteo
 
 
+def _prom_historico_arbitro(arbitro: str) -> tuple:
+    """
+    Prior histórico de amarillas/partido para un árbitro, mezclando
+    ARBITROS_LIGA_MX (fuente original, Sofascore) con
+    ARBITROS_LIGA_MX_TRANSFERMARKT (temporada 25/26 completa,
+    consultada 31/ago/2026) — decisión explícita del usuario: promediar
+    ambas fuentes en vez de que una reemplace a la otra.
+
+    Devuelve (promedio_amarillas, promedio_rojas_o_None). El promedio de
+    rojas SOLO viene de Transfermarkt — ARBITROS_LIGA_MX nunca tuvo ese
+    dato — así que es None si el árbitro no está en esa tabla.
+    """
+    prom_sofascore, _n = ARBITROS_LIGA_MX.get(arbitro, (None, 0))
+    datos_transfermarkt = ARBITROS_LIGA_MX_TRANSFERMARKT.get(arbitro)
+
+    if prom_sofascore is not None and datos_transfermarkt is not None:
+        prom_am_tm, _pj_tm, prom_ro_tm = datos_transfermarkt
+        return (prom_sofascore + prom_am_tm) / 2, prom_ro_tm
+    if datos_transfermarkt is not None:
+        _, _pj_tm, prom_ro_tm = datos_transfermarkt
+        return datos_transfermarkt[0], prom_ro_tm
+    if prom_sofascore is not None:
+        return prom_sofascore, None
+    return ARBITRO_DEFAULT[0], None
+
+
 def _promedio_arbitro_dinamico(arbitro: str) -> float:
     """
     Promedio de amarillas esperado para ESTE árbitro específico,
-    mezclando su ficha histórica (ARBITROS_LIGA_MX, prior — puede venir
-    de Clausura 2026 o de Sofascore histórico) con su promedio REAL en
-    el Apertura 2026 EN VIVO (ver _amarillas_reales_por_arbitro()), con
-    shrinkage progresivo: 0 PJ del Apertura = 100% histórico; a partir
-    de PJ_PARA_ARBITRO_TOPE_COMPLETO PJ, 100% el dato real de este
-    torneo. Si el árbitro no está en ARBITROS_LIGA_MX, usa
-    ARBITRO_DEFAULT como prior en su lugar (mismo fallback que ya usa el
-    resto del modelo).
+    mezclando su ficha histórica (ver _prom_historico_arbitro(): promedio
+    de ARBITROS_LIGA_MX + ARBITROS_LIGA_MX_TRANSFERMARKT) con su
+    promedio REAL en el Apertura 2026 EN VIVO (ver
+    _amarillas_reales_por_arbitro()), con shrinkage progresivo: 0 PJ del
+    Apertura = 100% histórico; a partir de PJ_PARA_ARBITRO_TOPE_COMPLETO
+    PJ, 100% el dato real de este torneo.
     """
-    prom_historico, _n = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
+    prom_historico, _prom_rojas_hist = _prom_historico_arbitro(arbitro)
     datos_apertura = _amarillas_reales_por_arbitro().get(arbitro)
     if not datos_apertura or datos_apertura[1] == 0:
         return prom_historico
@@ -1035,6 +1060,38 @@ def _promedio_arbitro_dinamico(arbitro: str) -> float:
     return (1 - peso_real) * prom_historico + peso_real * promedio_real
 
 
+def _promedio_rojas_arbitro_dinamico(arbitro: str) -> float:
+    """
+    Promedio de ROJAS TOTALES (segunda amarilla + roja directa,
+    convención del modelo) esperado para ESTE árbitro, mezclando el
+    prior de ARBITROS_LIGA_MX_TRANSFERMARKT (única fuente con este dato
+    desglosado y con muestra real, 3-10 PJ por árbitro — antes de esto
+    el modelo solo tenía un placeholder proporcional) con el promedio
+    REAL en el Apertura 2026 EN VIVO (_rojas_reales_por_arbitro()), con
+    el mismo shrinkage progresivo que amarillas.
+
+    Devuelve None si no hay NINGÚN dato de rojas para este árbitro (ni
+    Transfermarkt ni Apertura en vivo) — el llamador debe caer al
+    placeholder proporcional en ese caso, igual que antes.
+    """
+    _prom_am_hist, prom_rojas_hist = _prom_historico_arbitro(arbitro)
+    datos_apertura = _rojas_reales_por_arbitro().get(arbitro)
+
+    if prom_rojas_hist is None and not datos_apertura:
+        return None
+    if prom_rojas_hist is None:
+        rojas_totales, pj = datos_apertura
+        return rojas_totales / pj if pj > 0 else None
+    if not datos_apertura or datos_apertura[1] == 0:
+        return prom_rojas_hist
+
+    rojas_totales, pj = datos_apertura
+    promedio_real = rojas_totales / pj
+    peso_real = min(pj / PJ_PARA_ARBITRO_TOPE_COMPLETO, 1.0)
+    return (1 - peso_real) * prom_rojas_hist + peso_real * promedio_real
+
+
+
 def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
     """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido,
     combinando el promedio del árbitro (70%) con el estilo disciplinario
@@ -1042,14 +1099,16 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
     tu Mundial-predictor."""
     arbitro = _buscar_arbitro(home_team, away_team)
     promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
-    if arbitro and arbitro in ARBITROS_LIGA_MX:
-        # Usa el promedio del árbitro YA mezclado con su desempeño real
-        # en el Apertura 2026 (ver _promedio_arbitro_dinamico()) — no la
-        # ficha histórica fija, que confirmadamente sobreestimaba en
-        # -0.87 amarillas/partido en promedio.
+    arbitro_conocido = arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT)
+    if arbitro_conocido:
+        # Usa el promedio del árbitro YA mezclado entre ambas fuentes
+        # históricas (Sofascore + Transfermarkt, ver
+        # _prom_historico_arbitro()) y con su desempeño real en el
+        # Apertura 2026 (ver _promedio_arbitro_dinamico()) — no la ficha
+        # histórica fija de una sola fuente.
         amarillas_esp_arbitro = _promedio_arbitro_dinamico(arbitro)
     else:
-        prom_amarillas, _n = ARBITRO_DEFAULT[0], 0
+        prom_amarillas = ARBITRO_DEFAULT[0]
         desviacion = (prom_amarillas - promedio_liga_amarillas) * peso_arbitro
         amarillas_esp_arbitro = promedio_liga_amarillas + desviacion * 0.3
 
@@ -1057,14 +1116,15 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
     amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
     amarillas_esp = max(amarillas_esp, 1.5)
 
-    # Rojas — usa el promedio REAL del árbitro (ver _rojas_reales_por_
-    # arbitro()) si ya dirigió PJ_MINIMO_ROJAS_ARBITRO partidos con dato
-    # confirmado; si no, cae al placeholder proporcional anterior
-    # (escalado según qué tan "tarjetero" resultó en amarillas).
-    rojas_arbitro = _rojas_reales_por_arbitro().get(arbitro)
-    if rojas_arbitro and rojas_arbitro[1] >= PJ_MINIMO_ROJAS_ARBITRO:
-        rojas_totales, pj = rojas_arbitro
-        rojas_esp = rojas_totales / pj
+    # Rojas — usa el promedio dinámico por árbitro (ver
+    # _promedio_rojas_arbitro_dinamico(): mezcla ARBITROS_LIGA_MX_
+    # TRANSFERMARKT con el Apertura 2026 EN VIVO) si hay CUALQUIER dato
+    # real disponible; si no hay ninguno para este árbitro, cae al
+    # placeholder proporcional anterior (escalado según qué tan
+    # "tarjetero" resultó en amarillas).
+    rojas_dinamico = _promedio_rojas_arbitro_dinamico(arbitro)
+    if rojas_dinamico is not None:
+        rojas_esp = rojas_dinamico
     else:
         rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / promedio_liga_amarillas)
     return amarillas_esp, rojas_esp
