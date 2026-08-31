@@ -590,7 +590,7 @@ def calcular_stats_por_mercado(historial: list, minimo_evaluadas: int = 3) -> li
     return filas
 
 
-def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 5,
+def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 8,
                                    piso_accuracy: float = 65.0, brecha_maxima: float = 15.0) -> set:
     """
     RETROALIMENTACIÓN AUTOMÁTICA: decide qué mercados debe DEJAR de
@@ -607,10 +607,14 @@ def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 5,
       - la brecha entre lo que prometió y lo que cumplió supera
         `brecha_maxima` puntos (15 por defecto).
 
-    minimo_evaluadas=5 aquí es MÁS ALTO que el 3 que usa el panel
-    informativo — suspender un mercado es una decisión con consecuencia
-    real (deja de aparecer en apuestas sugeridas), así que pide más
-    evidencia antes de actuar que solo mostrar un número en un reporte.
+    minimo_evaluadas=8 (antes 5) — subido tras observar en producción
+    que con 5 evaluadas, fallar solo 2 partidos ya dispara la
+    suspensión de un mercado entero (60% de accuracy con 3/5 aciertos es
+    la variancia esperable de una muestra tan chica, no necesariamente
+    mala calibración real). 8 es el mismo mínimo que ya usa
+    calcular_sesgo_por_equipo() para el mismo tipo de decisión — pedir
+    más evidencia antes de actuar, ya que suspender es una decisión con
+    consecuencia real (deja de aparecer en apuestas sugeridas).
 
     CLAVE: esto se recalcula desde cero cada vez que se llama, nunca
     queda un mercado "marcado" de forma permanente. En cuanto entren más
