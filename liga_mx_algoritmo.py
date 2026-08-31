@@ -17,6 +17,7 @@ from liga_mx_predictor_skeleton import (
     EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
     ARBITROS_LIGA_MX, ARBITRO_DEFAULT,
     FUERZA_ATAQUE_LOCAL, FUERZA_ATAQUE_VISITA, FUERZA_DEFENSA_LOCAL, FUERZA_DEFENSA_VISITA,
+    DATOS_REALES_LIGAMX,
 )
 from liga_mx_elo_update import (
     actualizar_elo, actualizar_fuerza_ataque_defensa,
@@ -413,6 +414,56 @@ def _forma_real_liga_mx() -> dict:
     return forma
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# PROMEDIO_LIGA_AMARILLAS_BASE (Clausura 2026, 4.3) — YA NO se usa fijo.
+# Confirmado con datos reales del Apertura 2026 (52 partidos con dato de
+# amarillas en DATOS_REALES_LIGAMX): el promedio real de ESTE torneo es
+# 3.58 amarillas/partido, no 4.3 — usar el valor viejo estaba haciendo
+# que el modelo sobreestimara amarillas en ~0.75/partido en promedio,
+# lo cual se detectó porque el mercado "Tarjetas" venía acertando 66.7%
+# contra el 84.9% que el modelo prometía (panel de auto-calibración,
+# 27 apuestas evaluadas — muestra suficiente para ser una señal real,
+# no ruido).
+#
+# Mismo criterio de shrinkage progresivo que el resto del modelo: con
+# pocos partidos jugados del Apertura pesa más el Clausura (dato
+# robusto, 17x18=306 partidos), y conforme se acumulan partidos del
+# Apertura actual, ese promedio real gana peso hasta dominar en
+# PARTIDOS_PARA_TOPE_COMPLETO_LIGA (mayor que el de equipo individual,
+# porque aquí la muestra crece 9x más rápido — toda la jornada aporta
+# datos, no solo los partidos de un equipo).
+# ─────────────────────────────────────────────────────────────────────────
+PROMEDIO_LIGA_AMARILLAS_BASE = 4.3
+PARTIDOS_PARA_TOPE_COMPLETO_LIGA = 50  # ~una jornada completa (9) x 5-6 jornadas
+
+
+def _promedio_liga_amarillas_dinamico() -> float:
+    """
+    Mezcla PROMEDIO_LIGA_AMARILLAS_BASE (Clausura 2026) con el promedio
+    real de amarillas del Apertura 2026 EN VIVO (derivado de
+    DATOS_REALES_LIGAMX, mismo patrón que _rojas_reales_por_arbitro()),
+    con shrinkage progresivo según cuántos partidos de la liga completa
+    ya tienen dato de amarillas confirmado.
+
+    Se recalcula cada vez que se llama (barato — recorre PARTIDOS, ~150
+    filas) para que se actualice solo conforme avanza el torneo, sin
+    tocar código.
+    """
+    amarillas_reales = [
+        datos["am"]
+        for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
+        if resultado is not None
+        for datos in [DATOS_REALES_LIGAMX.get(f"{local}_{visit}")]
+        if datos and "am" in datos
+    ]
+    if not amarillas_reales:
+        return PROMEDIO_LIGA_AMARILLAS_BASE
+
+    promedio_apertura = sum(amarillas_reales) / len(amarillas_reales)
+    peso_apertura = min(len(amarillas_reales) / PARTIDOS_PARA_TOPE_COMPLETO_LIGA, 1.0)
+    return (1 - peso_apertura) * PROMEDIO_LIGA_AMARILLAS_BASE + peso_apertura * promedio_apertura
+
+
 def calcular_lambdas(home_team: str, away_team: str,
                       peso_elo: float = 1.0,
                       peso_altitud: float = 1.0,
@@ -568,10 +619,19 @@ def calcular_lambdas(home_team: str, away_team: str,
     # partidos más cortados/físicos → baja un poco el ritmo ofensivo de
     # ambos equipos (más faltas, menos fluidez, defensas más agresivas).
     arbitro = _buscar_arbitro(home_team, away_team)
-    prom_amarillas, _partidos_arb = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
-    # Liga MX promedia ~4.0-4.5 amarillas/partido; usamos eso como base
-    PROMEDIO_LIGA_AMARILLAS = 4.3
-    desviacion = prom_amarillas - PROMEDIO_LIGA_AMARILLAS
+    if arbitro and arbitro in ARBITROS_LIGA_MX:
+        # Usa el promedio del árbitro ya mezclado con su Apertura 2026
+        # real (ver _promedio_arbitro_dinamico(), definida más abajo en
+        # este archivo junto con las demás funciones de tarjetas) — no
+        # la ficha histórica fija.
+        prom_amarillas = _promedio_arbitro_dinamico(arbitro)
+    else:
+        prom_amarillas = ARBITRO_DEFAULT[0]
+    # Liga MX promedia ~3.6-4.3 amarillas/partido según el torneo — usa
+    # el promedio dinámico (mezcla Clausura + Apertura real, ver
+    # _promedio_liga_amarillas_dinamico()) en vez de un valor fijo.
+    promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
+    desviacion = prom_amarillas - promedio_liga_amarillas
     # cada amarilla de más sobre el promedio recorta ~1.5% el ritmo ofensivo,
     # escalado por peso_arbitro, con tope de +-10%*peso_arbitro (máx 30%)
     tope = min(0.10 * peso_arbitro, 0.30)
@@ -865,7 +925,6 @@ def simular_temporada_montecarlo(n: int = 1000,
 from collections import Counter
 from liga_mx_predictor_skeleton import (
     CORNERS_EQUIPO, CORNERS_DEFAULT, CORNERS_EQUIPO_CONTRA, CORNERS_DEFAULT_CONTRA,
-    DATOS_REALES_LIGAMX,
 )
 
 PROMEDIO_LIGA_AMARILLAS = 4.3
@@ -915,18 +974,84 @@ def _rojas_reales_por_arbitro() -> dict:
     return conteo
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# PROMEDIO DE AMARILLAS POR ÁRBITRO — DINÁMICO, mismo problema que
+# PROMEDIO_LIGA_AMARILLAS pero a nivel individual: los promedios en
+# ARBITROS_LIGA_MX vienen mayormente de fichas históricas de Sofascore
+# (Clausura 2026 y torneos previos), y CONFIRMADO con datos reales del
+# Apertura 2026 (51 partidos con árbitro conocido + dato de amarillas):
+# el promedio real por partido viene -0.87 por debajo del que dice la
+# ficha histórica de cada árbitro — un sesgo sistemático, no ruido.
+#
+# A diferencia de rojas (evento raro, necesita PJ_MINIMO_ROJAS_ARBITRO=8
+# para no confiar en ruido), amarillas ocurren cada partido — con solo
+# 2-3 partidos dirigidos ya hay señal razonable. Por eso aquí se usa
+# shrinkage PROGRESIVO (mezcla gradual, mismo criterio que
+# _factor_tarjetas_equipo()) en vez de un corte binario todo-o-nada.
+# ─────────────────────────────────────────────────────────────────────────
+PJ_PARA_ARBITRO_TOPE_COMPLETO = 8  # a partir de aquí, 100% peso al dato real del Apertura
+
+
+def _amarillas_reales_por_arbitro() -> dict:
+    """
+    Calcula (amarillas_totales, partidos_dirigidos) REAL por árbitro en
+    el Apertura 2026 EN VIVO, mismo patrón que _rojas_reales_por_
+    arbitro() pero con el campo "am" de DATOS_REALES_LIGAMX.
+    """
+    conteo = {}
+    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
+        if resultado is None or not arbitro:
+            continue
+        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+        if datos is None or "am" not in datos:
+            continue
+        if arbitro not in conteo:
+            conteo[arbitro] = [0, 0]
+        conteo[arbitro][0] += datos["am"]
+        conteo[arbitro][1] += 1
+    return conteo
+
+
+def _promedio_arbitro_dinamico(arbitro: str) -> float:
+    """
+    Promedio de amarillas esperado para ESTE árbitro específico,
+    mezclando su ficha histórica (ARBITROS_LIGA_MX, prior — puede venir
+    de Clausura 2026 o de Sofascore histórico) con su promedio REAL en
+    el Apertura 2026 EN VIVO (ver _amarillas_reales_por_arbitro()), con
+    shrinkage progresivo: 0 PJ del Apertura = 100% histórico; a partir
+    de PJ_PARA_ARBITRO_TOPE_COMPLETO PJ, 100% el dato real de este
+    torneo. Si el árbitro no está en ARBITROS_LIGA_MX, usa
+    ARBITRO_DEFAULT como prior en su lugar (mismo fallback que ya usa el
+    resto del modelo).
+    """
+    prom_historico, _n = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
+    datos_apertura = _amarillas_reales_por_arbitro().get(arbitro)
+    if not datos_apertura or datos_apertura[1] == 0:
+        return prom_historico
+
+    amarillas_totales, pj = datos_apertura
+    promedio_real = amarillas_totales / pj
+    peso_real = min(pj / PJ_PARA_ARBITRO_TOPE_COMPLETO, 1.0)
+    return (1 - peso_real) * prom_historico + peso_real * promedio_real
+
+
 def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
     """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido,
     combinando el promedio del árbitro (70%) con el estilo disciplinario
     real de ambos equipos (30%) — mismo criterio que TARJETAS_MUNDIAL en
     tu Mundial-predictor."""
     arbitro = _buscar_arbitro(home_team, away_team)
-    prom_amarillas, _n = ARBITROS_LIGA_MX.get(arbitro, (ARBITRO_DEFAULT[0], 0))
+    promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
     if arbitro and arbitro in ARBITROS_LIGA_MX:
-        amarillas_esp_arbitro = prom_amarillas
+        # Usa el promedio del árbitro YA mezclado con su desempeño real
+        # en el Apertura 2026 (ver _promedio_arbitro_dinamico()) — no la
+        # ficha histórica fija, que confirmadamente sobreestimaba en
+        # -0.87 amarillas/partido en promedio.
+        amarillas_esp_arbitro = _promedio_arbitro_dinamico(arbitro)
     else:
-        desviacion = (prom_amarillas - PROMEDIO_LIGA_AMARILLAS) * peso_arbitro
-        amarillas_esp_arbitro = PROMEDIO_LIGA_AMARILLAS + desviacion * 0.3
+        prom_amarillas, _n = ARBITRO_DEFAULT[0], 0
+        desviacion = (prom_amarillas - promedio_liga_amarillas) * peso_arbitro
+        amarillas_esp_arbitro = promedio_liga_amarillas + desviacion * 0.3
 
     factor_equipos = (_factor_tarjetas_equipo(home_team) + _factor_tarjetas_equipo(away_team)) / 2
     amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
@@ -941,7 +1066,7 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
         rojas_totales, pj = rojas_arbitro
         rojas_esp = rojas_totales / pj
     else:
-        rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / PROMEDIO_LIGA_AMARILLAS)
+        rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / promedio_liga_amarillas)
     return amarillas_esp, rojas_esp
 
 
