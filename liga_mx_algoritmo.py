@@ -29,10 +29,14 @@ from liga_mx_elo_update import (
 # repo), analizar_apuestas() sigue funcionando exactamente igual, solo
 # que sin la sección de value_bet.
 try:
-    from liga_mx_cuotas import calcular_value_bet
+    from liga_mx_cuotas import calcular_value_bet, calcular_value_bet_totales
 except ImportError:
     def calcular_value_bet(prob_modelo_pct, cuota_decimal):
         return {"ev_pct": None, "prob_implicita_pct": None, "tiene_valor": False}
+
+    def calcular_value_bet_totales(linea_modelo, direccion, cuotas_totales):
+        return {"apostable": False, "point_real": None, "ev_pct": None,
+                "prob_implicita_pct": None, "tiene_valor": False, "casa": None}
 
 # ─────────────────────────────────────────────────────────────────────────
 # FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
@@ -1131,7 +1135,7 @@ def _umbral_dinamico(home_team: str, away_team: str) -> float:
 # umbral (ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez, si las 3 pasan).
 # ─────────────────────────────────────────────────────────────────────────
 def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset(),
-                       cuotas: dict = None) -> list:
+                       cuotas: dict = None, cuotas_totales: list = None) -> list:
     """
     Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
     llega o supera el umbral dinámico calculado por _umbral_dinamico()
@@ -1191,7 +1195,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     apuestas = []
     UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
 
-    def ap(mercado, seleccion, confianza, nota, cuota_decimal=None):
+    def ap(mercado, seleccion, confianza, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
         entrada = {
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
@@ -1201,6 +1205,19 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         }
         if cuota_decimal is not None:
             entrada["value_bet"] = calcular_value_bet(confianza, cuota_decimal)
+        if linea_totales is not None and cuotas_totales is not None:
+            # Verifica si esta línea de Total de Goles es apostable en
+            # alguna casa real (ver liga_mx_cuotas.calcular_value_bet_
+            # totales()) — resuelve el caso confirmado con datos reales
+            # de que ninguna casa ofrece Over/Under 0.5, así que esa
+            # selección nunca debe mostrarse como accionable con cuota.
+            check = calcular_value_bet_totales(linea_totales, direccion_totales, cuotas_totales)
+            if not check["apostable"]:
+                entrada["no_apostable"] = True
+            else:
+                entrada["value_bet"] = calcular_value_bet(confianza, check["cuota"])
+                entrada["value_bet"]["casa"] = check["casa"]
+                entrada["value_bet"]["point_real"] = check["point_real"]
         apuestas.append(entrada)
 
     pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
@@ -1247,19 +1264,30 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Hándicap Asiático", f"✅ {away_team} -2.0 (gana por 3+)", r["prob_hcap_away_m20"],
            "Empuje (reembolso) si gana por exactamente 2")
 
-    # 5. Total de Goles (Over/Under)
+    # 5. Total de Goles (Over/Under) — cada línea se verifica contra
+    # cuotas_totales (si se pasó) para saber si es realmente apostable
+    # en alguna casa real (ver calcular_value_bet_totales() en
+    # liga_mx_cuotas.py) — confirmado con datos reales que ninguna casa
+    # ofrece líneas de 0.5 goles, así que esa selección normalmente
+    # queda marcada "no_apostable": True cuando se pasan cuotas_totales.
     if r["prob_over05"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 0.5 (al menos 1 gol)", r["prob_over05"], f"{r['prob_over05']:.1f}% de simulaciones")
+        ap("Total Goles", "✅ Over 0.5 (al menos 1 gol)", r["prob_over05"], f"{r['prob_over05']:.1f}% de simulaciones",
+           linea_totales=0.5, direccion_totales="over")
     if r["prob_over15"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones")
+        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones",
+           linea_totales=1.5, direccion_totales="over")
     if r["prob_over25"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones")
+        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones",
+           linea_totales=2.5, direccion_totales="over")
     if r["prob_over35"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones")
+        ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones",
+           linea_totales=3.5, direccion_totales="over")
     if (100 - r["prob_over15"]) >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones")
+        ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones",
+           linea_totales=1.5, direccion_totales="under")
     if (100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones")
+        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones",
+           linea_totales=2.5, direccion_totales="under")
 
     # 6. Ambos Marcan (BTTS)
     if r["prob_btts"] >= UMBRAL_RECOMENDACION:
@@ -1416,12 +1444,14 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     normalmente la salida de
     liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
 
-    cuotas_por_partido: opcional, dict {(local, visit): {"home":...,
-    "draw":..., "away":..., "casa":...}} — normalmente construido en
-    app.py indexando la salida de
-    liga_mx_cuotas.obtener_cuotas_jornada(). Si el partido no tiene
-    cuota en el dict, analizar_apuestas() recibe cuotas=None para ese
-    partido y sigue funcionando igual (sin value_bet en 1X2).
+    cuotas_por_partido: opcional, dict {(local, visit): {"cuotas": {...},
+    "cuotas_totales": [...]}} — mismo formato que arma
+    app._cuotas_jornada_cached() indexando la salida de
+    liga_mx_cuotas.obtener_cuotas_jornada() por partido completo. Si el
+    partido no tiene entrada en el dict, analizar_apuestas() recibe
+    cuotas=None y cuotas_totales=None para ese partido y sigue
+    funcionando igual (sin value_bet, sin check de apostabilidad real
+    en Total de Goles).
 
     NO guarda nada en Supabase — solo simula y arma el paquete de
     resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
@@ -1458,8 +1488,10 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
         r = simular_partido(local, visit, n=n, peso_elo=peso_elo,
                              peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
                              factor_clima=factor_clima, sesgo_por_equipo=sesgo_por_equipo)
+        cuotas_partido = cuotas_por_partido.get((local, visit)) or {}
         apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos,
-                                      cuotas=cuotas_por_partido.get((local, visit)))
+                                      cuotas=cuotas_partido.get("cuotas"),
+                                      cuotas_totales=cuotas_partido.get("cuotas_totales"))
         parlay = armar_parlay(apuestas)
         resultados.append({
             "local": local, "visitante": visit,
