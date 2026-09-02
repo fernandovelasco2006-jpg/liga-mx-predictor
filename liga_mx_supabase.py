@@ -118,15 +118,25 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
             if chk.status_code == 200 and not chk.json():
                 requests.post(f"{url}/rest/v1/apuestas_historial_ligamx", headers=_headers(key), json=payload, timeout=5)
                 guardadas += 1
-            elif chk.status_code == 200 and chk.json() and chk.json()[0].get("acierto") is None and acierto is not None:
-                requests.patch(
-                    f"{url}/rest/v1/apuestas_historial_ligamx",
-                    headers=_headers(key, prefer=""),
-                    params={"id": f"eq.{payload['id']}"},
-                    json={"resultado_real": payload["resultado_real"],
-                          "goles_local": gh, "goles_visitante": ga, "acierto": acierto},
-                    timeout=5,
-                )
+            elif chk.status_code == 200 and chk.json():
+                # La fila YA existía (ej. se corrió "Simular Jornada" antes
+                # para este mismo partido) — SIEMPRE cuenta como
+                # "guardada" para efectos del resumen que ve el usuario,
+                # sin importar si además se actualizó el acierto. Antes
+                # solo se contaba la creación (primer if), así que
+                # re-simular una jornada ya guardada mostraba "0 apuestas
+                # registradas" aunque los datos siguieran ahí correctos —
+                # bug detectado en producción.
+                guardadas += 1
+                if chk.json()[0].get("acierto") is None and acierto is not None:
+                    requests.patch(
+                        f"{url}/rest/v1/apuestas_historial_ligamx",
+                        headers=_headers(key, prefer=""),
+                        params={"id": f"eq.{payload['id']}"},
+                        json={"resultado_real": payload["resultado_real"],
+                              "goles_local": gh, "goles_visitante": ga, "acierto": acierto},
+                        timeout=5,
+                    )
         except Exception:
             continue
     return guardadas
