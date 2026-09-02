@@ -169,14 +169,17 @@ def _badge_value_bet(ap: dict) -> str:
 
 def _badge_no_apostable(ap: dict) -> str:
     """
-    HTML del badge "⚠️ No apostable" para una selección de Total de
-    Goles que el modelo calcula con alta confianza pero que NINGUNA
-    casa real ofrece como línea (ver liga_mx_cuotas.calcular_value_bet_
-    totales()) — confirmado con datos reales que ninguna casa lista
-    Over/Under 0.5 goles para Liga MX, la línea mínima real ronda 2.5.
-    Se muestra en vez del badge de value bet para dejar claro que,
-    aunque la estadística es válida, no es una apuesta que se pueda
-    colocar en la práctica. Cadena vacía si no aplica.
+    HTML del badge "⚠️ No apostable" — QUEDÓ SIN EFECTO PRÁCTICO por
+    decisión posterior del usuario: liga_mx_algoritmo.analizar_apuestas()
+    ahora DESCARTA por completo (no la agrega a la lista de sugerencias)
+    cualquier línea de Total de Goles que ninguna casa real ofrezca,
+    en vez de incluirla marcada con "no_apostable": True como antes.
+
+    Esta función se deja intacta (no se elimina del código ni de las
+    tarjetas que la llaman) por si en el futuro se prefiere volver al
+    comportamiento anterior de "mostrar con advertencia" — hoy nunca
+    encuentra "no_apostable" en una apuesta (esas simplemente no
+    llegan aquí) y siempre devuelve cadena vacía.
     """
     if not ap.get("no_apostable"):
         return ""
