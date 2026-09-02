@@ -13,7 +13,7 @@ from liga_mx_algoritmo import (
     ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
     PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
     ELO_BASE, ELO_ACTUALIZADO, resumen_movimiento_elo, n_partidos_procesados,
-    simular_jornada_completa, detectar_jornada_actual,
+    simular_jornada_completa, detectar_jornada_actual, armar_super_parlay_jornada,
 )
 
 try:
@@ -712,6 +712,35 @@ with tab_pred:
                     f'<b style="color:#e5007d">{p["parlay"]["prob_combinada"]:.1f}%</b></div></div>',
                     unsafe_allow_html=True,
                 )
+
+        # ── SUPER PARLAY DE LA JORNADA — estilo PlayDoit: combina TODOS
+        # los partidos de la jornada en un solo boleto, permitiendo que
+        # un mismo partido aporte 2+ patas (ver armar_super_parlay_
+        # jornada() en liga_mx_algoritmo.py). ────────────────────────
+        super_parlay = armar_super_parlay_jornada(resultado_jornada["partidos"])
+        if super_parlay:
+            st.markdown("---")
+            patas_html = "".join(
+                f'<div style="font-size:0.72rem;color:#e8f0ea;margin-top:0.3rem;padding-top:0.3rem;'
+                f'border-top:1px solid rgba(240,192,64,0.15)">'
+                f'{flag(pata["local"])} {pata["local"]} vs {flag(pata["visitante"])} {pata["visitante"]} — '
+                f'<span style="color:#f0c040">{pata["mercado"]}</span> → {pata["seleccion"].replace("✅ ", "")} '
+                f'<span style="color:#4ade80">({pata["confianza"]:.0f}%)</span></div>'
+                for pata in super_parlay["patas"]
+            )
+            st.markdown(
+                f'<div class="parlay-card" style="border-color:#e5007d;padding:1.1rem">'
+                f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;letter-spacing:2px;'
+                f'color:#e5007d;margin-bottom:0.3rem">🎟️ SUPER PARLAY — JORNADA {resultado_jornada["jornada"]}</div>'
+                f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
+                f'{super_parlay["n_partidos"]} partidos · {len(super_parlay["patas"])} patas combinadas</div>'
+                f'{patas_html}'
+                f'<div style="font-size:0.75rem;color:#8fbfa0;margin-top:0.6rem;padding-top:0.5rem;'
+                f'border-top:1px solid rgba(240,192,64,0.25)">Prob. combinada: '
+                f'<b style="color:#e5007d;font-size:0.95rem">{super_parlay["prob_combinada"]:.2f}%</b></div></div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("⚠️ Un boleto con muchas patas es mucho más difícil de acertar completo — la probabilidad combinada baja rápido entre más patas se agregan. Solo informativo.")
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Resultados reales
