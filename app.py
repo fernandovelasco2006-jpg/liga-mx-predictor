@@ -742,6 +742,29 @@ with tab_pred:
             )
             st.caption("⚠️ Un boleto con muchas entradas es mucho más difícil de acertar completo — la probabilidad combinada baja rápido entre más entradas se agregan. Solo informativo.")
 
+            if SUPABASE_DISPONIBLE:
+                try:
+                    # Reutiliza la misma tabla/función que ya usa el
+                    # "Parlay del Día" (parlays_historial_ligamx), con un
+                    # id propio (superparlay_jornada_N) para no chocar
+                    # con ese otro registro — así el tab 🎟️ Parlays los
+                    # muestra a ambos sin tocar esa pantalla.
+                    selecciones_super_parlay = [
+                        {"local": pata["local"], "visitante": pata["visitante"],
+                         "jornada": resultado_jornada["jornada"],
+                         "mercado": pata["mercado"],
+                         "seleccion": pata["seleccion"].replace("✅ ", ""),
+                         "confianza": pata["confianza"]}
+                        for pata in super_parlay["patas"]
+                    ]
+                    guardar_parlay_diario(
+                        SUPABASE_URL, SUPABASE_KEY, hoy,
+                        selecciones_super_parlay, super_parlay["prob_combinada"],
+                        id_personalizado=f"superparlay_jornada_{resultado_jornada['jornada']}",
+                    )
+                except Exception:
+                    pass
+
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Resultados reales
 # ─────────────────────────────────────────────────────────────────────────
@@ -1077,6 +1100,14 @@ with tab_parlays:
                     except Exception:
                         selecciones_p = []
 
+                # Distingue el Super Parlay de Jornada (id
+                # "superparlay_jornada_N") del Parlay del Día normal (id
+                # "parlay_YYYY-MM-DD") — mismo tipo de fila en la misma
+                # tabla, pero conviene que el usuario sepa cuál es cuál
+                # en la lista en vez de verlos idénticos.
+                es_super_parlay_jornada = str(parlay.get("id", "")).startswith("superparlay_jornada_")
+                etiqueta_tipo = "🏆 Super Parlay de Jornada" if es_super_parlay_jornada else "📅 Parlay del Día"
+
                 patas_html = "".join(
                     f'<div style="font-size:0.72rem;color:#e8f0ea;margin-top:0.15rem">'
                     f'{flag(s.get("local",""))} {s.get("local","")} vs {s.get("visitante","")} — '
@@ -1087,6 +1118,8 @@ with tab_parlays:
                 st.markdown(
                     f'<div style="background:{color};border:1px solid {borde};border-radius:10px;'
                     f'padding:0.8rem 1rem;margin-bottom:0.6rem">'
+                    f'<div style="font-size:0.6rem;color:#8fbfa0;letter-spacing:1px;text-transform:uppercase;'
+                    f'margin-bottom:0.3rem">{etiqueta_tipo}</div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:center">'
                     f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">{icono} {parlay.get("fecha","")} '
                     f'— {parlay.get("n_partidos", len(selecciones_p))} partidos</span>'
