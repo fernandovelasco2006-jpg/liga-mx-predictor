@@ -1400,16 +1400,21 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         if linea_totales is not None and cuotas_totales is not None:
             # Verifica si esta línea de Total de Goles es apostable en
             # alguna casa real (ver liga_mx_cuotas.calcular_value_bet_
-            # totales()) — resuelve el caso confirmado con datos reales
-            # de que ninguna casa ofrece Over/Under 0.5, así que esa
-            # selección nunca debe mostrarse como accionable con cuota.
+            # totales()) — confirmado con datos reales que ninguna casa
+            # ofrece Over/Under 0.5 para Liga MX. Decisión explícita del
+            # usuario: si NO es apostable, la línea se DESCARTA por
+            # completo (no aparece en absoluto), en vez de mostrarse con
+            # una advertencia — evita recomendar algo que el usuario no
+            # puede colocar en ninguna casa real. Solo aplica cuando SÍ
+            # se pasaron cuotas_totales (si es None, se comporta igual
+            # que siempre — sin cuotas no hay forma de saber si es
+            # apostable, así que no se descarta nada por precaución).
             check = calcular_value_bet_totales(linea_totales, direccion_totales, cuotas_totales)
             if not check["apostable"]:
-                entrada["no_apostable"] = True
-            else:
-                entrada["value_bet"] = calcular_value_bet(confianza, check["cuota"])
-                entrada["value_bet"]["casa"] = check["casa"]
-                entrada["value_bet"]["point_real"] = check["point_real"]
+                return
+            entrada["value_bet"] = calcular_value_bet(confianza, check["cuota"])
+            entrada["value_bet"]["casa"] = check["casa"]
+            entrada["value_bet"]["point_real"] = check["point_real"]
         apuestas.append(entrada)
 
     pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
