@@ -733,14 +733,14 @@ with tab_pred:
                 f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;letter-spacing:2px;'
                 f'color:#e5007d;margin-bottom:0.3rem">🎟️ SUPER PARLAY — JORNADA {resultado_jornada["jornada"]}</div>'
                 f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
-                f'{super_parlay["n_partidos"]} partidos · {len(super_parlay["patas"])} patas combinadas</div>'
+                f'{super_parlay["n_partidos"]} partidos · {len(super_parlay["patas"])} entradas combinadas</div>'
                 f'{patas_html}'
                 f'<div style="font-size:0.75rem;color:#8fbfa0;margin-top:0.6rem;padding-top:0.5rem;'
                 f'border-top:1px solid rgba(240,192,64,0.25)">Prob. combinada: '
                 f'<b style="color:#e5007d;font-size:0.95rem">{super_parlay["prob_combinada"]:.2f}%</b></div></div>',
                 unsafe_allow_html=True,
             )
-            st.caption("⚠️ Un boleto con muchas patas es mucho más difícil de acertar completo — la probabilidad combinada baja rápido entre más patas se agregan. Solo informativo.")
+            st.caption("⚠️ Un boleto con muchas entradas es mucho más difícil de acertar completo — la probabilidad combinada baja rápido entre más entradas se agregan. Solo informativo.")
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Resultados reales
@@ -1027,7 +1027,7 @@ with tab_parlays:
     st.caption(
         "Cada día se arma UN parlay combinando la mejor apuesta (mayor confianza) de "
         "cada partido de esa fecha — igual que ves en el panel de arriba de la página. "
-        "Para que el parlay completo 'gane', TODAS sus patas tienen que acertar."
+        "Para que el parlay completo 'gane', TODAS sus entradas tienen que acertar."
     )
 
     if not SUPABASE_DISPONIBLE:
@@ -1095,7 +1095,7 @@ with tab_parlays:
                     unsafe_allow_html=True,
                 )
         st.markdown(
-            '<div class="model-note">🎟️ Un parlay del día "pierde" si al menos una pata falla, y '
+            '<div class="model-note">🎟️ Un parlay del día "pierde" si al menos una entrada falla, y '
             '"gana" solo si TODAS las patas aciertan. Las patas de Tarjetas/Córners quedan '
             '"pendientes" hasta que agregues el dato real a DATOS_REALES_LIGAMX.</div>',
             unsafe_allow_html=True,
