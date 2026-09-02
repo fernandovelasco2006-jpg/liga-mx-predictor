@@ -493,8 +493,62 @@ ARBITROS_LIGA_MX = {
     # histórico confiable al momento de agregarlo — usa el fallback
     # general hasta tener un dato real que reemplace este placeholder.
     "Martin Molina Astorga":           (4.5, 0.15),
+    # FALTABA — dirigió Tijuana-León (J2) desde el inicio de la
+    # temporada, pero nunca se dio de alta en este diccionario (usaba
+    # ARBITRO_DEFAULT en silencio). Encontrado al cruzar contra
+    # Transfermarkt. Valor de _rojas_reales_por_arbitro()/_promedio_
+    # arbitro_dinamico() se completa solo con ARBITROS_LIGA_MX_
+    # TRANSFERMARKT (4.60, 5 PJ) — este valor aquí es solo el prior de
+    # esta fuente específica (Sofascore), sin ficha propia consultada.
+    "Joaquin Alberto Vizcarra Armenta": (4.5, 0.15),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los conocidos, como fallback razonable
+
+# ─────────────────────────────────────────────────────────────────────────
+# ARBITROS_LIGA_MX_TRANSFERMARKT — segunda fuente independiente, temporada
+# 25/26 completa (Apertura 2025 + Clausura 2026), consultada directo en
+# Transfermarkt (columnas: PJ, amarillas totales, segunda amarilla,
+# roja directa — confirmado con capturas reales, no inventado).
+#
+# Formato: (promedio_amarillas_por_partido, partidos_dirigidos,
+#           promedio_rojas_por_partido).
+# "rojas" aquí = (segunda_amarilla + roja_directa) / PJ — ambas terminan
+# en expulsión, así que cuentan igual para el conteo de tarjetas totales
+# del modelo (decisión explícita del usuario). Es la PRIMERA vez que el
+# modelo tiene un promedio de ROJAS por árbitro con muestra real — antes
+# solo existía el placeholder proporcional en _tarjetas_esperadas().
+#
+# _promedio_arbitro_dinamico() en liga_mx_algoritmo.py mezcla esta tabla
+# con ARBITROS_LIGA_MX (fuente original, Sofascore) promediando ambas
+# como prior histórico, y luego aplica shrinkage hacia el desempeño real
+# del Apertura 2026 EN VIVO conforme se acumulan partidos.
+# ─────────────────────────────────────────────────────────────────────────
+ARBITROS_LIGA_MX_TRANSFERMARKT = {
+    "Daniel Quintero Huitron":              (5.50, 10, 0.300),
+    "Marco Antonio Ortiz Nava":             (4.33, 9,  0.778),
+    "Victor Alfonso Caceres Hernandez":     (3.44, 9,  0.111),
+    "Ismael Rosario Lopez Peñuelas":        (3.89, 9,  0.333),
+    "Cesar Arturo Ramos Palazuelos":        (4.62, 8,  0.000),
+    "Luis Enrique Santander Aguirre":       (3.88, 8,  0.000),
+    "Adonai Escobedo Gonzalez":             (5.50, 8,  0.750),
+    "Maximiliano Quintero Hernandez":       (5.88, 8,  0.250),
+    "Vicente Jassiel Reynoso Arce":         (3.88, 8,  0.375),
+    "Oscar Mejia Garcia":                   (4.71, 7,  0.286),  # sin partidos en PARTIDOS todavía
+    "Jorge Abraham Camacho Peregrina":      (4.43, 7,  0.571),
+    "Katia Itzel Garcia Mendoza":           (4.00, 7,  0.000),
+    "Yonatan Peinado Aguirre":              (5.14, 7,  0.429),
+    "Fernando Hernandez Gomez":             (3.00, 6,  0.833),
+    "Guillermo Pacheco Larios":             (2.80, 5,  0.400),
+    "Jesus Rafael Lopez Valle":             (6.00, 5,  0.600),
+    "Karen Hernandez Andrade":              (3.20, 5,  0.000),
+    "Joaquin Alberto Vizcarra Armenta":     (4.60, 5,  0.200),
+    "Ivan Antonio Lopez Sanchez":           (4.00, 4,  0.500),
+    "Martin Molina Astorga":                (4.50, 4,  0.250),
+    "Luis Alfredo Garcia Rodriguez":        (2.75, 4,  0.250),
+    "Salvador Perez Villalobos":            (3.50, 4,  0.500),
+    "Abraham De Jesus Quirarte Contreras":  (8.33, 3,  1.000),
+    "Mario Terrazas Chavez":                (3.67, 3,  1.000),
+}
 
 # ─────────────────────────────────────────────────────────────────────────
 # CÓRNERS Y REMATES — proyección basada en plantillas actuales y estilo
