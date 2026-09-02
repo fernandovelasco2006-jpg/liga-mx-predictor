@@ -1559,6 +1559,24 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
 # Córners, Ambos Marcan), probabilidad combinada = producto de confianzas.
 # ─────────────────────────────────────────────────────────────────────────
 def armar_parlay(sugerencias: list) -> dict:
+    """
+    Arma un parlay con las apuestas de nivel ALTA, máximo UNA por rubro
+    real (no por nombre de mercado) — evita mezclar dos selecciones que
+    predicen lo mismo de fondo con distinta redacción.
+
+    MERCADOS_MISMO_RESULTADO agrupa Resultado (1X2), Doble Oportunidad,
+    Empate Sin Apuesta y Hándicap Asiático porque los 4 son, en el
+    fondo, la MISMA apuesta de base (¿quién gana el partido, y con qué
+    margen?) — solo cambia la protección ante empate o el margen
+    exigido. Combinar, por ejemplo, "Gana Cruz Azul (DNB)" +
+    "Gana Cruz Azul (1X2)" en un mismo parlay es redundante: ambas
+    aciertan o fallan exactamente juntas, no aportan ninguna
+    diversificación real al boleto — bug corregido tras detectarlo en
+    producción (parlay real: "Gana Cruz Azul (DNB) + Gana Cruz Azul +
+    Over 2.5").
+    """
+    MERCADOS_MISMO_RESULTADO = {"Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta", "Hándicap Asiático"}
+
     altas = [a for a in sugerencias if a["nivel"] == "ALTA"]
     if len(altas) < 2:
         return None
@@ -1568,7 +1586,7 @@ def armar_parlay(sugerencias: list) -> dict:
     tiene_resultado = False
     for a in sorted(altas, key=lambda x: x["confianza"], reverse=True):
         merc = a["mercado"]
-        if merc in ("Resultado (1X2)", "Doble Oportunidad"):
+        if merc in MERCADOS_MISMO_RESULTADO:
             if not tiene_resultado:
                 seleccionadas.append(a)
                 tiene_resultado = True
