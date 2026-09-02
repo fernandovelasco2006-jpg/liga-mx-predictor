@@ -1,1741 +1,1280 @@
-# ─────────────────────────────────────────────────────────────────────────
-# LIGA MX · APERTURA 2026 · ALGORITMO — calcular_lambdas() + simular_temporada()
-#
-# Este módulo asume que ya importaste desde tu liga_mx_predictor_skeleton.py:
-#   EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
-#   ARBITROS_LIGA_MX, ARBITRO_DEFAULT
-#
-# Para probarlo standalone, este archivo hace el import directo del
-# skeleton. En tu app.py final, simplemente pega ambos módulos juntos o
-# usa "from liga_mx_predictor_skeleton import *".
-# ─────────────────────────────────────────────────────────────────────────
-import numpy as np
-from collections import defaultdict
-from datetime import datetime, timedelta
+import streamlit as st
+import pandas as pd
+import os
+from datetime import datetime, timedelta, timezone
 
 from liga_mx_predictor_skeleton import (
-    EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
-    ARBITROS_LIGA_MX, ARBITRO_DEFAULT, ARBITROS_LIGA_MX_TRANSFERMARKT,
-    FUERZA_ATAQUE_LOCAL, FUERZA_ATAQUE_VISITA, FUERZA_DEFENSA_LOCAL, FUERZA_DEFENSA_VISITA,
-    DATOS_REALES_LIGAMX,
+    EQUIPOS, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO, ARBITROS_LIGA_MX,
+    ARBITRO_DEFAULT, CORNERS_EQUIPO,
 )
-from liga_mx_elo_update import (
-    actualizar_elo, actualizar_fuerza_ataque_defensa,
-    resumen_movimiento_elo, n_partidos_procesados,
+from liga_mx_algoritmo import (
+    calcular_lambdas, simular_temporada, simular_temporada_montecarlo,
+    simular_partido, analizar_apuestas, armar_parlay, tabla_actual_real,
+    ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
+    PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
+    ELO_BASE, ELO_ACTUALIZADO, resumen_movimiento_elo, n_partidos_procesados,
+    simular_jornada_completa, detectar_jornada_actual, armar_super_parlay_jornada,
 )
 
-# Import opcional — liga_mx_cuotas.py depende de requests y de tener una
-# API key de The Odds API configurada en algún lado; si el módulo no
-# está presente (entorno de pruebas, o el usuario aún no lo agregó al
-# repo), analizar_apuestas() sigue funcionando exactamente igual, solo
-# que sin la sección de value_bet.
 try:
-    from liga_mx_cuotas import calcular_value_bet, calcular_value_bet_totales
+    from liga_mx_supabase import (
+        guardar_prediccion, guardar_apuestas, cargar_historial_apuestas,
+        calcular_stats_apuestas, calcular_stats_por_mercado, calcular_mercados_suspendidos,
+        actualizar_aciertos_pendientes,
+        guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
+        cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
+        calcular_sesgo_por_equipo, guardar_jornada_completa,
+    )
+    SUPABASE_MODULO_DISPONIBLE = True
 except ImportError:
-    def calcular_value_bet(prob_modelo_pct, cuota_decimal):
-        return {"ev_pct": None, "prob_implicita_pct": None, "tiene_valor": False}
+    SUPABASE_MODULO_DISPONIBLE = False
 
-    def calcular_value_bet_totales(linea_modelo, direccion, cuotas_totales):
-        return {"apostable": False, "point_real": None, "ev_pct": None,
-                "prob_implicita_pct": None, "tiene_valor": False, "casa": None}
+try:
+    from liga_mx_clima import obtener_clima_partido, factor_clima as _calc_factor_clima
+    CLIMA_MODULO_DISPONIBLE = True
+except ImportError:
+    CLIMA_MODULO_DISPONIBLE = False
 
-# ─────────────────────────────────────────────────────────────────────────
-# FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
-# (fuente FotMob: "goals_per_match" / "goals_conceded_per_match" — el
-# promedio YA viene calculado por partido, no lo recalculamos desde
-# totales porque esos totales incluyen otras competencias de la
-# temporada, no solo los 17 partidos de liga — eso fue justo el bug
-# que corregimos aquí).
-# Atlante no jugó Primera División el Clausura 2026 (recién ascendido) —
-# usa el dato real de Mazatlán como proxy (mismo criterio que ya usamos
-# para CORNERS_EQUIPO y el ELO).
-# ─────────────────────────────────────────────────────────────────────────
-LIGA_PROMEDIO_GOLES = 1.3693  # exacto: suma GF de los 18 equipos / (18×17) del Clausura 2026 — antes 1.35 (aproximado)
+try:
+    from liga_mx_cuotas import obtener_cuotas_jornada
+    CUOTAS_MODULO_DISPONIBLE = True
+except ImportError:
+    CUOTAS_MODULO_DISPONIBLE = False
 
-# ─────────────────────────────────────────────────────────────────────────
-# CORRECCIÓN DIXON-COLES — marcadores bajos correlacionados
-# En fútbol real, 0-0, 1-0, 0-1 y 1-1 ocurren un poco más seguido de lo
-# que predice Poisson independiente puro (con el partido cerrado, ambos
-# equipos juegan más al resultado — más cautela, menos ida y vuelta).
-# Dixon & Coles (1997) corrigen justo esos 4 marcadores con un parámetro
-# ρ (rho), sin tocar el resto de la distribución de goles.
-#
-# RHO_DIXON_COLES = -0.13 es el valor que estimaron los autores
-# originales para fútbol inglés (el número más citado en la literatura
-# para ligas de clubes) — lo usamos como punto de partida razonable
-# mientras no tengamos suficientes partidos de Liga MX propios para
-# reestimarlo por máxima verosimilitud (se necesitan ~40+ partidos con
-# buena variedad de marcadores para que la reestimación sea estable).
-#
-# Esta corrección SOLO aplica a la distribución de GOLES (home/away) —
-# no se extiende a córners ni tarjetas, que en este modelo son
-# simulaciones independientes sin relación matemática con el marcador.
-# ─────────────────────────────────────────────────────────────────────────
-RHO_DIXON_COLES = -0.13
+try:
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL_LIGAMX", None)
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY_LIGAMX", None)
+except Exception:
+    SUPABASE_URL = os.environ.get("SUPABASE_URL_LIGAMX", None)
+    SUPABASE_KEY = os.environ.get("SUPABASE_KEY_LIGAMX", None)
 
+try:
+    WEATHER_API_KEY = st.secrets.get("WEATHER_API_KEY", None)
+except Exception:
+    WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
 
-def _tau_dixon_coles(x: int, y: int, lam: float, mu: float, rho: float = RHO_DIXON_COLES) -> float:
-    """
-    Factor de corrección τ(x,y) de Dixon-Coles. Devuelve 1.0 para
-    cualquier marcador fuera de {0-0, 1-0, 0-1, 1-1} — esos 4 son los
-    únicos que ajusta el modelo original. lam/mu = λ_home/λ_away.
-    """
-    if x == 0 and y == 0:
-        return 1 - lam * mu * rho
-    if x == 0 and y == 1:
-        return 1 + lam * rho
-    if x == 1 and y == 0:
-        return 1 + mu * rho
-    if x == 1 and y == 1:
-        return 1 - rho
-    return 1.0
+try:
+    ODDS_API_KEY = st.secrets.get("ODDS_API_KEY", None)
+except Exception:
+    ODDS_API_KEY = os.environ.get("ODDS_API_KEY", None)
 
+SUPABASE_DISPONIBLE = SUPABASE_MODULO_DISPONIBLE and SUPABASE_URL and SUPABASE_KEY
 
-# ─────────────────────────────────────────────────────────────────────────
-# SHRINKAGE PROGRESIVO — el tope de "Forma real" y "Momentum vía Elo" no
-# debería ser el mismo con 2 partidos jugados que con 15. Con pocos datos,
-# un equipo que anotó 2 goles de más en su único partido podría ser pura
-# suerte; con muchos partidos, la señal ya es confiable. En vez de un tope
-# fijo ±8% desde el partido 1, el tope escala linealmente de 0 hasta
-# TOPE_MAX_FORMA conforme el equipo acumula partidos jugados en el
-# torneo, hasta llegar al tope completo en PARTIDOS_PARA_TOPE_COMPLETO.
-# ─────────────────────────────────────────────────────────────────────────
-TOPE_MAX_FORMA = 0.08
-PARTIDOS_PARA_TOPE_COMPLETO = 10
-
-
-def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
-                     partidos_para_completo: int = PARTIDOS_PARA_TOPE_COMPLETO) -> float:
-    """Tope dinámico (0 a tope_max) según cuántos partidos reales lleva
-    jugados el equipo en el torneo — 0 partidos = 0 de tope (sin dato,
-    sin ajuste), tope_max a partir de partidos_para_completo."""
-    if partidos_jugados <= 0:
-        return 0.0
-    return tope_max * min(partidos_jugados / partidos_para_completo, 1.0)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# SESGO LOCAL/VISITA — cuánto mejor/peor rinde un equipo jugando en casa
-# vs. de visita, respecto a SU PROPIO promedio de temporada (Clausura
-# 2026). Viene de una fuente externa verificada contra los totales
-# oficiales (ver FUERZA_ATAQUE_LOCAL/VISITA en el skeleton), pero con
-# solo 8-9 partidos por categoría es una muestra chica — se topa a ±20%
-# para no sobre-corregir con ruido.
-# ─────────────────────────────────────────────────────────────────────────
-TOPE_SESGO_LOCAL_VISITA = 0.20
-
-
-def _razon_capada(valor: float, base: float, tope: float = TOPE_SESGO_LOCAL_VISITA) -> float:
-    """valor/base, acotado a [1-tope, 1+tope]. Si falta cualquiera de los
-    dos datos, devuelve 1.0 (sin ajuste)."""
-    if not valor or not base or base <= 0:
-        return 1.0
-    razon = valor / base
-    return max(1.0 - tope, min(1.0 + tope, razon))
-
-_elo_promedio = sum(ELO.values()) / len(ELO)
-
-FUERZA_ATAQUE = {
-    # Recalibrado con la tabla exacta del Clausura 2026 (17 partidos,
-    # gf/pj — la tabla cuadra perfectamente con W-E-P y puntos de cada
-    # equipo, así que se usa tal cual en vez de la estimación anterior).
-    "Pumas UNAM":         2.00,  # antes 1.8 — GF real más alto de lo estimado
-    "Guadalajara":        1.94,
-    "Cruz Azul":          1.82,
-    "Tigres":             1.65,
-    "Toluca":             1.65,
-    "FC Juarez":          1.53,
-    "Pachuca":            1.47,
-    "Atletico San Luis":  1.41,
-    "Leon":               1.29,
-    "Atlante":            1.29,  # ⚠️ heredado de Mazatlán
-    "Monterrey":          1.29,
-    "America":            1.18,  # antes 1.4 — GF real bastante más bajo de lo estimado
-    "Santos Laguna":      1.18,
-    "Necaxa":             1.12,
-    "Tijuana":            1.12,
-    "Queretaro":          1.00,
-    "Atlas":              0.94,
-    "Puebla":             0.76,
-}
-FUERZA_DEFENSA = {
-    # Mismo criterio: gc/pj exacto de la tabla del Clausura 2026.
-    "Toluca":             0.94,
-    "Guadalajara":        1.00,  # antes 1.1
-    "Pumas UNAM":         1.00,  # antes 1.1
-    "America":            1.00,  # antes 1.2 — defensa real mejor de lo estimado
-    "Tijuana":            1.00,
-    "Cruz Azul":          1.06,
-    "Tigres":             1.06,
-    "Atlas":              1.06,  # antes 1.2 — defensa real mejor de lo estimado
-    "Pachuca":            1.12,  # antes 1.0 — defensa real algo peor de lo estimado
-    "Queretaro":          1.24,
-    "Monterrey":          1.41,
-    "Necaxa":             1.47,
-    "Puebla":             1.53,
-    "Atletico San Luis":  1.59,
-    "Leon":               1.88,
-    "FC Juarez":          1.88,
-    "Atlante":            2.18,  # ⚠️ heredado de Mazatlán
-    "Santos Laguna":      2.24,
-}
-
-# ─────────────────────────────────────────────────────────────────────────
-# RECALIBRACIÓN DINÁMICA — a partir de aquí, ELO_BASE / FUERZA_ATAQUE_BASE /
-# FUERZA_DEFENSA_BASE son el punto de partida "Clausura 2026" (nunca se
-# tocan). ELO_ACTUALIZADO, FUERZA_ATAQUE_ACTUALIZADA y
-# FUERZA_DEFENSA_ACTUALIZADA reproducen, con liga_mx_elo_update.py, cada
-# partido que ya tiene resultado real en PARTIDOS — así que se recalculan
-# solos cada vez que arranca la app, conforme le vas agregando jornadas
-# jugadas. calcular_lambdas() usa las versiones ACTUALIZADAS.
-# ─────────────────────────────────────────────────────────────────────────
-ELO_BASE = dict(ELO)
-FUERZA_ATAQUE_BASE = dict(FUERZA_ATAQUE)
-FUERZA_DEFENSA_BASE = dict(FUERZA_DEFENSA)
-
-ELO_ACTUALIZADO = actualizar_elo(PARTIDOS, ELO_BASE)
-FUERZA_ATAQUE_ACTUALIZADA, FUERZA_DEFENSA_ACTUALIZADA = actualizar_fuerza_ataque_defensa(
-    PARTIDOS, FUERZA_ATAQUE_BASE, FUERZA_DEFENSA_BASE
+st.set_page_config(
+    page_title="Liga MX · Apertura 2026 · Predictor",
+    page_icon="⚽",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
-_elo_promedio_actualizado = sum(ELO_ACTUALIZADO.values()) / len(ELO_ACTUALIZADO)
-
-# A partir de aquí, FUERZA_ATAQUE y FUERZA_DEFENSA (los nombres que usa el
-# resto de este archivo) YA SON las versiones ajustadas por la forma real
-# del torneo — no las estáticas de arriba. Para comparar "modelo con vs.
-# sin recalibración", usa FUERZA_ATAQUE_BASE / FUERZA_DEFENSA_BASE.
-FUERZA_ATAQUE = FUERZA_ATAQUE_ACTUALIZADA
-FUERZA_DEFENSA = FUERZA_DEFENSA_ACTUALIZADA
 
 # ─────────────────────────────────────────────────────────────────────────
-# TARJETAS POR EQUIPO — Clausura 2026 (fuente FotMob, 17 PJ, ver arriba)
-# vs. Apertura 2026 EN VIVO (fuente ligamx.net, tabla oficial de
-# Tarjetas Amarillas/Rojas por Club).
-#
-# A diferencia de FUERZA_ATAQUE/FUERZA_DEFENSA (que se recalibran solas
-# vía liga_mx_elo_update.py leyendo PARTIDOS), este dato NO tiene fuente
-# automática en el modelo — ligamx.net no expone una API pública, así
-# que se actualiza pegando la tabla manualmente aquí cada cierto número
-# de jornadas. _factor_tarjetas_equipo() mezcla ambos con el MISMO
-# shrinkage progresivo que usa _tope_shrinkage() para Forma real/Elo:
-# con pocos PJ del Apertura pesa más el Clausura (dato robusto, 17 PJ),
-# y conforme se acumulan partidos el Apertura gana peso hasta dominar
-# por completo a partir de PARTIDOS_PARA_TOPE_COMPLETO.
+# PESOS DEL MODELO — fijos en el código, no ajustables desde la interfaz.
+# Si algún día quieres recalibrar, cámbialos aquí (no en la UI).
 # ─────────────────────────────────────────────────────────────────────────
-TARJETAS_EQUIPO_LIGAMX = {
-    "Santos Laguna":      (50, 5, 17),
-    "Pumas UNAM":         (50, 4, 17),
-    "Cruz Azul":          (49, 1, 17),
-    "Guadalajara":        (49, 0, 17),
-    "Tigres":             (44, 5, 17),
-    "Pachuca":            (43, 7, 17),
-    "Toluca":             (42, 5, 17),
-    "Atlas":              (42, 4, 17),
-    "Tijuana":            (42, 2, 17),
-    "Queretaro":          (40, 3, 17),
-    "Necaxa":             (36, 7, 17),
-    "Leon":               (36, 2, 17),
-    "Puebla":             (35, 6, 17),
-    "Atlante":            (35, 1, 17),  # ⚠️ heredado de Mazatlán
-    "FC Juarez":          (34, 3, 17),
-    "Atletico San Luis":  (33, 3, 17),
-    "America":            (27, 2, 17),
-    "Monterrey":          (26, 1, 17),
+PESO_ELO = 1.0
+PESO_ALTITUD = 1.0
+PESO_ARBITRO = 1.0
+N_SIMS_PARTIDO = 10_000_000
+
+# ─────────────────────────────────────────────────────────────────────────
+# ESTILO — mismo lenguaje visual que el Mundial-predictor: verde/blanco/
+# rojo (México) + magenta Liga MX como acento.
+# ─────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&display=swap');
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
+.stApp { background: #0a1410; color: #e8f0ea; }
+.block-container { padding: 2rem 2rem 4rem; max-width: 1100px; }
+.hero { background: linear-gradient(135deg, #0d2818 0%, #1a2e1f 40%, #2a0d14 100%); border: 1px solid #1f4a2e; border-radius: 16px; padding: 2rem 2.5rem; margin-bottom: 2rem; position: relative; overflow: hidden; }
+.hero::before { content: "⚽"; position: absolute; right: 2rem; top: 50%; transform: translateY(-50%); font-size: 5rem; opacity: 0.07; }
+.hero-title { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; letter-spacing: 4px; color: #e5007d; margin: 0; line-height: 1; }
+.hero-sub { color: #8fbfa0; font-size: 0.8rem; margin-top: 0.4rem; letter-spacing: 1px; text-transform: uppercase; }
+.prob-bar { display:flex; height:12px; border-radius:6px; overflow:hidden; margin:0.75rem 0; }
+.bar-a { background:#006341; } .bar-draw { background:#4b5563; } .bar-b { background:#CE1126; }
+.result-box { background: linear-gradient(135deg, #0d2818, #1a2e1f); border: 1px solid #1f4a2e; border-radius: 14px; padding: 1.5rem 1rem; text-align: center; }
+.result-box-draw { border-color: #374151; } .result-box-b { border-color: #4a1f26; }
+.team-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; letter-spacing: 2px; color: #e8f0ea; margin: 0.2rem 0; }
+.prob-pct { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; line-height:1; color: #4ade80; }
+.prob-pct-b { color: #f87171; } .prob-pct-draw { color: #9ca3af; }
+.prob-lbl { font-size: 0.6rem; color: #6b9b7d; letter-spacing: 2px; text-transform: uppercase; }
+.goles-esp { font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; color: #e5007d; }
+.score-badge { display:inline-block; background:#12241a; border:1px solid #1f4a2e; border-radius:8px; padding:0.3rem 0.9rem; margin:0.15rem; font-family:'Bebas Neue', sans-serif; font-size:1.1rem; color:#e8f0ea; text-align:center; }
+.score-badge-top { background:#2a0d1a; border-color:#e5007d; color:#e5007d; }
+.tag { display:inline-block; border-radius:20px; padding:2px 10px; font-size:0.65rem; letter-spacing:1px; text-transform:uppercase; margin-right:0.4rem; }
+.tag-played  { background:#1a3a2a; color:#4ade80; border:1px solid #2d6b45; }
+.tag-pending { background:#2a0d1a; color:#e5007d; border:1px solid #5a1a3a; }
+.metric-box { background:#0f1e15; border:1px solid #1f4a2e; border-radius:10px; padding:0.9rem; text-align:center; }
+.metric-val { font-family:'Bebas Neue',sans-serif; font-size:2rem; color:#e5007d; line-height:1; }
+.metric-lbl { font-size:0.6rem; color:#6b9b7d; letter-spacing:1px; text-transform:uppercase; margin-top:0.2rem; }
+.model-note { background:#0d1a12; border-left:3px solid #006341; border-radius:0 8px 8px 0; padding:0.7rem 1rem; font-size:0.75rem; color:#8fbfa0; margin-top:1.2rem; }
+.bet-card { border-radius:10px; padding:0.9rem; height:100%; }
+.bet-card-alta { background:#0d2818; border:1px solid #2d6b45; }
+.value-bet-badge { display:inline-block; background:linear-gradient(135deg,#3a2a00,#5a4000); border:1px solid #f0c040; color:#f0c040; border-radius:6px; padding:1px 8px; font-size:0.58rem; letter-spacing:1px; text-transform:uppercase; margin-top:0.3rem; font-weight:600; }
+.no-apostable-badge { display:inline-block; background:#2a2018; border:1px solid #6b5a3a; color:#b8a67a; border-radius:6px; padding:1px 8px; font-size:0.58rem; letter-spacing:0.5px; margin-top:0.3rem; font-weight:500; }
+.bet-card-media { background:#12241a; border:1px solid #1f4a2e; }
+.parlay-card { background:linear-gradient(135deg,#1a1500,#2a2000); border:1px solid #e5007d; border-radius:10px; padding:0.8rem 1rem; margin-top:0.75rem; }
+.disclaimer-banner { background: linear-gradient(135deg, #2a1500, #3a1e00); border: 1px solid #5a3a00; border-radius: 10px; padding: 0.7rem 1.2rem; margin-bottom: 1rem; font-size: 0.75rem; color: #f0c040; line-height: 1.5; text-align: center; }
+.stButton > button { background: linear-gradient(135deg,#006341,#e5007d) !important; font-size:1rem !important; color:white !important; border:none !important; border-radius:8px !important; font-family:'Bebas Neue', sans-serif !important; letter-spacing:2px !important; padding:0.6rem 2rem !important; width:100% !important; }
+.stButton > button:hover { filter: brightness(1.15); }
+.stSelectbox > div > div { background:#0f1e15 !important; border:1px solid #1f4a2e !important; color:#e8f0ea !important; border-radius:8px !important; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="disclaimer-banner">
+⚠️ <b>Aviso legal:</b> Proyecto independiente, sin fines de lucro, de carácter educativo/informativo.
+Las predicciones se generan por simulación estadística (Monte Carlo) y <b>no constituyen asesoría de apuestas ni garantía de resultados</b>.
+Apuesta responsablemente y solo en plataformas legales. Debes ser mayor de edad (18+).
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="hero">
+  <div class="hero-title">LIGA MX · APERTURA 2026</div>
+  <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · ELO + Altitud + Árbitro + Clima</div>
+</div>""", unsafe_allow_html=True)
+
+BANDERAS_EQUIPO = {
+    "America": "🦅", "Atlante": "🐎", "Atlas": "🦊", "Atletico San Luis": "🐶",
+    "Cruz Azul": "🚂", "Guadalajara": "🐐", "FC Juarez": "🐴", "Leon": "🦁",
+    "Monterrey": "🤠", "Necaxa": "⚡", "Pachuca": "🐹", "Puebla": "🎽",
+    "Pumas UNAM": "🐾", "Queretaro": "🐔", "Santos Laguna": "⚔️",
+    "Tijuana": "🐕", "Tigres": "🐯", "Toluca": "👹",
 }
-_PROMEDIO_LIGA_AMARILLAS_EQUIPO = sum(v[0] / v[2] for v in TARJETAS_EQUIPO_LIGAMX.values()) / len(TARJETAS_EQUIPO_LIGAMX)
 
-# Apertura 2026 EN VIVO — (amarillas_totales, rojas_totales, partidos_jugados)
-# Fuente: ligamx.net, tabla "Tarjetas Amarillas"/"Tarjetas Rojas" por
-# club, consultada tras la Jornada 5 (5 PJ para todos los equipos).
-# ACTUALIZAR estos números (y el "5" del comentario de arriba) cada vez
-# que se pegue una tabla nueva de ligamx.net.
-TARJETAS_EQUIPO_APERTURA = {
-    "Atlas":              (21, 3, 5),
-    "Pachuca":            (11, 2, 5),
-    "FC Juarez":          (10, 0, 5),
-    "Leon":               (10, 3, 5),
-    "Necaxa":             (10, 2, 5),
-    "Tigres":             (10, 1, 5),
-    "America":            (9, 1, 5),
-    "Cruz Azul":          (9, 0, 5),
-    "Monterrey":          (7, 2, 5),
-    "Tijuana":            (7, 0, 5),
-    "Toluca":             (7, 1, 5),
-    "Guadalajara":        (6, 1, 5),
-    "Pumas UNAM":         (6, 0, 5),
-    "Atletico San Luis":  (5, 1, 5),
-    "Santos Laguna":      (5, 0, 5),
-    "Puebla":             (4, 1, 5),
-    # Atlante y Queretaro no traían conteo propio en la tabla pegada (0
-    # tarjetas registradas) — se dejan fuera a propósito para que
-    # _factor_tarjetas_equipo() caiga de vuelta al dato de Clausura sin
-    # mezclar un "0 tarjetas" engañoso.
-}
+def flag(t):
+    return BANDERAS_EQUIPO.get(t, "⚽")
+
+def tag(cls, txt):
+    return f'<span class="tag {cls}">{txt}</span>'
 
 
-def _factor_tarjetas_equipo(equipo: str) -> float:
+def _badge_value_bet(ap: dict) -> str:
     """
-    Qué tan por encima/debajo del promedio de liga está el ESTILO
-    disciplinario del equipo (independiente del árbitro). 1.0 = promedio
-    de liga. Tope [0.7, 1.4] para no sobre-ajustar con muestras chicas.
-
-    Mezcla Clausura 2026 (base robusta, 17 PJ) con Apertura 2026 EN VIVO
-    (TARJETAS_EQUIPO_APERTURA) usando el mismo shrinkage progresivo que
-    _tope_shrinkage(): con 0 PJ del Apertura, 100% Clausura; a partir de
-    PARTIDOS_PARA_TOPE_COMPLETO PJ del Apertura, 100% Apertura.
+    HTML del badge "💰 VALUE BET" para una apuesta, si trae value_bet
+    con tiene_valor=True (ver liga_mx_algoritmo.analizar_apuestas() y
+    liga_mx_cuotas.calcular_value_bet()). Cadena vacía si no aplica —
+    ninguna cuota disponible, o el EV no superó el umbral configurado en
+    liga_mx_cuotas.UMBRAL_VALUE_EV — para poder insertarlo directo en
+    cualquier f-string de tarjeta sin condicionales repetidos.
     """
-    datos_clausura = TARJETAS_EQUIPO_LIGAMX.get(equipo)
-    datos_apertura = TARJETAS_EQUIPO_APERTURA.get(equipo)
-
-    prom_clausura = None
-    if datos_clausura and datos_clausura[2] > 0:
-        am_c, _ro_c, pj_c = datos_clausura
-        prom_clausura = am_c / pj_c
-
-    prom_apertura = None
-    pj_apertura = 0
-    if datos_apertura and datos_apertura[2] > 0:
-        am_a, _ro_a, pj_apertura = datos_apertura
-        prom_apertura = am_a / pj_apertura
-
-    if prom_clausura is None and prom_apertura is None:
-        return 1.0
-    if prom_clausura is None:
-        promedio_mezclado = prom_apertura
-    elif prom_apertura is None:
-        promedio_mezclado = prom_clausura
-    else:
-        peso_apertura = min(pj_apertura / PARTIDOS_PARA_TOPE_COMPLETO, 1.0)
-        promedio_mezclado = (1 - peso_apertura) * prom_clausura + peso_apertura * prom_apertura
-
-    return max(0.7, min(1.4, promedio_mezclado / _PROMEDIO_LIGA_AMARILLAS_EQUIPO))
-
-# ─────────────────────────────────────────────────────────────────────────
-# FECHAS DE LEAGUES CUP POR EQUIPO — fase de grupos confirmada (4-13 de
-# agosto 2026). Los 18 equipos de Liga MX participan, 3 partidos cada
-# uno. Usado por _jugo_leagues_cup_reciente() para aplicar el -10% de
-# fatiga cuando un equipo jugó Leagues Cup en los 7 días previos a su
-# siguiente partido de Liga MX (relevante sobre todo para la Jornada 4,
-# 15-17 de agosto, justo después de esta fase de grupos).
-#
-# CUARTOS DE FINAL (25-27 agosto): solo 4 equipos de Liga MX avanzaron —
-# América (vs Columbus Crew), León (vs Real Salt Lake), Monterrey (vs
-# Chicago Fire FC) y Toluca (vs Austin FC). La hora exacta de cada
-# partido de cuartos todavía no está confirmada, así que se agregaron
-# las 3 fechas posibles (25/26/27) como candidatas — no afecta la
-# precisión del cálculo de fatiga, solo amplía un poco la ventana.
-# Si alguno de estos 4 avanza a semis (1-2 sep) o final (6 sep), hay que
-# agregar esas fechas también cuando se confirme.
-# ─────────────────────────────────────────────────────────────────────────
-LEAGUES_CUP_FECHAS = {
-    "America":            ["2026-08-06", "2026-08-09", "2026-08-13",
-                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Columbus Crew (fecha exacta TBD)
-    "Atlante":            ["2026-08-04", "2026-08-08", "2026-08-11"],
-    "Atlas":              ["2026-08-04", "2026-08-07", "2026-08-11"],
-    "Atletico San Luis":  ["2026-08-05", "2026-08-09", "2026-08-12"],
-    "Cruz Azul":          ["2026-08-06", "2026-08-09", "2026-08-13"],
-    "FC Juarez":          ["2026-08-04", "2026-08-07", "2026-08-11"],
-    "Guadalajara":        ["2026-08-05", "2026-08-08", "2026-08-12"],
-    "Leon":               ["2026-08-05", "2026-08-08", "2026-08-12",
-                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Real Salt Lake (fecha exacta TBD)
-    "Monterrey":          ["2026-08-05", "2026-08-08", "2026-08-12",
-                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Chicago Fire FC (fecha exacta TBD)
-    "Necaxa":             ["2026-08-06", "2026-08-09", "2026-08-13"],
-    "Pachuca":            ["2026-08-04", "2026-08-07", "2026-08-11"],
-    "Puebla":             ["2026-08-06", "2026-08-09", "2026-08-12"],
-    "Pumas UNAM":         ["2026-08-04", "2026-08-07", "2026-08-11"],
-    "Queretaro":          ["2026-08-05", "2026-08-09", "2026-08-12"],
-    "Santos Laguna":      ["2026-08-06", "2026-08-09", "2026-08-13"],
-    "Tigres":             ["2026-08-04", "2026-08-07", "2026-08-11"],
-    "Tijuana":            ["2026-08-06", "2026-08-09", "2026-08-13"],
-    "Toluca":             ["2026-08-05", "2026-08-08", "2026-08-12",
-                            "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Austin FC (fecha exacta TBD)
-}
-FACTOR_FATIGA_LEAGUES_CUP = 0.90   # -10% lambda ofensivo, como pediste
-
-ALTITUD_UMBRAL = 1700       # metros — a partir de aquí se considera "altura"
-BONUS_ALTITUD_LOCAL = 0.20  # +0.2 lambda para el local en altura, como pediste
-EQUIPOS_ACLIMATADOS_ALTURA = {
-    # Equipos que también juegan de local en altura, y por lo tanto no
-    # sufren tanto la desventaja de visitar otra ciudad alta.
-    "Toluca", "Pachuca", "Queretaro", "Atletico San Luis", "Leon",
-    "Necaxa", "Pumas UNAM", "America", "Cruz Azul", "Atlante",
-}
+    vb = ap.get("value_bet")
+    if not vb or not vb.get("tiene_valor"):
+        return ""
+    ev = vb.get("ev_pct")
+    return f'<div class="value-bet-badge">💰 Value Bet · EV +{ev:.1f}%</div>'
 
 
-def _buscar_arbitro(home_team: str, away_team: str):
-    """Busca el árbitro asignado a un partido dentro de PARTIDOS."""
-    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if local == home_team and visit == away_team:
-            return arbitro
-    return None
+def _badge_no_apostable(ap: dict) -> str:
+    """
+    HTML del badge "⚠️ No apostable" — QUEDÓ SIN EFECTO PRÁCTICO por
+    decisión posterior del usuario: liga_mx_algoritmo.analizar_apuestas()
+    ahora DESCARTA por completo (no la agrega a la lista de sugerencias)
+    cualquier línea de Total de Goles que ninguna casa real ofrezca,
+    en vez de incluirla marcada con "no_apostable": True como antes.
 
+    Esta función se deja intacta (no se elimina del código ni de las
+    tarjetas que la llaman) por si en el futuro se prefiere volver al
+    comportamiento anterior de "mostrar con advertencia" — hoy nunca
+    encuentra "no_apostable" en una apuesta (esas simplemente no
+    llegan aquí) y siempre devuelve cadena vacía.
+    """
+    if not ap.get("no_apostable"):
+        return ""
+    return '<div class="no-apostable-badge">⚠️ Sin cuota real disponible</div>'
 
-def _buscar_fecha_partido(home_team: str, away_team: str):
-    """Busca la fecha/hora del partido en HORARIOS_PARTIDO."""
-    horario = HORARIOS_PARTIDO.get((home_team, away_team))
-    if not horario:
-        return None
-    try:
-        return datetime.strptime(horario, "%Y-%m-%d %H:%M")
-    except ValueError:
-        return None
+if "historial_apuestas_sesion" not in st.session_state:
+    st.session_state["historial_apuestas_sesion"] = []
 
+def _registrar_apuestas_sesion(local, visit, jornada, sugs, r=None, resultado_real=None):
+    ya_registrado = any(
+        h["local"] == local and h["visit"] == visit for h in st.session_state["historial_apuestas_sesion"]
+    )
+    if not ya_registrado:
+        for s in sugs:
+            if s["nivel"] != "ALTA":
+                continue
+            st.session_state["historial_apuestas_sesion"].append({
+                "local": local, "visit": visit, "jornada": jornada,
+                "mercado": s["mercado"], "seleccion": s["seleccion"], "confianza": s["confianza"],
+                "hora_registro": datetime.now().strftime("%H:%M:%S"),
+            })
 
-def _jugo_leagues_cup_reciente(equipo: str, fecha_partido: datetime) -> bool:
-    """True si el equipo jugó Leagues Cup en los 7 días previos a fecha_partido."""
-    if fecha_partido is None:
-        return False
-    fechas = LEAGUES_CUP_FECHAS.get(equipo, [])
-    for f in fechas:
+    # Persistencia real en Supabase (si está conectado)
+    if SUPABASE_DISPONIBLE:
         try:
-            f_dt = datetime.strptime(f, "%Y-%m-%d")
-        except ValueError:
-            continue
-        if timedelta(0) <= (fecha_partido - f_dt) <= timedelta(days=7):
-            return True
-    return False
+            if r is not None:
+                guardar_prediccion(SUPABASE_URL, SUPABASE_KEY, local, visit, jornada, r, resultado_real)
+            guardar_apuestas(SUPABASE_URL, SUPABASE_KEY, local, visit, jornada, sugs, resultado_real)
+        except Exception:
+            pass
 
-
-def _forma_real_liga_mx() -> dict:
-    """
-    Calcula (goles_favor, goles_contra, partidos_jugados) REALES por
-    equipo, a partir de los partidos que ya tienen resultado en
-    PARTIDOS. Se recalcula cada vez que se llama (barato: 153 filas) —
-    así conforme le vayas dando resultados de más jornadas, el modelo
-    se corrige solo sin que tengas que tocar código.
-    """
-    forma = {eq: [0, 0, 0] for eq in EQUIPOS}
-    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if resultado is None:
-            continue
-        gh, ga = resultado
-        forma[local][0] += gh; forma[local][1] += ga; forma[local][2] += 1
-        forma[visit][0] += ga; forma[visit][1] += gh; forma[visit][2] += 1
-    return forma
+# ─────────────────────────────────────────────────────────────────────────
+# TABS — misma barra que el Mundial-predictor
+# ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Auto-actualizar aciertos pendientes contra resultados reales (1 vez
+# por sesión, igual patrón que el Mundial-predictor)
+# ─────────────────────────────────────────────────────────────────────────
+if SUPABASE_DISPONIBLE and not st.session_state.get("aciertos_lm_actualizados"):
+    partidos_jugados = [p for p in PARTIDOS if p[4] is not None]
+    if partidos_jugados:
+        try:
+            actualizar_aciertos_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
+            actualizar_parlays_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
+        except Exception:
+            pass
+    st.session_state["aciertos_lm_actualizados"] = True
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# PROMEDIO_LIGA_AMARILLAS_BASE (Clausura 2026, 4.3) — YA NO se usa fijo.
-# Confirmado con datos reales del Apertura 2026 (52 partidos con dato de
-# amarillas en DATOS_REALES_LIGAMX): el promedio real de ESTE torneo es
-# 3.58 amarillas/partido, no 4.3 — usar el valor viejo estaba haciendo
-# que el modelo sobreestimara amarillas en ~0.75/partido en promedio,
-# lo cual se detectó porque el mercado "Tarjetas" venía acertando 66.7%
-# contra el 84.9% que el modelo prometía (panel de auto-calibración,
-# 27 apuestas evaluadas — muestra suficiente para ser una señal real,
-# no ruido).
-#
-# Mismo criterio de shrinkage progresivo que el resto del modelo: con
-# pocos partidos jugados del Apertura pesa más el Clausura (dato
-# robusto, 17x18=306 partidos), y conforme se acumulan partidos del
-# Apertura actual, ese promedio real gana peso hasta dominar en
-# PARTIDOS_PARA_TOPE_COMPLETO_LIGA (mayor que el de equipo individual,
-# porque aquí la muestra crece 9x más rápido — toda la jornada aporta
-# datos, no solo los partidos de un equipo).
+# APUESTAS MÁS FUERTES DE HOY — arriba de todo, se calcula solo al abrir
+# la página. Cacheado 1 hora para no re-simular 10M por cada visitante.
 # ─────────────────────────────────────────────────────────────────────────
-PROMEDIO_LIGA_AMARILLAS_BASE = 4.3
-PARTIDOS_PARA_TOPE_COMPLETO_LIGA = 50  # ~una jornada completa (9) x 5-6 jornadas
+@st.cache_data(ttl=3600, show_spinner=False)
+def _simular_partido_cached(local, visit, n, peso_elo, peso_altitud, peso_arbitro, factor_clima=1.0):
+    # Nota: el sesgo por equipo (_sesgo_equipo_cached, TTL 15 min) se lee
+    # aquí dentro de una función cacheada por 1 hora — si el sesgo cambia
+    # a mitad de esa hora (un equipo cruza el umbral de 8 PJ evaluados),
+    # este resultado sigue sirviendo la versión vieja hasta que expire el
+    # caché de 1 hora. Aceptable: el sesgo por equipo cambia jornada a
+    # jornada, no dentro de la misma hora.
+    return simular_partido(local, visit, n=n, peso_elo=peso_elo,
+                            peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
+                            factor_clima=factor_clima, sesgo_por_equipo=_sesgo_equipo_cached())
 
 
-def _promedio_liga_amarillas_dinamico() -> float:
-    """
-    Mezcla PROMEDIO_LIGA_AMARILLAS_BASE (Clausura 2026) con el promedio
-    real de amarillas del Apertura 2026 EN VIVO (derivado de
-    DATOS_REALES_LIGAMX, mismo patrón que _rojas_reales_por_arbitro()),
-    con shrinkage progresivo según cuántos partidos de la liga completa
-    ya tienen dato de amarillas confirmado.
-
-    Se recalcula cada vez que se llama (barato — recorre PARTIDOS, ~150
-    filas) para que se actualice solo conforme avanza el torneo, sin
-    tocar código.
-    """
-    amarillas_reales = [
-        datos["am"]
-        for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
-        if resultado is not None
-        for datos in [DATOS_REALES_LIGAMX.get(f"{local}_{visit}")]
-        if datos and "am" in datos
-    ]
-    if not amarillas_reales:
-        return PROMEDIO_LIGA_AMARILLAS_BASE
-
-    promedio_apertura = sum(amarillas_reales) / len(amarillas_reales)
-    peso_apertura = min(len(amarillas_reales) / PARTIDOS_PARA_TOPE_COMPLETO_LIGA, 1.0)
-    return (1 - peso_apertura) * PROMEDIO_LIGA_AMARILLAS_BASE + peso_apertura * promedio_apertura
+# ─────────────────────────────────────────────────────────────────────────
+# RETROALIMENTACIÓN AUTOMÁTICA — trae el historial de apuestas y calcula
+# qué mercados (si alguno) hay que dejar de sugerir por bajo acierto
+# real. Cacheado 15 min (más corto que las simulaciones: esto sí cambia
+# seguido conforme se van evaluando apuestas nuevas jornada a jornada).
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=900, show_spinner=False)
+def _mercados_suspendidos_cached():
+    if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
+        return frozenset()
+    historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
+    return frozenset(calcular_mercados_suspendidos(historial))
 
 
-def calcular_lambdas(home_team: str, away_team: str,
-                      peso_elo: float = 1.0,
-                      peso_altitud: float = 1.0,
-                      peso_arbitro: float = 1.0,
-                      peso_forma_elo: float = 1.0,
-                      factor_clima: float = 1.0,
-                      peso_local_visita: float = 1.0,
-                      sesgo_por_equipo: dict = None) -> tuple:
-    """
-    Calcula (lambda_home, lambda_away): la tasa esperada de goles para
-    cada equipo, combinando:
-      1. Ataque/Defensa — YA viene de FUERZA_ATAQUE_ACTUALIZADA /
-         FUERZA_DEFENSA_ACTUALIZADA (ver liga_mx_elo_update.py): estos
-         valores se recalibran solos con media móvil exponencial cada vez
-         que agregas un resultado real a PARTIDOS.
-      1a. Sesgo local/visita — ajuste acotado (±20%) según qué tan mejor/
-         peor rinde CADA equipo jugando en casa vs. de visita, respecto a
-         su propio promedio de temporada (Clausura 2026, verificado contra
-         los totales oficiales). El local usa su sesgo de local, el
-         visitante el suyo de visitante — nunca se mezclan.
-      1c. Momentum vía Elo — ajuste adicional y acotado (±8%) basado en
-         cuánto se movió el Elo de cada equipo (actualizar_elo(), fórmula
-         Elo estándar con ventaja de local y multiplicador por goleada)
-         desde el arranque del torneo. Complementa a Forma real: mientras
-         Forma real mira el promedio de goles reales, este factor mira
-         resultados/margen relativo a la fuerza del rival enfrentado.
-      1d. Corrección de sesgo del propio modelo (retroalimentación) —
-         ajuste acotado (±15%, ver liga_mx_supabase.calcular_sesgo_por_
-         equipo()) basado en cuánto se ha equivocado ESTE modelo en
-         particular prediciendo a este equipo, comparando goles_esp
-         guardados en predicciones_ligamx contra los goles reales que
-         anotó — separado por local/visita. Solo se aplica si el
-         llamador pasa sesgo_por_equipo (ver parámetro) Y ese equipo ya
-         acumuló el mínimo de partidos evaluados (8 por defecto); si no
-         hay dato, este paso no hace nada (factor 1.0, sin sorpresas).
-      2. Forma real — goles reales anotados/recibidos en partidos ya
-         jugados de este torneo (se auto-actualiza con cada resultado
-         que agregues a PARTIDOS)
-      3. Factor altitud (ventaja para el local en ciudades altas)
-      4. Factor árbitro (promedio de tarjetas → intensidad del partido)
-      5. Factor fatiga (Leagues Cup en los últimos 7 días)
+# ─────────────────────────────────────────────────────────────────────────
+# CORRECCIÓN DE SESGO POR EQUIPO — retroalimentación real: compara,
+# equipo por equipo (separado por rol local/visita), los goles esperados
+# que el modelo guardó en predicciones_ligamx contra los que anotó de
+# verdad, y devuelve un factor de ajuste acotado (±15%) sólo para
+# equipos con 8+ partidos evaluados en ese rol. Cacheado 15 min, mismo
+# TTL que _mercados_suspendidos_cached() por el mismo motivo: cambia
+# conforme se evalúan apuestas jornada a jornada, no de un minuto a otro.
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=900, show_spinner=False)
+def _sesgo_equipo_cached():
+    if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
+        return {}
+    historial_pred = cargar_historial_predicciones(SUPABASE_URL, SUPABASE_KEY)
+    return calcular_sesgo_por_equipo(historial_pred)
 
-    peso_elo, peso_altitud, peso_arbitro, peso_forma_elo: multiplicadores
-    para ajustar cuánto pesa cada factor en el resultado final. 1.0 =
-    calibración por defecto (la que ya probamos). 0.0 = el factor no
-    tiene efecto. 2.0 = el doble de efecto que el calibrado. Pensados
-    para conectarse directo a st.slider en la interfaz — sin tocar
-    variables globales.
 
-    sesgo_por_equipo: diccionario opcional, salida directa de
-    liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
-    Si se omite (None, el default), este paso simplemente no se aplica
-    — así calcular_lambdas() sigue funcionando exactamente igual que
-    antes para quien no le pase este dato (retrocompatible, sin romper
-    ninguna llamada existente en simular_partido()/simular_temporada()).
+# ─────────────────────────────────────────────────────────────────────────
+# CLIMA — temperatura/humedad/lluvia del partido, vía Visual Crossing.
+# Cacheado 1 hora: mismo criterio que las simulaciones (un pronóstico no
+# cambia de un minuto a otro, y no queremos gastar cuota de la API en
+# cada rerun de Streamlit).
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _factor_clima_cached(local, visit):
+    if not (CLIMA_MODULO_DISPONIBLE and WEATHER_API_KEY):
+        return 1.0, None
+    fecha_hora = HORARIOS_PARTIDO.get((local, visit))
+    if not fecha_hora:
+        return 1.0, None
+    clima = obtener_clima_partido(local, fecha_hora, WEATHER_API_KEY)
+    return _calc_factor_clima(clima), clima
 
-    Devuelve (lambda_home, lambda_away) listos para simular goles con
-    una distribución de Poisson.
-    """
-    # 1. Ataque / Defensa ────────────────────────────────────────────
-    # peso_elo interpola entre "todos los equipos son iguales" (peso=0)
-    # y "la calibración ELO completa" (peso=1); peso=2 duplica el efecto.
-    ataque_home = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_ATAQUE.get(home_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
-    defensa_home = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(home_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
-    ataque_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_ATAQUE.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
-    defensa_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
 
-    # 1a. Sesgo local/visita — el equipo LOCAL usa su propio sesgo "jugando
-    # en casa", el VISITANTE usa su propio sesgo "jugando fuera". No se
-    # mezclan (el sesgo de local de un equipo no le aplica cuando visita).
-    razon_ataque_home = _razon_capada(FUERZA_ATAQUE_LOCAL.get(home_team), FUERZA_ATAQUE_BASE.get(home_team))
-    razon_defensa_home = _razon_capada(FUERZA_DEFENSA_LOCAL.get(home_team), FUERZA_DEFENSA_BASE.get(home_team))
-    razon_ataque_away = _razon_capada(FUERZA_ATAQUE_VISITA.get(away_team), FUERZA_ATAQUE_BASE.get(away_team))
-    razon_defensa_away = _razon_capada(FUERZA_DEFENSA_VISITA.get(away_team), FUERZA_DEFENSA_BASE.get(away_team))
-    ataque_home *= 1.0 + peso_local_visita * (razon_ataque_home - 1.0)
-    defensa_home *= 1.0 + peso_local_visita * (razon_defensa_home - 1.0)
-    ataque_away *= 1.0 + peso_local_visita * (razon_ataque_away - 1.0)
-    defensa_away *= 1.0 + peso_local_visita * (razon_defensa_away - 1.0)
+# ─────────────────────────────────────────────────────────────────────────
+# CUOTAS REALES (Value Betting) — The Odds API solo lista partidos
+# próximos/en vivo, así que se trae UNA vez toda la jornada disponible y
+# se indexa por (local, visita) en un dict — más barato que pedir cuota
+# partido por partido, y respeta el quota de la API (1 crédito por
+# consulta a /odds sin importar cuántos partidos traiga). Cacheado 1
+# hora, mismo criterio que el clima: las cuotas se mueven, pero no tanto
+# como para justificar refrescar en cada rerun de Streamlit.
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cuotas_jornada_cached():
+    if not (CUOTAS_MODULO_DISPONIBLE and ODDS_API_KEY):
+        return {}
+    partidos_con_cuota = obtener_cuotas_jornada(ODDS_API_KEY)
+    return {(p["home_team"], p["away_team"]): p for p in partidos_con_cuota}
 
-    # Modelo clásico tipo Dixon-Coles: goles esperados del local
-    # dependen de SU ataque y de la defensa del VISITANTE (y viceversa).
-    lam_home = (ataque_home / LIGA_PROMEDIO_GOLES) * (defensa_away / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
-    lam_away = (ataque_away / LIGA_PROMEDIO_GOLES) * (defensa_home / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
 
-    # 1b. Forma real — ajusta con goles reales, tope progresivo (ver
-    # _tope_shrinkage): empieza en 0 con pocos partidos jugados y llega a
-    # TOPE_MAX_FORMA (±8%) recién a partir de PARTIDOS_PARA_TOPE_COMPLETO.
-    forma = _forma_real_liga_mx()
-    for equipo in (home_team, away_team):
-        gf, gc, pj = forma.get(equipo, (0, 0, 0))
-        if pj > 0:
-            avg_gf = gf / pj
-            avg_gc = gc / pj
-            tope = _tope_shrinkage(pj)
-            f_of = max(1.0 + min((avg_gf - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, tope), 1.0 - tope)
-            f_def = max(1.0 + min((avg_gc - LIGA_PROMEDIO_GOLES) / LIGA_PROMEDIO_GOLES, tope), 1.0 - tope)
-            if equipo == home_team:
-                lam_home *= f_of
-                lam_away *= f_def
-            else:
-                lam_away *= f_of
-                lam_home *= f_def
+def _cuota_partido(local, visit):
+    """Devuelve el dict de cuotas 1X2 para (local, visit) si The Odds
+    API lo tiene listado, o None si no hay cuota disponible para ese
+    partido (todavía muy lejano, ya jugado, o el partido no aparece en
+    ninguna casa de la región consultada) — analizar_apuestas() ya
+    maneja cuotas=None sin problema (retrocompatible)."""
+    partido = _cuotas_jornada_cached().get((local, visit))
+    return partido["cuotas"] if partido else None
 
-    # 1c. Momentum vía Elo — compara el Elo actualizado (tras reproducir
-    # todos los partidos jugados) contra el Elo base de arranque de
-    # temporada. Si un equipo viene rindiendo por encima de lo esperado
-    # (ganó partidos cerrados que "no debía" ganar, o goleó a rivales
-    # fuertes), su Elo sube y este factor empuja su λ un poco más arriba
-    # — mismo tope progresivo que Forma real (ver _tope_shrinkage), por
-    # equipo: cada uno usa el tope que le corresponde según SUS partidos
-    # jugados, no un tope parejo para ambos.
-    delta_elo_home = ELO_ACTUALIZADO.get(home_team, _elo_promedio_actualizado) - ELO_BASE.get(home_team, _elo_promedio_actualizado)
-    delta_elo_away = ELO_ACTUALIZADO.get(away_team, _elo_promedio_actualizado) - ELO_BASE.get(away_team, _elo_promedio_actualizado)
-    pj_home = forma.get(home_team, (0, 0, 0))[2]
-    pj_away = forma.get(away_team, (0, 0, 0))[2]
-    tope_elo_home = _tope_shrinkage(pj_home)
-    tope_elo_away = _tope_shrinkage(pj_away)
-    ajuste_elo_home = max(min(delta_elo_home / 1000, tope_elo_home), -tope_elo_home) * peso_forma_elo
-    ajuste_elo_away = max(min(delta_elo_away / 1000, tope_elo_away), -tope_elo_away) * peso_forma_elo
-    lam_home *= (1.0 + ajuste_elo_home)
-    lam_away *= (1.0 + ajuste_elo_away)
 
-    # 1d. Corrección de sesgo del propio modelo (retroalimentación) —
-    # ver liga_mx_supabase.calcular_sesgo_por_equipo(). Solo actúa si el
-    # llamador pasó el diccionario Y el equipo/rol ya tiene suficiente
-    # muestra evaluada (calcular_sesgo_por_equipo() ya filtra eso, así
-    # que aquí basta con comprobar que la clave exista).
-    if sesgo_por_equipo:
-        sesgo_home = sesgo_por_equipo.get(home_team, {})
-        sesgo_away = sesgo_por_equipo.get(away_team, {})
-        if "factor_ataque_local" in sesgo_home:
-            lam_home *= sesgo_home["factor_ataque_local"]
-        if "factor_ataque_visita" in sesgo_away:
-            lam_away *= sesgo_away["factor_ataque_visita"]
+def _cuotas_totales_partido(local, visit):
+    """Devuelve la lista de líneas de Total de Goles reales para
+    (local, visit) (ver liga_mx_cuotas._extraer_cuotas_totales()), o
+    None si no hay cuota disponible — analizar_apuestas() ya maneja
+    cuotas_totales=None sin problema (retrocompatible, se comporta
+    igual que antes de agregar el check de apostabilidad real)."""
+    partido = _cuotas_jornada_cached().get((local, visit))
+    return partido["cuotas_totales"] if partido else None
 
-    # Ventaja de localía estándar (típico ~10-15% en fútbol de liga)
-    lam_home *= 1.12
 
-    # 2. Factor altitud ───────────────────────────────────────────────
-    alt_local = ALTITUD_EQUIPO.get(home_team)
-    if alt_local is not None and alt_local >= ALTITUD_UMBRAL:
-        bono = BONUS_ALTITUD_LOCAL * peso_altitud
-        if away_team not in EQUIPOS_ACLIMATADOS_ALTURA:
-            # el visitante no está acostumbrado a la altura → el local
-            # se beneficia más de lo normal
-            lam_home += bono
+def _partidos_de_hoy():
+    tz_mx = timezone(timedelta(hours=-6))
+    hoy = datetime.now(tz_mx).strftime("%Y-%m-%d")
+    hoy_lista = []
+    for p in PARTIDOS:
+        local, visit, jornada, estadio, resultado, arbitro = p
+        if resultado is not None:
+            continue
+        horario = HORARIOS_PARTIDO.get((local, visit))
+        if horario and horario[:10] == hoy:
+            hoy_lista.append(p)
+    return hoy, hoy_lista
+
+
+hoy, partidos_hoy_global = _partidos_de_hoy()
+
+_mercados_susp = _mercados_suspendidos_cached()
+if _mercados_susp:
+    st.markdown(
+        f'<div class="model-note" style="border-left-color:#c0685a">⏸️ <b>Retroalimentación automática:</b> '
+        f'{", ".join(sorted(_mercados_susp))} — suspendido{"s" if len(_mercados_susp) > 1 else ""} temporalmente '
+        f'de las apuestas sugeridas por bajo acierto real. Se reactiva{"n" if len(_mercados_susp) > 1 else ""} solo '
+        f'en cuanto el acierto se recupere (ver detalle en 🎯 Historial de Apuestas → Auto-calibración).</div>',
+        unsafe_allow_html=True,
+    )
+
+if partidos_hoy_global:
+    with st.expander(f"🎰 APUESTAS MÁS FUERTES DE HOY ({hoy}) — Click para ver", expanded=True):
+        st.caption("Se calcula automáticamente al abrir la página · solo señales de confianza ALTA")
+        total_apuestas_hoy = 0
+        patas_parlay_dia = []
+        for local, visit, jornada, estadio, resultado, arbitro in partidos_hoy_global:
+            horario = HORARIOS_PARTIDO.get((local, visit), "")
+            hora_str = horario[11:] if horario else ""
+            _fc, _ = _factor_clima_cached(local, visit)
+            r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc)
+            sugs_hoy = analizar_apuestas(local, visit, r_hoy, mercados_suspendidos=_mercados_suspendidos_cached(),
+                                          cuotas=_cuota_partido(local, visit),
+                                          cuotas_totales=_cuotas_totales_partido(local, visit))
+            _registrar_apuestas_sesion(local, visit, jornada, sugs_hoy, r=r_hoy, resultado_real=None)
+            sugs_alta_hoy = [s for s in sugs_hoy if s["nivel"] == "ALTA"]
+            if not sugs_alta_hoy:
+                continue
+            total_apuestas_hoy += len(sugs_alta_hoy)
+            # La mejor pata de este partido (mayor confianza) entra al parlay del día
+            mejor = sugs_alta_hoy[0]
+            patas_parlay_dia.append({
+                "local": local, "visitante": visit, "jornada": jornada,
+                "mercado": mejor["mercado"], "seleccion": mejor["seleccion"].replace("✅ ", ""),
+                "confianza": mejor["confianza"],
+            })
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.5rem;margin:0.8rem 0 0.4rem;'
+                f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
+                f'<span style="font-size:0.82rem;color:#e8f0ea;font-weight:600">'
+                f'{flag(local)} {local} vs {flag(visit)} {visit}</span>'
+                f'<span style="font-size:0.68rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
+                unsafe_allow_html=True,
+            )
+            for fila_inicio in range(0, len(sugs_alta_hoy), 3):
+                fila = sugs_alta_hoy[fila_inicio:fila_inicio + 3]
+                cols_hoy = st.columns(3)
+                for i_ap, ap in enumerate(fila):
+                    with cols_hoy[i_ap]:
+                        st.markdown(
+                            f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                            f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                            f'<div style="font-size:0.88rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                            f'<div style="font-size:0.62rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                            f'{_badge_value_bet(ap)}{_badge_no_apostable(ap)}</div>',
+                            unsafe_allow_html=True,
+                        )
+            parlay_hoy = armar_parlay(sugs_alta_hoy)
+            if parlay_hoy:
+                st.markdown(
+                    f'<div class="parlay-card" style="padding:0.5rem 0.8rem"><span style="font-size:0.55rem;'
+                    f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                    f'<div style="font-size:0.76rem;color:#e5007d;margin:0.15rem 0">{parlay_hoy["texto"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
+                    f'<b style="color:#e5007d">{parlay_hoy["prob_combinada"]:.1f}%</b></div></div>',
+                    unsafe_allow_html=True,
+                )
+        if total_apuestas_hoy == 0:
+            st.info("Hoy no hay señales de confianza ALTA. El modelo es conservador.")
+        st.caption("⚠️ Solo informativo · Apuesta responsablemente")
+
+        # ── PARLAY DEL DÍA — combina la mejor pata de CADA partido de hoy ──
+        if len(patas_parlay_dia) >= 2:
+            st.markdown("---")
+            prob_combinada_dia = 1.0
+            for pata in patas_parlay_dia:
+                prob_combinada_dia *= pata["confianza"] / 100
+            prob_combinada_dia *= 100
+
+            texto_patas = " + ".join(
+                f'{flag(p["local"])}{p["local"]} vs {p["visitante"]}: {p["seleccion"]}'
+                for p in patas_parlay_dia
+            )
+            st.markdown(
+                f'<div class="parlay-card" style="border-color:#e5007d;padding:1rem">'
+                f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.2rem;letter-spacing:2px;'
+                f'color:#e5007d;margin-bottom:0.4rem">🎟️ PARLAY DEL DÍA — {len(patas_parlay_dia)} partidos</div>'
+                f'<div style="font-size:0.78rem;color:#e8f0ea;line-height:1.6">{texto_patas}</div>'
+                f'<div style="font-size:0.7rem;color:#8fbfa0;margin-top:0.5rem">Prob. combinada: '
+                f'<b style="color:#e5007d">{prob_combinada_dia:.2f}%</b></div></div>',
+                unsafe_allow_html=True,
+            )
+            if SUPABASE_DISPONIBLE:
+                try:
+                    guardar_parlay_diario(SUPABASE_URL, SUPABASE_KEY, hoy, patas_parlay_dia, prob_combinada_dia)
+                except Exception:
+                    pass
+
+
+tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_parlays, tab_tabla, tab_info = st.tabs([
+    "🎯 Predictor", "📊 Resultados reales", "🎰 Apuestas", "📈 Historial",
+    "🎲 Apuestas Hist.", "🎟️ Parlays", "🏆 Tabla / Temporada", "⚙️ Modelo",
+])
+
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Predictor
+# ─────────────────────────────────────────────────────────────────────────
+with tab_pred:
+    col_izq, col_der = st.columns([1, 2.5], gap="large")
+    with col_izq:
+        st.markdown("#### Elige el partido")
+
+        filtro_estado = st.radio(
+            "Estado", ["⏳ Por jugarse", "✓ Jugados"],
+            horizontal=True, key="filtro_estado_pred", label_visibility="collapsed",
+        )
+        es_por_jugarse = filtro_estado == "⏳ Por jugarse"
+        partidos_filtrados = [p for p in PARTIDOS if (p[4] is None) == es_por_jugarse]
+
+        if not partidos_filtrados:
+            # fallback: si la categoría elegida está vacía (ej. "Jugados" al
+            # arrancar la temporada), no se rompe nada — se usa la otra.
+            st.caption(f"No hay partidos {filtro_estado.split(' ', 1)[1].lower()} todavía — mostrando la otra categoría.")
+            partidos_filtrados = [p for p in PARTIDOS if (p[4] is None) != es_por_jugarse]
+
+        jornadas = sorted(set(p[2] for p in partidos_filtrados))
+        # "Por jugarse" arranca en la jornada más próxima (index 0, ya que
+        # jornadas está ordenado ascendente). "Jugados" arranca en la más
+        # reciente en vez de la Jornada 1 — es lo que casi siempre se quiere
+        # revisar.
+        idx_default = 0 if es_por_jugarse else len(jornadas) - 1
+        jornada_sel = st.selectbox("Jornada", jornadas, index=idx_default, key=f"jornada_pred_{filtro_estado}")
+        partidos_j = [p for p in partidos_filtrados if p[2] == jornada_sel]
+        opciones = {f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}": i for i, p in enumerate(partidos_j)}
+        lbl_sel = st.selectbox("Partido", list(opciones.keys()), key=f"partido_pred_{filtro_estado}_{jornada_sel}")
+        idx_sel = opciones[lbl_sel]
+        local, visit, jornada, estadio, resultado_real, arbitro = partidos_j[idx_sel]
+
+        st.markdown("---")
+        st.caption(f"⚡ {N_SIMS_PARTIDO:,} simulaciones")
+        btn = st.button("⚽ Simular partido", key="btn_simular")
+
+        # ─────────────────────────────────────────────────────────────
+        # SIMULAR JORNADA COMPLETA — detecta la jornada pendiente más
+        # próxima (según fechas oficiales ya cargadas en PARTIDOS/
+        # HORARIOS_PARTIDO) y simula sus partidos de un jalón, guardando
+        # todo en el historial de Supabase con el mismo formato que ya
+        # usa el flujo de "un partido a la vez".
+        # ─────────────────────────────────────────────────────────────
+        st.markdown("---")
+        _jornada_detectada = detectar_jornada_actual()
+        btn_jornada = False
+        if _jornada_detectada is None:
+            st.caption("No hay jornadas pendientes — temporada terminada.")
         else:
-            # ambos equipos están acostumbrados a la altura → bonus reducido
-            lam_home += bono * 0.3
+            st.caption(f"Jornada detectada: **Jornada {_jornada_detectada}** · 2,000,000 sims/partido")
+            btn_jornada = st.button("⚽ Simular Jornada", key="btn_simular_jornada", type="primary")
 
-    # 3. Factor árbitro ─────────────────────────────────────────────
-    # Un árbitro que reparte muchas tarjetas normalmente corresponde a
-    # partidos más cortados/físicos → baja un poco el ritmo ofensivo de
-    # ambos equipos (más faltas, menos fluidez, defensas más agresivas).
-    arbitro = _buscar_arbitro(home_team, away_team)
-    if arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT):
-        # Usa el promedio del árbitro ya mezclado entre ambas fuentes
-        # históricas (Sofascore + Transfermarkt) y con su Apertura 2026
-        # real (ver _promedio_arbitro_dinamico(), definida más abajo en
-        # este archivo junto con las demás funciones de tarjetas) — no
-        # la ficha histórica fija de una sola fuente.
-        prom_amarillas = _promedio_arbitro_dinamico(arbitro)
-    else:
-        prom_amarillas = ARBITRO_DEFAULT[0]
-    # Liga MX promedia ~3.6-4.3 amarillas/partido según el torneo — usa
-    # el promedio dinámico (mezcla Clausura + Apertura real, ver
-    # _promedio_liga_amarillas_dinamico()) en vez de un valor fijo.
-    promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
-    desviacion = prom_amarillas - promedio_liga_amarillas
-    # cada amarilla de más sobre el promedio recorta ~1.5% el ritmo ofensivo,
-    # escalado por peso_arbitro, con tope de +-10%*peso_arbitro (máx 30%)
-    tope = min(0.10 * peso_arbitro, 0.30)
-    factor_arbitro = 1.0 - max(min(desviacion * 0.015 * peso_arbitro, tope), -tope)
-    lam_home *= factor_arbitro
-    lam_away *= factor_arbitro
+    with col_der:
+        alt = ALTITUD_EQUIPO.get(local)
+        estado_tag = tag("tag-played", "✓ Jugado") if resultado_real else tag("tag-pending", "⏳ Por jugarse")
+        alt_txt = f"⛰️ {alt:,} m &nbsp;·&nbsp; " if alt else ""
+        st.markdown(
+            f'{estado_tag}<div style="font-size:0.75rem;color:#6b9b7d;margin:0.5rem 0 1rem">'
+            f'📍 {estadio or "Estadio TBD"} &nbsp;·&nbsp; {alt_txt}🧑‍⚖️ {arbitro or "Por confirmar"}</div>',
+            unsafe_allow_html=True,
+        )
 
-    # 4. Factor fatiga (Leagues Cup) ──────────────────────────────────
-    fecha_partido = _buscar_fecha_partido(home_team, away_team)
-    if _jugo_leagues_cup_reciente(home_team, fecha_partido):
-        lam_home *= FACTOR_FATIGA_LEAGUES_CUP
-    if _jugo_leagues_cup_reciente(away_team, fecha_partido):
-        lam_away *= FACTOR_FATIGA_LEAGUES_CUP
-
-    # 5. Clima — factor pequeño y simétrico (afecta al partido completo,
-    # no a un solo equipo). Viene precalculado de liga_mx_clima.factor_clima()
-    # y por defecto es 1.0 (sin ajuste) si no hay API key de clima
-    # configurada o no se pudo consultar.
-    lam_home *= factor_clima
-    lam_away *= factor_clima
-
-    return max(lam_home, 0.15), max(lam_away, 0.15)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# simular_temporada()
-# ─────────────────────────────────────────────────────────────────────────
-def _jugar_partido(home_team: str, away_team: str, rng=None,
-                    peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                    peso_arbitro: float = 1.0) -> tuple:
-    """
-    Simula UN resultado (goles_home, goles_away) usando Poisson, con la
-    misma corrección Dixon-Coles que simular_partido() — aquí, al ser un
-    solo sorteo (no millones), se aplica por muestreo de rechazo: se
-    sortea un marcador candidato y se acepta con probabilidad τ(x,y)/M
-    (M = cota superior de τ). Con ρ=-0.13, M ronda ~1.1-1.3, así que casi
-    siempre se acepta en el primer o segundo intento — el costo extra es
-    insignificante incluso corriendo miles de temporadas completas.
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-    lam_h, lam_a = calcular_lambdas(home_team, away_team,
-                                     peso_elo=peso_elo,
-                                     peso_altitud=peso_altitud,
-                                     peso_arbitro=peso_arbitro)
-    m_bound = max(1.0, 1 - lam_h * lam_a * RHO_DIXON_COLES, 1 - RHO_DIXON_COLES)
-    for _ in range(200):
-        goles_h = int(rng.poisson(lam_h))
-        goles_a = int(rng.poisson(lam_a))
-        tau = _tau_dixon_coles(goles_h, goles_a, lam_h, lam_a)
-        if rng.random() < tau / m_bound:
-            return goles_h, goles_a
-    return goles_h, goles_a  # fallback de seguridad, en la práctica nunca se llega aquí
-
-
-def _tabla_vacia() -> dict:
-    return {
-        equipo: {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0, "DG": 0, "PTS": 0}
-        for equipo in EQUIPOS
-    }
-
-
-def _actualizar_tabla(tabla, home, away, gh, ga):
-    tabla[home]["PJ"] += 1
-    tabla[away]["PJ"] += 1
-    tabla[home]["GF"] += gh
-    tabla[home]["GC"] += ga
-    tabla[away]["GF"] += ga
-    tabla[away]["GC"] += gh
-    if gh > ga:
-        tabla[home]["PG"] += 1
-        tabla[home]["PTS"] += 3
-        tabla[away]["PP"] += 1
-    elif gh < ga:
-        tabla[away]["PG"] += 1
-        tabla[away]["PTS"] += 3
-        tabla[home]["PP"] += 1
-    else:
-        tabla[home]["PE"] += 1
-        tabla[away]["PE"] += 1
-        tabla[home]["PTS"] += 1
-        tabla[away]["PTS"] += 1
-    tabla[home]["DG"] = tabla[home]["GF"] - tabla[home]["GC"]
-    tabla[away]["DG"] = tabla[away]["GF"] - tabla[away]["GC"]
-
-
-def _ordenar_tabla(tabla: dict) -> list:
-    """Puntos > diferencia de goles > goles a favor, como pediste."""
-    filas = [{"equipo": eq, **stats} for eq, stats in tabla.items()]
-    filas.sort(key=lambda f: (f["PTS"], f["DG"], f["GF"]), reverse=True)
-    for i, f in enumerate(filas, start=1):
-        f["posicion"] = i
-    return filas
-
-
-def _ordenar_tabla_con_empates(tabla: dict) -> list:
-    """
-    Igual que _ordenar_tabla(), pero con numeración tipo competencia:
-    los equipos empatados en Pts/DG/GF comparten la misma posición y el
-    siguiente lugar distinto salta el número correspondiente (1,2,2,4 —
-    exactamente como se ve en la tabla oficial de Liga MX/ESPN).
-    """
-    filas = [{"equipo": eq, **stats} for eq, stats in tabla.items()]
-    filas.sort(key=lambda f: (f["PTS"], f["DG"], f["GF"]), reverse=True)
-    pos_actual = 0
-    anterior = None
-    for i, f in enumerate(filas, start=1):
-        clave = (f["PTS"], f["DG"], f["GF"])
-        if clave != anterior:
-            pos_actual = i
-        f["posicion"] = pos_actual
-        anterior = clave
-    return filas
-
-
-def tabla_actual_real() -> list:
-    """
-    Tabla de posiciones SOLO con los partidos que ya se jugaron de
-    verdad (resultado_real != None en PARTIDOS) — no mezcla nada
-    simulado/proyectado. Esto es lo que debe coincidir con la tabla
-    oficial de Liga MX/ESPN en cualquier momento del torneo.
-    """
-    tabla = _tabla_vacia()
-    partidos_jugados = 0
-    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if resultado is None:
-            continue
-        gh, ga = resultado
-        _actualizar_tabla(tabla, local, visit, gh, ga)
-        partidos_jugados += 1
-    return _ordenar_tabla_con_empates(tabla), partidos_jugados
-
-
-def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: int, rng=None,
-                             peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                             peso_arbitro: float = 1.0) -> dict:
-    """
-    Serie a ida y vuelta. El peor posicionado (seed más alto/número más
-    grande) juega la IDA de local; el mejor posicionado juega la VUELTA
-    de local (ventaja de local en el partido decisivo). Si el marcador
-    global queda empatado, avanza el mejor posicionado de la fase
-    regular (regla vigente de Liga MX, sin penales).
-    """
-    if seed_A < seed_B:
-        mejor, peor = equipo_A, equipo_B
-    else:
-        mejor, peor = equipo_B, equipo_A
-
-    kwargs = dict(peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
-    gh1, ga1 = _jugar_partido(peor, mejor, rng, **kwargs)     # ida: local el peor posicionado
-    gh2, ga2 = _jugar_partido(mejor, peor, rng, **kwargs)     # vuelta: local el mejor posicionado
-
-    goles_mejor = ga1 + gh2
-    goles_peor = gh1 + ga2
-
-    if goles_mejor > goles_peor:
-        ganador = mejor
-    elif goles_peor > goles_mejor:
-        ganador = peor
-    else:
-        ganador = mejor  # empate global → avanza el mejor posicionado
-
-    return {
-        "equipo_A": equipo_A, "equipo_B": equipo_B,
-        "ida": f"{peor} {gh1}-{ga1} {mejor}",
-        "vuelta": f"{mejor} {gh2}-{ga2} {peor}",
-        "marcador_global": f"{mejor} {goles_mejor}-{goles_peor} {peor}",
-        "ganador": ganador,
-    }
-
-
-def simular_temporada(rng=None,
-                       peso_elo: float = 1.0,
-                       peso_altitud: float = 1.0,
-                       peso_arbitro: float = 1.0) -> dict:
-    """
-    Simula la fase regular completa (17 jornadas) + Liguilla completa.
-
-    peso_elo, peso_altitud, peso_arbitro: se pasan directo a
-    calcular_lambdas() en cada partido — pensados para conectarse a
-    st.slider() en la interfaz sin usar estado global.
-
-    Devuelve:
-        {
-          "tabla_final": [...],        # 18 equipos ordenados
-          "liguilla": {
-              "cuartos": [...],
-              "semis": [...],
-              "final": {...},
-              "campeon": "Equipo",
-          }
-        }
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-
-    kwargs = dict(peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
-
-    tabla = _tabla_vacia()
-    for home, away, jornada, estadio, resultado_real, arbitro in PARTIDOS:
-        if resultado_real is not None:
-            # partido ya jugado en la vida real → usa el resultado real
+        if resultado_real:
             gh, ga = resultado_real
+            st.markdown(
+                f'<div class="result-box" style="margin-bottom:1rem"><div class="team-name">'
+                f'{flag(local)} {local} {gh} - {ga} {visit} {flag(visit)}</div>'
+                f'<div class="prob-lbl">Resultado real</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        if btn or resultado_real:
+            with st.spinner(f"Simulando {N_SIMS_PARTIDO:,} partidos..."):
+                _fc, _clima_info = _factor_clima_cached(local, visit)
+                r = simular_partido(local, visit, n=N_SIMS_PARTIDO,
+                                     peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
+                                     factor_clima=_fc, sesgo_por_equipo=_sesgo_equipo_cached())
+
+            pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
+            st.markdown(
+                f'<div style="font-size:0.6rem;color:#6b9b7d;letter-spacing:2px;text-transform:uppercase;'
+                f'margin-bottom:0.2rem">Probabilidades — {r["n_sims"]:,} simulaciones</div>'
+                f'<div class="prob-bar"><div class="bar-a" style="width:{pa:.1f}%"></div>'
+                f'<div class="bar-draw" style="width:{pd_:.1f}%"></div>'
+                f'<div class="bar-b" style="width:{pb:.1f}%"></div></div>',
+                unsafe_allow_html=True,
+            )
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f'<div class="result-box"><div style="font-size:2.5rem">{flag(local)}</div>'
+                            f'<div class="team-name">{local}</div><div class="prob-pct">{pa:.1f}%</div>'
+                            f'<div class="prob-lbl">victoria</div><div class="goles-esp">{r["goles_home"]:.2f}</div>'
+                            f'<div class="prob-lbl">goles esp.</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="result-box result-box-draw"><div style="font-size:2.5rem">🤝</div>'
+                            f'<div class="team-name" style="color:#9ca3af">Empate</div>'
+                            f'<div class="prob-pct prob-pct-draw">{pd_:.1f}%</div>'
+                            f'<div class="prob-lbl">probabilidad</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="result-box result-box-b"><div style="font-size:2.5rem">{flag(visit)}</div>'
+                            f'<div class="team-name">{visit}</div><div class="prob-pct prob-pct-b">{pb:.1f}%</div>'
+                            f'<div class="prob-lbl">victoria</div><div class="goles-esp">{r["goles_away"]:.2f}</div>'
+                            f'<div class="prob-lbl">goles esp.</div></div>', unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            cm1, cm2 = st.columns(2)
+            with cm1:
+                st.markdown('<div style="font-size:0.6rem;color:#6b9b7d;letter-spacing:2px;'
+                            'text-transform:uppercase;margin-bottom:0.5rem">Top 5 marcadores</div>', unsafe_allow_html=True)
+                badges = ""
+                for i, (marcador, cnt) in enumerate(r["top5"]):
+                    pct = cnt / r["n_sims"] * 100
+                    cls = "score-badge score-badge-top" if i == 0 else "score-badge"
+                    badges += f'<div class="{cls}">{marcador[0]}–{marcador[1]}<div style="font-size:0.55rem;color:#6b9b7d">{pct:.1f}%</div></div>'
+                st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:0.2rem">{badges}</div>', unsafe_allow_html=True)
+            with cm2:
+                st.markdown('<div style="font-size:0.6rem;color:#6b9b7d;letter-spacing:2px;'
+                            'text-transform:uppercase;margin-bottom:0.5rem">Tarjetas / Córners esperados</div>', unsafe_allow_html=True)
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    st.markdown(f'<div class="metric-box"><div class="metric-val">{r["amarillas_esp"]}</div>'
+                                f'<div class="metric-lbl">Amarillas</div></div>', unsafe_allow_html=True)
+                with tc2:
+                    st.markdown(f'<div class="metric-box"><div class="metric-val">{r["corners_esp"]:.1f}</div>'
+                                f'<div class="metric-lbl">Córners</div></div>', unsafe_allow_html=True)
+
+            st.markdown(
+                f'<div class="model-note">λ_local={r["lam_home"]} · λ_visita={r["lam_away"]} · '
+                f'Árbitro: {r["arbitro"]} · Tarjetas totales esp. (roja=2pts): {r["tarjetas_totales_esp"]}</div>',
+                unsafe_allow_html=True,
+            )
+            if _clima_info:
+                st.markdown(
+                    f'<div class="model-note">🌤️ Clima en {local}: {_clima_info.get("temp_c")}°C · '
+                    f'humedad {_clima_info.get("humedad_pct")}% · prob. lluvia {_clima_info.get("prob_lluvia_pct")}% · '
+                    f'{_clima_info.get("condiciones", "")} · factor aplicado a λ: ×{_fc:.3f}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
+                                      cuotas=_cuota_partido(local, visit),
+                                      cuotas_totales=_cuotas_totales_partido(local, visit))
+            _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado_real)
+            if sugs:
+                st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
+                            'letter-spacing:2px;color:#e5007d;margin-bottom:0.75rem">🎰 APUESTAS SUGERIDAS</div>',
+                            unsafe_allow_html=True)
+                # Todas las que cumplan el umbral (dinámico) — en filas de hasta 3 columnas
+                for fila_inicio in range(0, len(sugs), 3):
+                    fila = sugs[fila_inicio:fila_inicio + 3]
+                    cols_ap = st.columns(3)
+                    for i_ap, ap in enumerate(fila):
+                        with cols_ap[i_ap]:
+                            st.markdown(
+                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.6rem;color:#6b9b7d;'
+                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                f'<div style="font-size:0.95rem;color:#e8f0ea;margin:0.3rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                                f'<div style="font-size:0.6rem;color:#6b9b7d;margin-top:0.3rem">{ap["nota"]}</div>'
+                                f'{_badge_value_bet(ap)}{_badge_no_apostable(ap)}</div>',
+                                unsafe_allow_html=True,
+                            )
+                parlay = armar_parlay(sugs)
+                if parlay:
+                    st.markdown(
+                        f'<div class="parlay-card"><span style="font-size:0.6rem;color:#e5007d;letter-spacing:2px">'
+                        f'💛 PARLAY SUGERIDO</span><div style="font-size:0.85rem;color:#e5007d;margin:0.2rem 0">{parlay["texto"]}</div>'
+                        f'<div style="font-size:0.65rem;color:#8fbfa0">Prob. combinada: '
+                        f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.info("Sin señales claras de apuesta para este partido — modelo conservador.")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Resultado de "Simular Jornada" — a todo el ancho del tab, debajo
+    # de las columnas del partido individual (el botón vive en col_izq,
+    # pero el resultado no cabe bien en 1/3.5 del ancho de pantalla).
+    # ─────────────────────────────────────────────────────────────────
+    if btn_jornada:
+        with st.spinner(f"Simulando Jornada {_jornada_detectada} completa..."):
+            sesgo_actual = _sesgo_equipo_cached()
+            resultado_jornada = simular_jornada_completa(
+                jornada=_jornada_detectada, n=2_000_000,
+                peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
+                mercados_suspendidos=_mercados_suspendidos_cached(),
+                sesgo_por_equipo=sesgo_actual,
+                cuotas_por_partido=_cuotas_jornada_cached(),
+            )
+            resumen_guardado = {"partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
+            if SUPABASE_DISPONIBLE:
+                resumen_guardado = guardar_jornada_completa(SUPABASE_URL, SUPABASE_KEY, resultado_jornada)
+        st.session_state["resultado_jornada_simulada"] = resultado_jornada
+        st.session_state["resumen_guardado_jornada"] = resumen_guardado
+
+    if "resultado_jornada_simulada" in st.session_state:
+        st.markdown("---")
+        resultado_jornada = st.session_state["resultado_jornada_simulada"]
+        resumen_guardado = st.session_state.get("resumen_guardado_jornada", {})
+
+        st.markdown(f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
+                    f'letter-spacing:2px;color:#e5007d;margin-bottom:0.5rem">⚽ JORNADA {resultado_jornada["jornada"]} SIMULADA</div>',
+                    unsafe_allow_html=True)
+
+        if SUPABASE_DISPONIBLE:
+            if resumen_guardado.get("errores"):
+                st.warning(f"⚠️ Guardado parcial: {resumen_guardado['partidos_guardados']} partidos guardados, "
+                           f"{len(resumen_guardado['errores'])} con error.")
+            else:
+                st.success(f"✅ {resumen_guardado.get('partidos_guardados', 0)} partidos guardados en el "
+                           f"historial · {resumen_guardado.get('apuestas_guardadas', 0)} apuestas registradas.")
         else:
-            gh, ga = _jugar_partido(home, away, rng, **kwargs)
-        _actualizar_tabla(tabla, home, away, gh, ga)
+            st.info("Supabase no está conectado — la simulación se muestra abajo pero no se guarda en el historial.")
 
-    tabla_final = _ordenar_tabla(tabla)
-    top8 = tabla_final[:8]
-    seed = {fila["equipo"]: fila["posicion"] for fila in top8}
+        for p in resultado_jornada["partidos"]:
+            r_p = p["resultado_sim"]
+            pa_p, pd_p, pb_p = r_p["prob_home"], r_p["prob_draw"], r_p["prob_away"]
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.5rem;margin:1rem 0 0.3rem;'
+                f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
+                f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">'
+                f'{flag(p["local"])} {p["local"]} vs {flag(p["visitante"])} {p["visitante"]}</span>'
+                f'<span style="font-size:0.68rem;color:#6b9b7d">🧑‍⚖️ {p["arbitro"]}</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="prob-bar"><div class="bar-a" style="width:{pa_p:.1f}%"></div>'
+                f'<div class="bar-draw" style="width:{pd_p:.1f}%"></div>'
+                f'<div class="bar-b" style="width:{pb_p:.1f}%"></div></div>'
+                f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
+                f'{p["local"]} {pa_p:.1f}% · Empate {pd_p:.1f}% · {p["visitante"]} {pb_p:.1f}%</div>',
+                unsafe_allow_html=True,
+            )
+            if p["apuestas"]:
+                for fila_inicio in range(0, len(p["apuestas"]), 3):
+                    fila = p["apuestas"][fila_inicio:fila_inicio + 3]
+                    cols_j = st.columns(3)
+                    for i_ap, ap in enumerate(fila):
+                        with cols_j[i_ap]:
+                            st.markdown(
+                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                f'<div style="font-size:0.85rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                f'<div style="font-size:0.6rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                                f'{_badge_value_bet(ap)}{_badge_no_apostable(ap)}</div>',
+                                unsafe_allow_html=True,
+                            )
+            else:
+                st.caption("Sin señales de confianza para este partido.")
+            if p["parlay"]:
+                st.markdown(
+                    f'<div class="parlay-card" style="padding:0.5rem 0.8rem"><span style="font-size:0.55rem;'
+                    f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                    f'<div style="font-size:0.76rem;color:#e5007d;margin:0.15rem 0">{p["parlay"]["texto"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
+                    f'<b style="color:#e5007d">{p["parlay"]["prob_combinada"]:.1f}%</b></div></div>',
+                    unsafe_allow_html=True,
+                )
 
-    # ── Cuartos de Final: 1v8, 2v7, 3v6, 4v5 ───────────────────────────
-    pares_cuartos = [
-        (top8[0]["equipo"], top8[7]["equipo"]),
-        (top8[1]["equipo"], top8[6]["equipo"]),
-        (top8[2]["equipo"], top8[5]["equipo"]),
-        (top8[3]["equipo"], top8[4]["equipo"]),
-    ]
-    cuartos = [
-        _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng, **kwargs)
-        for a, b in pares_cuartos
-    ]
-
-    # ── Semifinales: RECLASIFICACIÓN — mejor posicionado restante vs peor ──
-    avanzan_cuartos = [c["ganador"] for c in cuartos]
-    avanzan_ordenados = sorted(avanzan_cuartos, key=lambda eq: seed[eq])
-    pares_semis = [
-        (avanzan_ordenados[0], avanzan_ordenados[3]),
-        (avanzan_ordenados[1], avanzan_ordenados[2]),
-    ]
-    semis = [
-        _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng, **kwargs)
-        for a, b in pares_semis
-    ]
-
-    # ── Final ───────────────────────────────────────────────────────
-    finalistas = [s["ganador"] for s in semis]
-    final = _jugar_serie_ida_vuelta(finalistas[0], finalistas[1],
-                                     seed[finalistas[0]], seed[finalistas[1]], rng, **kwargs)
-
-    return {
-        "tabla_final": tabla_final,
-        "liguilla": {
-            "cuartos": cuartos,
-            "semis": semis,
-            "final": final,
-            "campeon": final["ganador"],
-        },
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# BONUS — simular_temporada_montecarlo()
-# No lo pediste explícitamente, pero es el paso natural siguiente: correr
-# simular_temporada() N veces para obtener probabilidades reales de
-# "hacer Liguilla", "ser campeón", etc. — igual que hacías con las 10M
-# simulaciones por partido en el Mundial, pero aquí cada simulación es
-# una TEMPORADA completa.
-# ─────────────────────────────────────────────────────────────────────────
-def simular_temporada_montecarlo(n: int = 1000,
-                                  peso_elo: float = 1.0,
-                                  peso_altitud: float = 1.0,
-                                  peso_arbitro: float = 1.0) -> dict:
-    rng = np.random.default_rng()
-    conteo_liguilla = defaultdict(int)
-    conteo_campeon = defaultdict(int)
-    suma_posicion = defaultdict(int)
-
-    for _ in range(n):
-        resultado = simular_temporada(rng, peso_elo=peso_elo,
-                                       peso_altitud=peso_altitud,
-                                       peso_arbitro=peso_arbitro)
-        for fila in resultado["tabla_final"][:8]:
-            conteo_liguilla[fila["equipo"]] += 1
-        for fila in resultado["tabla_final"]:
-            suma_posicion[fila["equipo"]] += fila["posicion"]
-        conteo_campeon[resultado["liguilla"]["campeon"]] += 1
-
-    return {
-        "prob_liguilla": {eq: round(conteo_liguilla[eq] / n * 100, 1) for eq in EQUIPOS},
-        "prob_campeon": {eq: round(conteo_campeon.get(eq, 0) / n * 100, 1) for eq in EQUIPOS},
-        "posicion_promedio": {eq: round(suma_posicion[eq] / n, 1) for eq in EQUIPOS},
-    }
-
-
+        # ── SUPER PARLAY DE LA JORNADA — estilo PlayDoit: combina TODOS
+        # los partidos de la jornada en un solo boleto, permitiendo que
+        # un mismo partido aporte 2+ patas (ver armar_super_parlay_
+        # jornada() en liga_mx_algoritmo.py). ────────────────────────
+        super_parlay = armar_super_parlay_jornada(resultado_jornada["partidos"])
+        if super_parlay:
+            st.markdown("---")
+            patas_html = "".join(
+                f'<div style="font-size:0.72rem;color:#e8f0ea;margin-top:0.3rem;padding-top:0.3rem;'
+                f'border-top:1px solid rgba(240,192,64,0.15)">'
+                f'{flag(pata["local"])} {pata["local"]} vs {flag(pata["visitante"])} {pata["visitante"]} — '
+                f'<span style="color:#f0c040">{pata["mercado"]}</span> → {pata["seleccion"].replace("✅ ", "")} '
+                f'<span style="color:#4ade80">({pata["confianza"]:.0f}%)</span></div>'
+                for pata in super_parlay["patas"]
+            )
+            st.markdown(
+                f'<div class="parlay-card" style="border-color:#e5007d;padding:1.1rem">'
+                f'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;letter-spacing:2px;'
+                f'color:#e5007d;margin-bottom:0.3rem">🎟️ SUPER PARLAY — JORNADA {resultado_jornada["jornada"]}</div>'
+                f'<div style="font-size:0.68rem;color:#8fbfa0;margin-bottom:0.4rem">'
+                f'{super_parlay["n_partidos"]} partidos · {len(super_parlay["patas"])} patas combinadas</div>'
+                f'{patas_html}'
+                f'<div style="font-size:0.75rem;color:#8fbfa0;margin-top:0.6rem;padding-top:0.5rem;'
+                f'border-top:1px solid rgba(240,192,64,0.25)">Prob. combinada: '
+                f'<b style="color:#e5007d;font-size:0.95rem">{super_parlay["prob_combinada"]:.2f}%</b></div></div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("⚠️ Un boleto con muchas patas es mucho más difícil de acertar completo — la probabilidad combinada baja rápido entre más patas se agregan. Solo informativo.")
 
 # ─────────────────────────────────────────────────────────────────────────
-# simular_partido() — Monte Carlo de UN partido, 10,000,000 simulaciones
-# por defecto (igual que el Mundial), usando calcular_lambdas().
+# TAB — Resultados reales
 # ─────────────────────────────────────────────────────────────────────────
-from collections import Counter
-from liga_mx_predictor_skeleton import (
-    CORNERS_EQUIPO, CORNERS_DEFAULT, CORNERS_EQUIPO_CONTRA, CORNERS_DEFAULT_CONTRA,
-)
-
-PROMEDIO_LIGA_AMARILLAS = 4.3
-PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.15 (placeholder sin datos)
-
-# ─────────────────────────────────────────────────────────────────────────
-# ROJAS REALES POR ÁRBITRO — derivado automáticamente, no hardcodeado.
-# Sofascore no publica una tabla agregada de "promedio de rojas por
-# árbitro" como sí tiene para amarillas, así que este dato se construye
-# solo, cruzando dos cosas que YA se cargan jornada a jornada de todas
-# formas: el árbitro asignado en PARTIDOS y el conteo real de rojas en
-# DATOS_REALES_LIGAMX ("ro"). Se recalcula cada vez que se llama (barato,
-# mismo criterio que _forma_real_liga_mx()) — así que conforme se van
-# agregando jornadas con su árbitro y su dato de rojas, este número se
-# actualiza solo sin tocar código.
-#
-# PJ_MINIMO_ROJAS_ARBITRO: las rojas son eventos raros (~0.4/partido en
-# liga) — con 1-3 partidos dirigidos, un árbitro que sacó una sola roja
-# puede parecer "3x más tarjetero" que el promedio de liga sin serlo
-# realmente. Se exige un mínimo de partidos antes de confiar en el
-# promedio real de ESE árbitro; con menos, se usa PROMEDIO_LIGA_ROJAS
-# como fallback (igual que ya hacía la versión placeholder).
-# ─────────────────────────────────────────────────────────────────────────
-PJ_MINIMO_ROJAS_ARBITRO = 8
-
-
-def _rojas_reales_por_arbitro() -> dict:
-    """
-    Calcula (rojas_totales, partidos_dirigidos) REAL por árbitro,
-    cruzando PARTIDOS (para saber quién dirigió cada partido jugado) con
-    DATOS_REALES_LIGAMX (para el conteo real de rojas de ese partido).
-    Solo cuenta partidos que tienen AMBOS datos — árbitro asignado Y
-    "ro" cargado en DATOS_REALES_LIGAMX; partidos con roja no confirmada
-    todavía se omiten en vez de asumir 0.
-    """
-    conteo = {}
-    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if resultado is None or not arbitro:
-            continue
-        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
-        if datos is None or "ro" not in datos:
-            continue
-        if arbitro not in conteo:
-            conteo[arbitro] = [0, 0]
-        conteo[arbitro][0] += datos["ro"]
-        conteo[arbitro][1] += 1
-    return conteo
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# PROMEDIO DE AMARILLAS POR ÁRBITRO — DINÁMICO, mismo problema que
-# PROMEDIO_LIGA_AMARILLAS pero a nivel individual: los promedios en
-# ARBITROS_LIGA_MX vienen mayormente de fichas históricas de Sofascore
-# (Clausura 2026 y torneos previos), y CONFIRMADO con datos reales del
-# Apertura 2026 (51 partidos con árbitro conocido + dato de amarillas):
-# el promedio real por partido viene -0.87 por debajo del que dice la
-# ficha histórica de cada árbitro — un sesgo sistemático, no ruido.
-#
-# A diferencia de rojas (evento raro, necesita PJ_MINIMO_ROJAS_ARBITRO=8
-# para no confiar en ruido), amarillas ocurren cada partido — con solo
-# 2-3 partidos dirigidos ya hay señal razonable. Por eso aquí se usa
-# shrinkage PROGRESIVO (mezcla gradual, mismo criterio que
-# _factor_tarjetas_equipo()) en vez de un corte binario todo-o-nada.
-# ─────────────────────────────────────────────────────────────────────────
-PJ_PARA_ARBITRO_TOPE_COMPLETO = 8  # a partir de aquí, 100% peso al dato real del Apertura
-
-
-def _amarillas_reales_por_arbitro() -> dict:
-    """
-    Calcula (amarillas_totales, partidos_dirigidos) REAL por árbitro en
-    el Apertura 2026 EN VIVO, mismo patrón que _rojas_reales_por_
-    arbitro() pero con el campo "am" de DATOS_REALES_LIGAMX.
-    """
-    conteo = {}
-    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if resultado is None or not arbitro:
-            continue
-        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
-        if datos is None or "am" not in datos:
-            continue
-        if arbitro not in conteo:
-            conteo[arbitro] = [0, 0]
-        conteo[arbitro][0] += datos["am"]
-        conteo[arbitro][1] += 1
-    return conteo
-
-
-def _prom_historico_arbitro(arbitro: str) -> tuple:
-    """
-    Prior histórico de amarillas/partido para un árbitro, mezclando
-    ARBITROS_LIGA_MX (fuente original, Sofascore) con
-    ARBITROS_LIGA_MX_TRANSFERMARKT (temporada 25/26 completa,
-    consultada 31/ago/2026) — decisión explícita del usuario: promediar
-    ambas fuentes en vez de que una reemplace a la otra.
-
-    Devuelve (promedio_amarillas, promedio_rojas_o_None). El promedio de
-    rojas SOLO viene de Transfermarkt — ARBITROS_LIGA_MX nunca tuvo ese
-    dato — así que es None si el árbitro no está en esa tabla.
-    """
-    prom_sofascore, _n = ARBITROS_LIGA_MX.get(arbitro, (None, 0))
-    datos_transfermarkt = ARBITROS_LIGA_MX_TRANSFERMARKT.get(arbitro)
-
-    if prom_sofascore is not None and datos_transfermarkt is not None:
-        prom_am_tm, _pj_tm, prom_ro_tm = datos_transfermarkt
-        return (prom_sofascore + prom_am_tm) / 2, prom_ro_tm
-    if datos_transfermarkt is not None:
-        _, _pj_tm, prom_ro_tm = datos_transfermarkt
-        return datos_transfermarkt[0], prom_ro_tm
-    if prom_sofascore is not None:
-        return prom_sofascore, None
-    return ARBITRO_DEFAULT[0], None
-
-
-def _promedio_arbitro_dinamico(arbitro: str) -> float:
-    """
-    Promedio de amarillas esperado para ESTE árbitro específico,
-    mezclando su ficha histórica (ver _prom_historico_arbitro(): promedio
-    de ARBITROS_LIGA_MX + ARBITROS_LIGA_MX_TRANSFERMARKT) con su
-    promedio REAL en el Apertura 2026 EN VIVO (ver
-    _amarillas_reales_por_arbitro()), con shrinkage progresivo: 0 PJ del
-    Apertura = 100% histórico; a partir de PJ_PARA_ARBITRO_TOPE_COMPLETO
-    PJ, 100% el dato real de este torneo.
-    """
-    prom_historico, _prom_rojas_hist = _prom_historico_arbitro(arbitro)
-    datos_apertura = _amarillas_reales_por_arbitro().get(arbitro)
-    if not datos_apertura or datos_apertura[1] == 0:
-        return prom_historico
-
-    amarillas_totales, pj = datos_apertura
-    promedio_real = amarillas_totales / pj
-    peso_real = min(pj / PJ_PARA_ARBITRO_TOPE_COMPLETO, 1.0)
-    return (1 - peso_real) * prom_historico + peso_real * promedio_real
-
-
-def _promedio_rojas_arbitro_dinamico(arbitro: str) -> float:
-    """
-    Promedio de ROJAS TOTALES (segunda amarilla + roja directa,
-    convención del modelo) esperado para ESTE árbitro, mezclando el
-    prior de ARBITROS_LIGA_MX_TRANSFERMARKT (única fuente con este dato
-    desglosado y con muestra real, 3-10 PJ por árbitro — antes de esto
-    el modelo solo tenía un placeholder proporcional) con el promedio
-    REAL en el Apertura 2026 EN VIVO (_rojas_reales_por_arbitro()), con
-    el mismo shrinkage progresivo que amarillas.
-
-    Devuelve None si no hay NINGÚN dato de rojas para este árbitro (ni
-    Transfermarkt ni Apertura en vivo) — el llamador debe caer al
-    placeholder proporcional en ese caso, igual que antes.
-    """
-    _prom_am_hist, prom_rojas_hist = _prom_historico_arbitro(arbitro)
-    datos_apertura = _rojas_reales_por_arbitro().get(arbitro)
-
-    if prom_rojas_hist is None and not datos_apertura:
-        return None
-    if prom_rojas_hist is None:
-        rojas_totales, pj = datos_apertura
-        return rojas_totales / pj if pj > 0 else None
-    if not datos_apertura or datos_apertura[1] == 0:
-        return prom_rojas_hist
-
-    rojas_totales, pj = datos_apertura
-    promedio_real = rojas_totales / pj
-    peso_real = min(pj / PJ_PARA_ARBITRO_TOPE_COMPLETO, 1.0)
-    return (1 - peso_real) * prom_rojas_hist + peso_real * promedio_real
-
-
-
-def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
-    """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido,
-    combinando el promedio del árbitro (70%) con el estilo disciplinario
-    real de ambos equipos (30%) — mismo criterio que TARJETAS_MUNDIAL en
-    tu Mundial-predictor."""
-    arbitro = _buscar_arbitro(home_team, away_team)
-    promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
-    arbitro_conocido = arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT)
-    if arbitro_conocido:
-        # Usa el promedio del árbitro YA mezclado entre ambas fuentes
-        # históricas (Sofascore + Transfermarkt, ver
-        # _prom_historico_arbitro()) y con su desempeño real en el
-        # Apertura 2026 (ver _promedio_arbitro_dinamico()) — no la ficha
-        # histórica fija de una sola fuente.
-        amarillas_esp_arbitro = _promedio_arbitro_dinamico(arbitro)
+with tab_res:
+    st.markdown("#### Resultados registrados")
+    st.caption("Partidos ya disputados del Apertura 2026.")
+    jugados = [p for p in PARTIDOS if p[4] is not None]
+    if not jugados:
+        st.info("Aún no hay resultados registrados.")
     else:
-        prom_amarillas = ARBITRO_DEFAULT[0]
-        desviacion = (prom_amarillas - promedio_liga_amarillas) * peso_arbitro
-        amarillas_esp_arbitro = promedio_liga_amarillas + desviacion * 0.3
+        for jn in sorted(set(p[2] for p in jugados)):
+            st.markdown(f"**Jornada {jn}**")
+            for local, visit, jornada, estadio, res, arb in jugados:
+                if jornada != jn:
+                    continue
+                gh, ga = res
+                color = "#0d1f16" if gh != ga else "#0d1827"
+                ganador = (f"→ Ganó **{local}**" if gh > ga else f"→ Ganó **{visit}**" if ga > gh else "→ **Empate**")
+                st.markdown(
+                    f'<div style="background:{color};border-radius:8px;padding:0.5rem 1rem;margin-bottom:0.35rem;font-size:0.88rem">'
+                    f'{flag(local)} {local} <b style="font-size:1.1rem;color:#4ade80;margin:0 0.4rem">{gh}–{ga}</b>'
+                    f'{visit} {flag(visit)}<span style="color:#6b9b7d;font-size:0.72rem;margin-left:0.8rem">'
+                    f'📍 {estadio} · {ganador}</span></div>', unsafe_allow_html=True,
+                )
 
-    factor_equipos = (_factor_tarjetas_equipo(home_team) + _factor_tarjetas_equipo(away_team)) / 2
-    amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
-    amarillas_esp = max(amarillas_esp, 1.5)
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Apuestas (del día)
+# ─────────────────────────────────────────────────────────────────────────
+with tab_apuestas:
+    st.markdown("### 🎰 Apuestas más fuertes de hoy")
+    st.caption("Mismo cálculo que el panel de arriba de la página — aquí puedes verlo con más detalle.")
 
-    # Rojas — usa el promedio dinámico por árbitro (ver
-    # _promedio_rojas_arbitro_dinamico(): mezcla ARBITROS_LIGA_MX_
-    # TRANSFERMARKT con el Apertura 2026 EN VIVO) si hay CUALQUIER dato
-    # real disponible; si no hay ninguno para este árbitro, cae al
-    # placeholder proporcional anterior (escalado según qué tan
-    # "tarjetero" resultó en amarillas).
-    rojas_dinamico = _promedio_rojas_arbitro_dinamico(arbitro)
-    if rojas_dinamico is not None:
-        rojas_esp = rojas_dinamico
+    if not partidos_hoy_global:
+        st.info(f"No hay partidos programados para hoy ({hoy}). Explora otras jornadas en el tab Predictor.")
     else:
-        rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / promedio_liga_amarillas)
-    return amarillas_esp, rojas_esp
-
-
-def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
-                     peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                     peso_arbitro: float = 1.0, factor_clima: float = 1.0,
-                     sesgo_por_equipo: dict = None) -> dict:
-    """
-    Corre N simulaciones Monte Carlo de UN partido (10,000,000 por
-    defecto, igual que en tu predictor del Mundial) y agrega
-    probabilidades por mercado: 1X2, doble oportunidad, total de goles,
-    ambos marcan, tarjetas totales (amarilla=1pt, roja=2pts, convención
-    de casas de apuestas) y córners.
-
-    sesgo_por_equipo: opcional, se pasa tal cual a calcular_lambdas()
-    (ver ahí el detalle) — normalmente la salida de
-    liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
-    Si se omite, el modelo funciona exactamente igual que antes.
-    """
-    rng = np.random.default_rng()
-    lam_h, lam_a = calcular_lambdas(home_team, away_team,
-                                     peso_elo=peso_elo, peso_altitud=peso_altitud,
-                                     peso_arbitro=peso_arbitro, factor_clima=factor_clima,
-                                     sesgo_por_equipo=sesgo_por_equipo)
-
-    goles_h = rng.poisson(lam_h, n).astype(np.int32)
-    goles_a = rng.poisson(lam_a, n).astype(np.int32)
-
-    # ── Corrección Dixon-Coles: pondera los 4 marcadores bajos ─────────
-    # En vez de re-muestrear (carísimo con n=10M), se le da a cada
-    # simulación un peso τ(x,y) — 1.0 para casi todas, y el factor de
-    # Dixon-Coles solo para 0-0/1-0/0-1/1-1. Todas las probabilidades de
-    # abajo usan np.average(..., weights=pesos_dc) en vez de np.mean(),
-    # que es exactamente el estimador de Monte Carlo por importancia para
-    # la distribución YA corregida — sin gastar más simulaciones.
-    pesos_dc = np.ones(n, dtype=np.float64)
-    m_00 = (goles_h == 0) & (goles_a == 0)
-    m_10 = (goles_h == 1) & (goles_a == 0)
-    m_01 = (goles_h == 0) & (goles_a == 1)
-    m_11 = (goles_h == 1) & (goles_a == 1)
-    pesos_dc[m_00] = max(1 - lam_h * lam_a * RHO_DIXON_COLES, 1e-6)
-    pesos_dc[m_10] = max(1 + lam_a * RHO_DIXON_COLES, 1e-6)
-    pesos_dc[m_01] = max(1 + lam_h * RHO_DIXON_COLES, 1e-6)
-    pesos_dc[m_11] = max(1 - RHO_DIXON_COLES, 1e-6)
-    del m_00, m_10, m_01, m_11
-
-    prob_home = float(np.average(goles_h > goles_a, weights=pesos_dc) * 100)
-    prob_draw = float(np.average(goles_h == goles_a, weights=pesos_dc) * 100)
-    prob_away = float(np.average(goles_h < goles_a, weights=pesos_dc) * 100)
-
-    goles_totales = goles_h + goles_a
-    prob_over05 = float(np.average(goles_totales > 0, weights=pesos_dc) * 100)
-    prob_over15 = float(np.average(goles_totales > 1, weights=pesos_dc) * 100)
-    prob_over25 = float(np.average(goles_totales > 2, weights=pesos_dc) * 100)
-    prob_over35 = float(np.average(goles_totales > 3, weights=pesos_dc) * 100)
-    prob_btts = float(np.average((goles_h > 0) & (goles_a > 0), weights=pesos_dc) * 100)
-
-    # top5 ponderado por Dixon-Coles, vectorizado (nada de loops en Python
-    # sobre potencialmente 10M filas): se codifica cada marcador (gh,ga)
-    # como un entero único y se suman los pesos con bincount.
-    goles_h_clip = np.minimum(goles_h, 20)   # techo de seguridad, nunca se alcanza en la práctica
-    goles_a_clip = np.minimum(goles_a, 20)
-    claves = (goles_h_clip.astype(np.int64) * 21 + goles_a_clip.astype(np.int64))
-    pesos_por_clave = np.bincount(claves, weights=pesos_dc, minlength=21 * 21)
-    top5_idx = np.argsort(pesos_por_clave)[::-1][:5]
-    top5 = [((int(idx // 21), int(idx % 21)), round(float(pesos_por_clave[idx]), 0))
-            for idx in top5_idx if pesos_por_clave[idx] > 0]
-    del goles_h_clip, goles_a_clip, claves, pesos_por_clave, top5_idx
-
-    # ── Hándicap Asiático — probabilidad de cobertura por margen ──────
-    # -1.0: cubre con diferencia >=2, empuja (reembolso) con diferencia
-    # exacta de 1. -2.0: cubre con diferencia >=3, empuja con diferencia
-    # exacta de 2. Se reporta la probabilidad de cobertura tal cual (sin
-    # descontar el empuje del denominador) porque un empuje reembolsa el
-    # stake — nunca es una pérdida, así que no le resta "certeza" a la
-    # recomendación.
-    diff = goles_h - goles_a
-    prob_hcap_home_m10 = float(np.average(diff >= 2, weights=pesos_dc) * 100)
-    prob_hcap_home_m20 = float(np.average(diff >= 3, weights=pesos_dc) * 100)
-    prob_hcap_away_m10 = float(np.average(diff <= -2, weights=pesos_dc) * 100)
-    prob_hcap_away_m20 = float(np.average(diff <= -3, weights=pesos_dc) * 100)
-    del diff
-
-    # ── Córners: varias líneas, igual que el Mundial ──────────────────
-    # Córners: ataque × defensa (mismo criterio que los goles) en vez de
-    # solo sumar los córners "a favor" de cada equipo — ahora sí se
-    # considera que un equipo con defensa sólida le baja los córners al
-    # rival, y uno flojo se los sube.
-    co_favor_home = CORNERS_EQUIPO.get(home_team, CORNERS_DEFAULT)
-    co_favor_away = CORNERS_EQUIPO.get(away_team, CORNERS_DEFAULT)
-    co_contra_home = CORNERS_EQUIPO_CONTRA.get(home_team, CORNERS_DEFAULT_CONTRA)
-    co_contra_away = CORNERS_EQUIPO_CONTRA.get(away_team, CORNERS_DEFAULT_CONTRA)
-    corners_esp_home = co_favor_home * (co_contra_away / CORNERS_DEFAULT_CONTRA)
-    corners_esp_away = co_favor_away * (co_contra_home / CORNERS_DEFAULT_CONTRA)
-    corners_esp = corners_esp_home + corners_esp_away
-    corners_sim = rng.poisson(corners_esp, n).astype(np.int32)
-    prob_corners_over65 = float(np.mean(corners_sim > 6) * 100)
-    prob_corners_over75 = float(np.mean(corners_sim > 7) * 100)
-    prob_corners_over85 = float(np.mean(corners_sim > 8) * 100)
-    prob_corners_over95 = float(np.mean(corners_sim > 9) * 100)
-    prob_corners_over105 = float(np.mean(corners_sim > 10) * 100)
-    prob_corners_over115 = float(np.mean(corners_sim > 11) * 100)
-
-    # ── Tarjetas: convención de casas de apuestas → roja = 2 amarillas ──
-    amarillas_esp, rojas_esp = _tarjetas_esperadas(home_team, away_team, peso_arbitro)
-    amarillas_sim = rng.poisson(amarillas_esp, n).astype(np.int32)
-    rojas_sim = rng.poisson(max(rojas_esp, 0.01), n).astype(np.int32)
-    tarjetas_totales_sim = amarillas_sim + 2 * rojas_sim   # roja cuenta doble
-    tarjetas_totales_esp = amarillas_esp + 2 * rojas_esp
-    prob_tarj_over25 = float(np.mean(tarjetas_totales_sim > 2) * 100)
-    prob_tarj_over35 = float(np.mean(tarjetas_totales_sim > 3) * 100)
-    prob_tarj_over45 = float(np.mean(tarjetas_totales_sim > 4) * 100)
-    prob_tarj_over55 = float(np.mean(tarjetas_totales_sim > 5) * 100)
-
-    del goles_totales, corners_sim, amarillas_sim, rojas_sim, tarjetas_totales_sim
-
-    return {
-        "prob_home": prob_home, "prob_draw": prob_draw, "prob_away": prob_away,
-        "goles_home": float(np.average(goles_h, weights=pesos_dc)), "goles_away": float(np.average(goles_a, weights=pesos_dc)),
-        "lam_home": round(lam_h, 3), "lam_away": round(lam_a, 3),
-        "top5": top5,
-        "prob_hcap_home_m10": prob_hcap_home_m10, "prob_hcap_home_m20": prob_hcap_home_m20,
-        "prob_hcap_away_m10": prob_hcap_away_m10, "prob_hcap_away_m20": prob_hcap_away_m20,
-        "prob_over05": prob_over05, "prob_over15": prob_over15,
-        "prob_over25": prob_over25, "prob_over35": prob_over35,
-        "prob_btts": prob_btts,
-        "corners_esp": corners_esp,
-        "prob_corners_over65": prob_corners_over65,
-        "prob_corners_over75": prob_corners_over75,
-        "prob_corners_over85": prob_corners_over85,
-        "prob_corners_over95": prob_corners_over95,
-        "prob_corners_over105": prob_corners_over105,
-        "prob_corners_over115": prob_corners_over115,
-        "amarillas_esp": round(amarillas_esp, 1),
-        "rojas_esp": round(rojas_esp, 2),
-        "tarjetas_totales_esp": round(tarjetas_totales_esp, 1),
-        "prob_tarj_over25": prob_tarj_over25,
-        "prob_tarj_over35": prob_tarj_over35,
-        "prob_tarj_over45": prob_tarj_over45,
-        "prob_tarj_over55": prob_tarj_over55,
-        "arbitro": _buscar_arbitro(home_team, away_team) or "Sin asignar",
-        "n_sims": n,
-    }
-
+        for local, visit, jornada, estadio, resultado, arbitro in partidos_hoy_global:
+            horario = HORARIOS_PARTIDO.get((local, visit), "")
+            hora_str = horario[11:] if horario else ""
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:0.5rem;margin:1rem 0 0.5rem;'
+                f'padding-bottom:0.4rem;border-bottom:1px solid #1f4a2e">'
+                f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">'
+                f'{flag(local)} {local} vs {flag(visit)} {visit}</span>'
+                f'<span style="font-size:0.7rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
+                unsafe_allow_html=True,
+            )
+            _fc_dia, _ = _factor_clima_cached(local, visit)
+            r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc_dia)
+            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
+                                      cuotas=_cuota_partido(local, visit),
+                                      cuotas_totales=_cuotas_totales_partido(local, visit))  # ya vienen solo las que cumplen el umbral dinámico
+            _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
+            if not sugs:
+                st.caption("Sin señales de confianza ALTA para este partido.")
+            else:
+                # Todas las que cumplan el umbral dinámico — en filas de hasta 3 columnas
+                for fila_inicio in range(0, len(sugs), 3):
+                    fila = sugs[fila_inicio:fila_inicio + 3]
+                    cols_ap = st.columns(3)
+                    for i_ap, ap in enumerate(fila):
+                        with cols_ap[i_ap]:
+                            st.markdown(
+                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
+                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
+                                f'<div style="font-size:0.9rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
+                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
+                                f'{_badge_value_bet(ap)}{_badge_no_apostable(ap)}</div>',
+                                unsafe_allow_html=True,
+                            )
+                parlay = armar_parlay(sugs)
+                if parlay:
+                    st.markdown(
+                        f'<div class="parlay-card" style="padding:0.6rem 0.9rem"><span style="font-size:0.55rem;'
+                        f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
+                        f'<div style="font-size:0.78rem;color:#e5007d;margin:0.15rem 0">{parlay["texto"]}</div>'
+                        f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
+                        f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
+                        unsafe_allow_html=True,
+                    )
+    st.markdown('<div style="font-size:0.65rem;color:#4a5568;padding-top:1rem;border-top:1px solid #1f4a2e;'
+                'margin-top:1rem">⚠️ Solo informativo · Apuesta responsablemente</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────
-# UMBRAL DINÁMICO POR CONFIANZA DE MUESTRA — el modelo exige más certeza
-# cuando tiene poca evidencia real del torneo actual (jornada 1-2,
-# apoyándose solo en datos heredados del Clausura 2026) y se relaja
-# conforme se acumulan partidos jugados y la Forma real / Momentum Elo
-# (ver calcular_lambdas()) empiezan a pesar de verdad.
-#
-# Mismo principio que _tope_shrinkage(): interpolación lineal entre un
-# piso y un techo, según PJ del torneo. Aquí va en sentido inverso (más
-# PJ = umbral MÁS BAJO) porque más partidos jugados = más confianza en
-# el modelo, no menos.
-#
-# UMBRAL_MAX_RECOMENDACION (85%, antes 90%) = con 0 partidos jugados del
-# Apertura 2026, toda la fuerza del cálculo viene de datos heredados
-# (Clausura 2026 + Elo base) — sigue exigiendo el mayor margen de error
-# del rango, pero se relajó de 90 a 85 por decisión explícita del
-# usuario: con 90% el modelo casi no sugería nada apostable en las
-# primeras jornadas, y bajar solo el techo (no el piso de 80%) evita
-# hacerlo más permisivo justo cuando menos evidencia real hay del
-# torneo — el Brier score real medido hasta la fecha (0.748 con 5
-# partidos evaluados, peor que 0.667 = azar) sugiere que el modelo
-# todavía no está sobrado de margen como para relajar también el piso.
-# UMBRAL_MIN_RECOMENDACION (80%) = a partir de PJ_PARA_UMBRAL_MIN
-# partidos jugados por AMBOS equipos, la Forma real ya alcanzó su tope
-# completo de ajuste (mismo umbral que usa _tope_shrinkage para llegar a
-# TOPE_MAX_FORMA) — el modelo ya opera con evidencia sólida del torneo.
+# TAB — Historial (predicciones vs resultados reales)
 # ─────────────────────────────────────────────────────────────────────────
-UMBRAL_MAX_RECOMENDACION = 85.0
-UMBRAL_MIN_RECOMENDACION = 80.0
-PJ_PARA_UMBRAL_MIN = 10  # mismo valor que PARTIDOS_PARA_TOPE_COMPLETO
-
-
-def _umbral_dinamico(home_team: str, away_team: str) -> float:
-    """
-    Umbral de confianza requerido para que una apuesta se recomiende,
-    interpolado linealmente entre UMBRAL_MAX_RECOMENDACION (0 PJ) y
-    UMBRAL_MIN_RECOMENDACION (PJ_PARA_UMBRAL_MIN+ PJ), usando el PROMEDIO
-    de partidos jugados en el torneo por ambos equipos — si un equipo
-    lleva 2 PJ y el otro 5, se interpola con 3.5.
-    """
-    forma = _forma_real_liga_mx()
-    pj_home = forma.get(home_team, (0, 0, 0))[2]
-    pj_away = forma.get(away_team, (0, 0, 0))[2]
-    pj_promedio = (pj_home + pj_away) / 2.0
-
-    fraccion = min(pj_promedio / PJ_PARA_UMBRAL_MIN, 1.0)
-    return UMBRAL_MAX_RECOMENDACION - fraccion * (UMBRAL_MAX_RECOMENDACION - UMBRAL_MIN_RECOMENDACION)
-
+with tab_hist:
+    st.markdown("#### 📈 Historial de predicciones vs resultados reales")
+    jugados = [p for p in PARTIDOS if p[4] is not None]
+    if not jugados:
+        st.info("Aún no hay partidos terminados para calcular accuracy. Se irá llenando conforme avance el torneo.")
+    else:
+        aciertos_ganador, aciertos_over25, total = 0, 0, 0
+        filas = []
+        for local, visit, jornada, estadio, res, arb in jugados:
+            try:
+                r = simular_partido(local, visit, n=50_000, peso_elo=PESO_ELO,
+                                     peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+                favorito = local if r["prob_home"] > r["prob_away"] else visit
+                gh, ga = res
+                ganador_real = local if gh > ga else (visit if ga > gh else "Empate")
+                correcto = favorito == ganador_real
+                if correcto:
+                    aciertos_ganador += 1
+                if ((gh + ga) > 2) == (r["prob_over25"] > 50):
+                    aciertos_over25 += 1
+                total += 1
+                filas.append({"partido": f"{flag(local)} {local} vs {flag(visit)} {visit}",
+                               "resultado": f"{gh}-{ga}", "favorito": favorito, "real": ganador_real, "ok": correcto})
+            except Exception:
+                continue
+        if total > 0:
+            c1, c2, c3 = st.columns(3)
+            acc_g = aciertos_ganador / total * 100
+            acc_o = aciertos_over25 / total * 100
+            with c1:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{acc_g:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy ganador</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{acc_o:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy Over/Under 2.5</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{total}</div>'
+                            f'<div class="metric-lbl">Partidos analizados</div></div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            for f in filas:
+                icono = "✅" if f["ok"] else "❌"
+                color = "#0d2818" if f["ok"] else "#1a0d0d"
+                st.markdown(
+                    f'<div style="background:{color};border-radius:8px;padding:0.5rem 0.9rem;margin-bottom:0.3rem;'
+                    f'font-size:0.82rem">{icono} {f["partido"]} — {f["resultado"]} · Modelo: '
+                    f'<b style="color:#e5007d">{f["favorito"]}</b> · Real: {f["real"]}</div>', unsafe_allow_html=True,
+                )
 
 # ─────────────────────────────────────────────────────────────────────────
-# analizar_apuestas() — umbral dinámico (ver _umbral_dinamico()) y SIN
-# deduplicar por categoría: se muestran TODAS las líneas que cumplen el
-# umbral (ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez, si las 3 pasan).
+# TAB — Apuestas Hist.
 # ─────────────────────────────────────────────────────────────────────────
-def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset(),
-                       cuotas: dict = None, cuotas_totales: list = None) -> list:
-    """
-    Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
-    llega o supera el umbral dinámico calculado por _umbral_dinamico()
-    (80%-90% según cuántos partidos reales del Apertura 2026 ya jugaron
-    ambos equipos) — para las 8 familias de mercado que soporta el
-    modelo: Resultado (1X2), Doble Oportunidad, Empate Sin Apuesta (Draw
-    No Bet), Hándicap Asiático, Total de Goles, Ambos Marcan, Tarjetas y
-    Córners.
+with tab_hist_ap:
+    st.markdown("#### 🎲 Historial de apuestas sugeridas")
 
-    IMPORTANTE — sin deduplicar por categoría: se devuelven TODAS las
-    líneas que cumplen el umbral, no solo una por categoría, para no
-    ocultar señales fuertes que sí tienen la confianza requerida.
-
-    Nota sobre Hándicap Europeo: en este modelo la probabilidad de
-    "cubrir" un hándicap Europeo -1/-2 (ganar por 2+/3+) es el MISMO
-    número que Hándicap Asiático -1.0/-2.0 (misma condición: diferencia de
-    gol) — la única diferencia entre ambos está en qué pasa con el margen
-    exacto (Asiático reembolsa, Europeo pierde), no en la confianza de la
-    simulación. Por eso solo se expone Hándicap Asiático para no duplicar
-    la misma señal dos veces en "apuestas sugeridas".
-
-    NO incluye goles por mitades ni resultado al descanso (HT/FT): el
-    modelo simula el partido completo con una sola λ de Poisson por
-    equipo, no reparte los goles entre primer/segundo tiempo, así que no
-    hay datos reales de qué tan probable es cada marcador al descanso.
-
-    mercados_suspendidos: set con nombres de mercado (ej. {"Total Goles"})
-    que se excluyen del resultado aunque hayan cumplido el umbral — viene
-    de liga_mx_supabase.calcular_mercados_suspendidos(), la
-    retroalimentación automática que apaga temporalmente un mercado si su
-    acierto real viene rindiendo muy por debajo de lo que promete.
-
-    cuotas: opcional, dict de cuotas reales para ESTE partido (formato
-    {"home": float, "draw": float, "away": float, "casa": str} — ver
-    liga_mx_cuotas.obtener_cuotas_jornada()). Si se pasa, se calcula
-    Value Betting (liga_mx_cuotas.calcular_value_bet()) SOLO para el
-    mercado Resultado (1X2): The Odds API en el plan gratis únicamente
-    trae el mercado h2h para Liga MX (spreads/totals están limitados a
-    deportes de EE.UU. en su documentación), así que no hay cuota real
-    con la que comparar Total Goles, Tarjetas, Córners, etc. — esos
-    mercados siguen funcionando exactamente igual que sin este parámetro.
-    Si se omite (None, default), el comportamiento es idéntico al de
-    antes de agregar value betting — retrocompatible.
-
-    DECISIÓN DE DISEÑO explícita: el value bet de 1X2 SOLO se calcula
-    sobre selecciones que YA superaron UMBRAL_RECOMENDACION (80-90%
-    dinámico) — no se expone un mercado aparte de "underdogs con valor"
-    para resultados poco probables aunque tengan EV positivo (ej. 30% de
-    probabilidad con una cuota que pague mucho). El value bet funciona
-    como una validación adicional sobre las recomendaciones de alta
-    confianza que el modelo ya hace, no como un criterio independiente
-    de selección — así que una apuesta de 1X2 con EV negativo puede
-    seguir apareciendo en "Apuestas sugeridas" si su confianza superó el
-    umbral; el campo "value_bet" simplemente informa si, además de ser
-    probable, también es un buen negocio contra la cuota real.
-    """
-    apuestas = []
-    UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
-
-    def ap(mercado, seleccion, confianza, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
-        entrada = {
-            "mercado": mercado, "seleccion": seleccion,
-            "confianza": confianza,
-            "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el umbral
-            "nota": nota,
-            "umbral_aplicado": round(UMBRAL_RECOMENDACION, 1),
-        }
-        if cuota_decimal is not None:
-            entrada["value_bet"] = calcular_value_bet(confianza, cuota_decimal)
-        if linea_totales is not None and cuotas_totales is not None:
-            # Verifica si esta línea de Total de Goles es apostable en
-            # alguna casa real (ver liga_mx_cuotas.calcular_value_bet_
-            # totales()) — confirmado con datos reales que ninguna casa
-            # ofrece Over/Under 0.5 para Liga MX. Decisión explícita del
-            # usuario: si NO es apostable, la línea se DESCARTA por
-            # completo (no aparece en absoluto), en vez de mostrarse con
-            # una advertencia — evita recomendar algo que el usuario no
-            # puede colocar en ninguna casa real. Solo aplica cuando SÍ
-            # se pasaron cuotas_totales (si es None, se comporta igual
-            # que siempre — sin cuotas no hay forma de saber si es
-            # apostable, así que no se descarta nada por precaución).
-            check = calcular_value_bet_totales(linea_totales, direccion_totales, cuotas_totales)
-            if not check["apostable"]:
-                return
-            entrada["value_bet"] = calcular_value_bet(confianza, check["cuota"])
-            entrada["value_bet"]["casa"] = check["casa"]
-            entrada["value_bet"]["point_real"] = check["point_real"]
-        apuestas.append(entrada)
-
-    pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
-
-    # 1. Resultado (1X2) — único mercado con value betting (ver docstring)
-    cuota_home = cuotas.get("home") if cuotas else None
-    cuota_away = cuotas.get("away") if cuotas else None
-    if pa >= UMBRAL_RECOMENDACION:
-        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
-    if pb >= UMBRAL_RECOMENDACION:
-        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
-
-    # 2. Doble Oportunidad (1X / X2)
-    conf_1x = min(pa + pd_, 99)
-    conf_x2 = min(pb + pd_, 99)
-    if conf_1x >= UMBRAL_RECOMENDACION and pa < UMBRAL_RECOMENDACION:
-        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
-    if conf_x2 >= UMBRAL_RECOMENDACION and pb < UMBRAL_RECOMENDACION:
-        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
-
-    # 3. Empate Sin Apuesta (Draw No Bet) — probabilidad de ganar,
-    # excluyendo del cálculo el caso "empate" (que reembolsa, no pierde).
-    if (pa + pb) > 0:
-        conf_dnb_home = pa / (pa + pb) * 100
-        conf_dnb_away = pb / (pa + pb) * 100
-        if conf_dnb_home >= UMBRAL_RECOMENDACION:
-            ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home,
-               f"{pa:.1f}% vs {pb:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
-        if conf_dnb_away >= UMBRAL_RECOMENDACION:
-            ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away,
-               f"{pb:.1f}% vs {pa:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
-
-    # 4. Hándicap Asiático — el favorito debe ganar por 2+ (-1.0) o 3+ (-2.0)
-    if r["prob_hcap_home_m10"] >= UMBRAL_RECOMENDACION:
-        ap("Hándicap Asiático", f"✅ {home_team} -1.0 (gana por 2+)", r["prob_hcap_home_m10"],
-           "Empuje (reembolso) si gana por exactamente 1")
-    if r["prob_hcap_home_m20"] >= UMBRAL_RECOMENDACION:
-        ap("Hándicap Asiático", f"✅ {home_team} -2.0 (gana por 3+)", r["prob_hcap_home_m20"],
-           "Empuje (reembolso) si gana por exactamente 2")
-    if r["prob_hcap_away_m10"] >= UMBRAL_RECOMENDACION:
-        ap("Hándicap Asiático", f"✅ {away_team} -1.0 (gana por 2+)", r["prob_hcap_away_m10"],
-           "Empuje (reembolso) si gana por exactamente 1")
-    if r["prob_hcap_away_m20"] >= UMBRAL_RECOMENDACION:
-        ap("Hándicap Asiático", f"✅ {away_team} -2.0 (gana por 3+)", r["prob_hcap_away_m20"],
-           "Empuje (reembolso) si gana por exactamente 2")
-
-    # 5. Total de Goles (Over/Under) — cada línea se verifica contra
-    # cuotas_totales (si se pasó) para saber si es realmente apostable
-    # en alguna casa real (ver calcular_value_bet_totales() en
-    # liga_mx_cuotas.py) — confirmado con datos reales que ninguna casa
-    # ofrece líneas de 0.5 goles, así que esa selección normalmente
-    # queda marcada "no_apostable": True cuando se pasan cuotas_totales.
-    if r["prob_over05"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 0.5 (al menos 1 gol)", r["prob_over05"], f"{r['prob_over05']:.1f}% de simulaciones",
-           linea_totales=0.5, direccion_totales="over")
-    if r["prob_over15"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones",
-           linea_totales=1.5, direccion_totales="over")
-    if r["prob_over25"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones",
-           linea_totales=2.5, direccion_totales="over")
-    if r["prob_over35"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones",
-           linea_totales=3.5, direccion_totales="over")
-    if (100 - r["prob_over15"]) >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones",
-           linea_totales=1.5, direccion_totales="under")
-    if (100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones",
-           linea_totales=2.5, direccion_totales="under")
-
-    # 6. Ambos Marcan (BTTS)
-    if r["prob_btts"] >= UMBRAL_RECOMENDACION:
-        ap("Ambos Marcan", "✅ Sí — ambos anotan", r["prob_btts"], f"{r['prob_btts']:.1f}% de simulaciones")
-    if (100 - r["prob_btts"]) >= UMBRAL_RECOMENDACION:
-        ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
-
-    # 7. Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
-    if r["prob_tarj_over25"] >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over35"] >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over45"] >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over55"] >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if (100 - r["prob_tarj_over45"]) >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-
-    # 8. Córners
-    if r["prob_corners_over85"] >= UMBRAL_RECOMENDACION:
-        ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over95"] >= UMBRAL_RECOMENDACION:
-        ap("Córners", "✅ Over 9.5 córners (10+)", r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over105"] >= UMBRAL_RECOMENDACION:
-        ap("Córners", "✅ Over 10.5 córners (11+)", r["prob_corners_over105"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over115"] >= UMBRAL_RECOMENDACION:
-        ap("Córners", "✅ Over 11.5 córners (12+)", r["prob_corners_over115"], f"{r['corners_esp']:.1f} esperados")
-    if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
-        ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
-
-    # Una sola línea por RUBRO/categoría (Resultado, Doble Oportunidad,
-    # Total Goles, Ambos Marcan, Hándicap, Tarjetas, Córners) — evita
-    # mostrar "Over 0.5" y "Over 1.5" a la vez dentro de Total Goles,
-    # pero SÍ permite que salgan simultáneamente apuestas de rubros
-    # distintos (ej. una de Total Goles + una de Tarjetas + una de
-    # Córners), siempre que cada una cumpla el umbral dinámico.
-    #
-    # Dentro de cada categoría se conserva la de MAYOR confianza (la
-    # línea más "segura"/menos específica que sostiene la categoría) —
-    # ej. entre Over 0.5 al 95% y Over 1.5 al 85.5%, se muestra Over 0.5.
-    # Ojo: para Under es al revés en términos de "línea", pero el
-    # criterio se mantiene igual (mayor % de confianza gana), porque el
-    # número de confianza ya captura qué tan sólida es cada selección —
-    # no hace falta lógica especial por dirección Over/Under.
-    mejor_por_categoria = {}
-    for a in apuestas:
-        merc = a["mercado"]
-        sel = a["seleccion"].lower()
-        if merc == "Tarjetas":
-            cat = "tarj_over" if "over" in sel else "tarj_under"
-        elif merc == "Córners":
-            cat = "co_over" if "over" in sel else "co_under"
-        elif merc == "Total Goles":
-            cat = "goles_over" if "over" in sel else "goles_under"
-        elif merc == "Hándicap Asiático":
-            cat = f"hcap_{home_team}" if home_team in a["seleccion"] else f"hcap_{away_team}"
+    if not SUPABASE_DISPONIBLE:
+        st.warning(
+            "⚠️ Supabase no está conectado — mostrando solo el historial de **esta sesión** "
+            "(se borra al recargar la página). Agrega `SUPABASE_URL_LIGAMX` y `SUPABASE_KEY_LIGAMX` "
+            "a los Secrets de Streamlit Cloud para que esto persista de verdad."
+        )
+        hist = st.session_state["historial_apuestas_sesion"]
+        if not hist:
+            st.info("Todavía no has simulado ningún partido en esta sesión. Ve al tab Predictor o Apuestas.")
         else:
-            cat = merc
-        if cat not in mejor_por_categoria or a["confianza"] > mejor_por_categoria[cat]["confianza"]:
-            mejor_por_categoria[cat] = a
+            for h in reversed(hist):
+                st.markdown(
+                    f'<div style="background:#111827;border:1px solid #1f4a2e;border-radius:8px;padding:0.5rem 0.9rem;'
+                    f'margin-bottom:0.3rem"><span style="color:#e8f0ea;font-size:0.8rem;font-weight:600">'
+                    f'{flag(h["local"])} {h["local"]} vs {flag(h["visit"])} {h["visit"]}</span>'
+                    f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.8rem">Jornada {h["jornada"]} · {h["hora_registro"]}</span>'
+                    f'<div style="font-size:0.75rem;color:#f0c040;margin-top:0.2rem">📋 {h["mercado"]} → {h["seleccion"]} '
+                    f'<span style="color:#4ade80">({h["confianza"]:.0f}%)</span></div></div>',
+                    unsafe_allow_html=True,
+                )
+    else:
+        historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
+        historial = [h for h in historial if not str(h.get("local", "")).startswith("TBD")]
 
-    filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
-    if mercados_suspendidos:
-        filtradas = [a for a in filtradas if a["mercado"] not in mercados_suspendidos]
-    return filtradas
+        if not historial:
+            st.info("⏳ Aún no hay apuestas registradas. Se guardan automáticamente cada vez que simulas un partido.")
+        else:
+            stats = calcular_stats_apuestas(historial)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{stats["accuracy"]:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy apuestas</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#4ade80">{stats["aciertos"]}</div>'
+                            f'<div class="metric-lbl">✅ Aciertos</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#f87171">{stats["fallos"]}</div>'
+                            f'<div class="metric-lbl">❌ Fallos</div></div>', unsafe_allow_html=True)
+            with c4:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{stats["total_pendientes"]}</div>'
+                            f'<div class="metric-lbl">⏳ Pendientes</div></div>', unsafe_allow_html=True)
 
+            # ── Panel de auto-calibración: ¿el 80% que dice el modelo es
+            # realmente 80% de acierto? Desglosado por mercado. ──────────
+            stats_mercado = calcular_stats_por_mercado(historial)
+            if stats_mercado:
+                with st.expander("🎯 Auto-calibración por mercado — ¿el modelo cumple lo que promete?", expanded=False):
+                    st.caption(
+                        "Compara la confianza promedio que dijo el modelo al sugerir cada mercado contra "
+                        "el acierto real una vez que el partido ya se jugó. Solo se muestran mercados con "
+                        "3+ apuestas ya evaluadas — con menos, la tasa de acierto es puro ruido."
+                    )
+                    for fm in stats_mercado:
+                        color = ("#c0685a" if fm["brecha"] > 5 else
+                                 "#4ade80" if fm["brecha"] < -5 else "#e8f0ea")
+                        texto_pendientes = f" · {fm['n_pendientes']} pendientes" if fm["n_pendientes"] else ""
+                        st.markdown(
+                            f'<div style="background:#111827;border:1px solid #1f4a2e;border-radius:8px;'
+                            f'padding:0.6rem 1rem;margin-bottom:0.4rem">'
+                            f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                            f'<span style="color:#e8f0ea;font-size:0.85rem;font-weight:600">{fm["mercado"]}</span>'
+                            f'<span style="font-size:0.7rem;color:#6b9b7d">{fm["n_evaluadas"]} evaluadas{texto_pendientes}</span></div>'
+                            f'<div style="font-size:0.78rem;margin-top:0.3rem;color:#8fbfa0">'
+                            f'Modelo dijo: <b>{fm["confianza_promedio"]:.1f}%</b> &nbsp;·&nbsp; '
+                            f'Acertó de verdad: <b style="color:{color}">{fm["accuracy_real"]:.1f}%</b> '
+                            f'({fm["aciertos"]}/{fm["n_evaluadas"]})</div>'
+                            f'<div style="font-size:0.72rem;color:{color};margin-top:0.15rem">{fm["diagnostico"]}'
+                            f' (brecha: {fm["brecha"]:+.1f} pts)</div></div>',
+                            unsafe_allow_html=True,
+                        )
+
+            # ── Panel de Brier Score / Calibración global (1X2) ──────────
+            historial_predicciones = cargar_historial_predicciones(SUPABASE_URL, SUPABASE_KEY)
+            brier_data = calcular_brier_score(historial_predicciones)
+            if brier_data["n_evaluadas"] > 0:
+                with st.expander("📐 Calibración del modelo (Brier Score) — ¿qué tan confiables son los %?", expanded=False):
+                    st.caption(
+                        "Brier Score mide qué tan bien calibradas están las probabilidades del modelo, no "
+                        "solo si acertó el ganador. 0 = predicciones perfectas · 0.667 = igual que tirar una "
+                        "moneda entre 3 opciones · valores claramente por debajo de 0.667 indican que el "
+                        "modelo aporta información real."
+                    )
+                    color_brier = "#4ade80" if brier_data["brier"] < 0.55 else ("#f0c040" if brier_data["brier"] < 0.667 else "#f87171")
+                    st.markdown(
+                        f'<div class="metric-box" style="max-width:220px"><div class="metric-val" style="color:{color_brier}">'
+                        f'{brier_data["brier"]}</div><div class="metric-lbl">Brier Score global · {brier_data["n_evaluadas"]} evaluadas</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    if brier_data["por_equipo"]:
+                        st.markdown("###### Peor calibrados (más partidos primero para que el número sea confiable)")
+                        df_brier = pd.DataFrame(brier_data["por_equipo"])
+                        df_brier.insert(0, "", df_brier["equipo"].map(flag))
+                        df_brier.columns = ["", "Equipo", "Brier promedio", "Partidos evaluados"]
+                        st.dataframe(df_brier, use_container_width=True, hide_index=True)
+
+                    calibracion = calcular_calibracion_por_bin(historial_predicciones)
+                    if calibracion:
+                        st.markdown("###### Calibración por rango de confianza")
+                        st.caption("Brecha negativa = el modelo es prudente (dice menos de lo que en realidad acierta). Brecha positiva = el modelo es sobreconfiado (promete más de lo que cumple).")
+                        df_calib = pd.DataFrame(calibracion)
+                        df_calib.columns = ["Rango prometido", "Prometido promedio (%)", "Real (%)", "Brecha", "N observaciones"]
+                        st.dataframe(df_calib, use_container_width=True, hide_index=True)
+
+            if stats["evaluadas"]:
+                st.markdown("##### ✅ Apuestas evaluadas")
+                for ap in stats["evaluadas"]:
+                    icono = "✅" if ap["acierto"] else "❌"
+                    color = "#0d2818" if ap["acierto"] else "#1a0d0d"
+                    st.markdown(
+                        f'<div style="background:{color};border-radius:8px;padding:0.5rem 0.9rem;margin-bottom:0.3rem;'
+                        f'font-size:0.8rem">{icono} {flag(ap["local"])} {ap["local"]} vs {flag(ap["visitante"])} {ap["visitante"]} '
+                        f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.5rem">J{ap["jornada"]} · {ap.get("resultado_real","")}</span>'
+                        f'<div style="font-size:0.72rem;color:#f0c040;margin-top:0.2rem">📋 {ap["mercado"]} → {ap["seleccion"]} '
+                        f'<span style="color:#4ade80">({ap["confianza"]:.0f}%)</span></div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            if stats["pendientes"]:
+                st.markdown("---")
+                st.markdown(f"##### ⏳ Apuestas pendientes ({len(stats['pendientes'])})")
+                for ap in stats["pendientes"]:
+                    st.markdown(
+                        f'<div style="background:#111827;border:1px solid #1f4a2e;border-radius:8px;padding:0.5rem 0.9rem;'
+                        f'margin-bottom:0.3rem;font-size:0.8rem">{flag(ap["local"])} {ap["local"]} vs {flag(ap["visitante"])} {ap["visitante"]} '
+                        f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.5rem">J{ap["jornada"]}</span>'
+                        f'<div style="font-size:0.72rem;color:#f0c040;margin-top:0.2rem">📋 {ap["mercado"]} → {ap["seleccion"]} '
+                        f'<span style="color:#4ade80">({ap["confianza"]:.0f}%)</span></div></div>',
+                        unsafe_allow_html=True,
+                    )
+        st.markdown(
+            '<div class="model-note">🎯 Solo apuestas de confianza ALTA. Tarjetas y córners quedan '
+            '"pendientes" hasta que agregues manualmente el resultado real de amarillas/córners '
+            '(igual que hacías con DATOS_REALES en el Mundial) — 1X2, doble oportunidad y goles se '
+            'evalúan automáticamente en cuanto el partido tiene resultado.</div>',
+            unsafe_allow_html=True,
+        )
 
 # ─────────────────────────────────────────────────────────────────────────
-# armar_parlay() — mismo criterio que el Mundial: solo apuestas ALTA,
-# máximo una por categoría (Resultado/Doble Oportunidad, Goles, Tarjetas,
-# Córners, Ambos Marcan), probabilidad combinada = producto de confianzas.
+# TAB — Parlays (historial del "parlay del día" — todas las mejores
+# apuestas de cada partido del día, combinadas en una sola)
 # ─────────────────────────────────────────────────────────────────────────
-def armar_parlay(sugerencias: list) -> dict:
-    """
-    Arma un parlay con las apuestas de nivel ALTA, máximo UNA por rubro
-    real (no por nombre de mercado) — evita mezclar dos selecciones que
-    predicen lo mismo de fondo con distinta redacción.
+with tab_parlays:
+    st.markdown("#### 🎟️ Historial de Parlays del Día")
+    st.caption(
+        "Cada día se arma UN parlay combinando la mejor apuesta (mayor confianza) de "
+        "cada partido de esa fecha — igual que ves en el panel de arriba de la página. "
+        "Para que el parlay completo 'gane', TODAS sus patas tienen que acertar."
+    )
 
-    MERCADOS_MISMO_RESULTADO agrupa Resultado (1X2), Doble Oportunidad,
-    Empate Sin Apuesta y Hándicap Asiático porque los 4 son, en el
-    fondo, la MISMA apuesta de base (¿quién gana el partido, y con qué
-    margen?) — solo cambia la protección ante empate o el margen
-    exigido. Combinar, por ejemplo, "Gana Cruz Azul (DNB)" +
-    "Gana Cruz Azul (1X2)" en un mismo parlay es redundante: ambas
-    aciertan o fallan exactamente juntas, no aportan ninguna
-    diversificación real al boleto — bug corregido tras detectarlo en
-    producción (parlay real: "Gana Cruz Azul (DNB) + Gana Cruz Azul +
-    Over 2.5").
-    """
-    MERCADOS_MISMO_RESULTADO = {"Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta", "Hándicap Asiático"}
+    if not SUPABASE_DISPONIBLE:
+        st.warning(
+            "⚠️ Supabase no está conectado — los parlays del día no se pueden guardar ni "
+            "consultar en este modo. Conecta `SUPABASE_URL_LIGAMX` y `SUPABASE_KEY_LIGAMX` "
+            "en los Secrets de Streamlit Cloud."
+        )
+    else:
+        historial_parlays = cargar_historial_parlays(SUPABASE_URL, SUPABASE_KEY)
+        if not historial_parlays:
+            st.info("⏳ Aún no hay parlays guardados. Se arma uno automáticamente cada día que haya "
+                    "al menos 2 partidos con apuestas de confianza ALTA.")
+        else:
+            ganados = [p for p in historial_parlays if p.get("resultado") == "ganado"]
+            perdidos = [p for p in historial_parlays if p.get("resultado") == "perdido"]
+            pendientes_p = [p for p in historial_parlays if p.get("resultado") == "pendiente"]
+            evaluados = len(ganados) + len(perdidos)
+            accuracy_parlay = (len(ganados) / evaluados * 100) if evaluados else 0.0
 
-    altas = [a for a in sugerencias if a["nivel"] == "ALTA"]
-    if len(altas) < 2:
-        return None
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{accuracy_parlay:.1f}%</div>'
+                            f'<div class="metric-lbl">Accuracy parlays</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#4ade80">{len(ganados)}</div>'
+                            f'<div class="metric-lbl">✅ Ganados</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#f87171">{len(perdidos)}</div>'
+                            f'<div class="metric-lbl">❌ Perdidos</div></div>', unsafe_allow_html=True)
+            with c4:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{len(pendientes_p)}</div>'
+                            f'<div class="metric-lbl">⏳ Pendientes</div></div>', unsafe_allow_html=True)
 
-    seleccionadas = []
-    mercados_usados = set()
-    tiene_resultado = False
-    for a in sorted(altas, key=lambda x: x["confianza"], reverse=True):
-        merc = a["mercado"]
-        if merc in MERCADOS_MISMO_RESULTADO:
-            if not tiene_resultado:
-                seleccionadas.append(a)
-                tiene_resultado = True
-            continue
-        if merc not in mercados_usados:
-            seleccionadas.append(a)
-            mercados_usados.add(merc)
+            st.markdown("---")
+            for parlay in historial_parlays:
+                resultado_p = parlay.get("resultado", "pendiente")
+                icono = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳"}.get(resultado_p, "⏳")
+                color = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827"}.get(resultado_p, "#111827")
+                borde = {"ganado": "#2d6b45", "perdido": "#6b2d2d", "pendiente": "#1f4a2e"}.get(resultado_p, "#1f4a2e")
 
-    if len(seleccionadas) < 2:
-        return None
+                selecciones_p = parlay.get("selecciones", [])
+                if isinstance(selecciones_p, str):
+                    import json as _json
+                    try:
+                        selecciones_p = _json.loads(selecciones_p)
+                    except Exception:
+                        selecciones_p = []
 
-    prob_combinada = 1.0
-    for a in seleccionadas:
-        prob_combinada *= a["confianza"] / 100
-
-    return {
-        "selecciones": seleccionadas,
-        "texto": " + ".join(a["seleccion"].replace("✅ ", "") for a in seleccionadas),
-        "prob_combinada": round(prob_combinada * 100, 1),
-    }
-
+                patas_html = "".join(
+                    f'<div style="font-size:0.72rem;color:#e8f0ea;margin-top:0.15rem">'
+                    f'{flag(s.get("local",""))} {s.get("local","")} vs {s.get("visitante","")} — '
+                    f'<span style="color:#f0c040">{s.get("mercado","")}</span> → {s.get("seleccion","")} '
+                    f'<span style="color:#4ade80">({s.get("confianza",0):.0f}%)</span></div>'
+                    for s in selecciones_p
+                )
+                st.markdown(
+                    f'<div style="background:{color};border:1px solid {borde};border-radius:10px;'
+                    f'padding:0.8rem 1rem;margin-bottom:0.6rem">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                    f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">{icono} {parlay.get("fecha","")} '
+                    f'— {parlay.get("n_partidos", len(selecciones_p))} partidos</span>'
+                    f'<span style="font-size:0.7rem;color:#e5007d">Prob. combinada: {parlay.get("prob_combinada",0):.1f}%</span>'
+                    f'</div>{patas_html}</div>',
+                    unsafe_allow_html=True,
+                )
+        st.markdown(
+            '<div class="model-note">🎟️ Un parlay del día "pierde" si al menos una pata falla, y '
+            '"gana" solo si TODAS las patas aciertan. Las patas de Tarjetas/Córners quedan '
+            '"pendientes" hasta que agregues el dato real a DATOS_REALES_LIGAMX.</div>',
+            unsafe_allow_html=True,
+        )
 
 # ─────────────────────────────────────────────────────────────────────────
-# detectar_jornada_actual() + simular_jornada_completa() — soporte para
-# el botón "Simular Jornada" de la interfaz: detecta automáticamente cuál
-# es la jornada pendiente más próxima (según los resultados que ya están
-# cargados en PARTIDOS, no según la fecha de hoy — evita errores si algún
-# partido se pospuso o adelantó) y corre simular_partido() +
-# analizar_apuestas() para todos sus partidos de un jalón.
+# TAB — Tabla / Temporada (posiciones actuales + simular todo el torneo)
 # ─────────────────────────────────────────────────────────────────────────
-def detectar_jornada_actual() -> int:
-    """
-    Devuelve el número de la primera jornada que todavía tiene al menos
-    un partido con resultado=None en PARTIDOS — es decir, la próxima
-    jornada por jugar/simular. Si todos los partidos ya tienen
-    resultado (temporada terminada), devuelve None.
-    """
-    jornadas_pendientes = sorted({
-        jornada for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
-        if resultado is None
-    })
-    return jornadas_pendientes[0] if jornadas_pendientes else None
+with tab_tabla:
+    st.markdown("### 📊 Tabla actual — solo partidos ya jugados")
+    st.caption("Debe coincidir exactamente con la tabla oficial de Liga MX/ESPN en todo momento.")
 
+    tabla_real, n_jugados = tabla_actual_real()
+    if n_jugados == 0:
+        st.info("Todavía no hay partidos jugados registrados.")
+    else:
+        df_real = pd.DataFrame(tabla_real)
+        df_real = df_real[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
+        df_real.insert(1, "", df_real["equipo"].map(flag))
+        df_real.columns = ["#", "", "Club", "PJ", "G", "E", "P", "GF", "GC", "DG", "Pts"]
+        st.dataframe(
+            df_real, use_container_width=True, hide_index=True,
+            column_config={"#": st.column_config.NumberColumn(width="small")},
+        )
+        st.caption(f"📅 {n_jugados} partido(s) jugado(s) hasta ahora · empatados comparten posición, igual que la tabla oficial")
 
-def partidos_de_jornada(jornada: int) -> list:
-    """Devuelve las tuplas de PARTIDOS que pertenecen a esa jornada,
-    en el mismo orden en que aparecen en PARTIDOS."""
-    return [p for p in PARTIDOS if p[2] == jornada]
+    st.markdown("---")
+    st.markdown("### 🔮 Proyección de fin de temporada (simulada)")
+    st.caption(
+        "Esto SÍ mezcla los resultados reales de arriba con una simulación del resto de la "
+        "temporada — te da una idea de cómo podría terminar, pero no es la tabla oficial de hoy."
+    )
 
+    if st.button("🔄 Recalcular proyección y Liguilla", key="btn_recalcular_tabla") or "resultado_temporada" not in st.session_state:
+        with st.spinner("Simulando la temporada completa..."):
+            st.session_state["resultado_temporada"] = simular_temporada(
+                peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
 
-def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
-                              peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                              peso_arbitro: float = 1.0, factor_clima: float = 1.0,
-                              mercados_suspendidos: frozenset = frozenset(),
-                              sesgo_por_equipo: dict = None,
-                              cuotas_por_partido: dict = None) -> dict:
-    """
-    Corre simular_partido() + analizar_apuestas() para TODOS los
-    partidos de una jornada (por defecto, la detectada automáticamente
-    por detectar_jornada_actual() — la próxima jornada pendiente).
+    resultado_temp = st.session_state["resultado_temporada"]
+    df_tabla = pd.DataFrame(resultado_temp["tabla_final"])
+    df_tabla = df_tabla[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
+    df_tabla.insert(1, "", df_tabla["equipo"].map(flag))
+    df_tabla.columns = ["#", "", "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Pts"]
+    st.dataframe(
+        df_tabla, use_container_width=True, hide_index=True,
+        column_config={"#": st.column_config.NumberColumn(width="small")},
+    )
+    st.caption("🟢 Los primeros 8 lugares clasifican a la Liguilla (en la proyección)")
 
-    n=2,000,000 por defecto (en vez de los 10M de simular_partido() para
-    un solo partido) para que simular 9 partidos de un jalón sea ágil en
-    la interfaz — sigue siendo una muestra grande, el error estándar de
-    Monte Carlo con 2M sims es despreciable para fines de recomendación
-    de apuestas (ver nota en simular_partido()).
+    st.markdown("### 🏆 Liguilla simulada (con la tabla de arriba)")
+    liguilla = resultado_temp["liguilla"]
+    col_cf, col_sf, col_f = st.columns(3)
+    with col_cf:
+        st.markdown("**Cuartos de Final**")
+        for serie in liguilla["cuartos"]:
+            st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
+    with col_sf:
+        st.markdown("**Semifinales**")
+        for serie in liguilla["semis"]:
+            st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
+    with col_f:
+        st.markdown("**Final**")
+        st.markdown(f"- {liguilla['final']['marcador_global']}")
+        st.success(f"🏆 Campeón: {flag(liguilla['campeon'])} {liguilla['campeon']}")
 
-    sesgo_por_equipo: opcional, se pasa tal cual a cada llamada de
-    simular_partido() (ver calcular_lambdas() para el detalle) —
-    normalmente la salida de
-    liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
+    st.markdown("---")
+    st.markdown("### 🎲 Simular todo el torneo (Montecarlo)")
+    st.caption(
+        "Corre la temporada completa (17 jornadas + Liguilla) muchas veces y agrega "
+        "probabilidades reales de clasificar y ser campeón — el equivalente de liga regular "
+        "a las 10M simulaciones por partido."
+    )
+    n_temporadas = st.select_slider(
+        "Temporadas a simular", options=[100, 500, 1000, 2000, 5000], value=1000, key="n_temporadas_mc"
+    )
+    if st.button("🎲 Correr simulación de todo el torneo", type="primary"):
+        with st.spinner(f"Simulando {n_temporadas:,} temporadas completas..."):
+            st.session_state["resultado_montecarlo"] = simular_temporada_montecarlo(
+                n=n_temporadas, peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
 
-    cuotas_por_partido: opcional, dict {(local, visit): {"cuotas": {...},
-    "cuotas_totales": [...]}} — mismo formato que arma
-    app._cuotas_jornada_cached() indexando la salida de
-    liga_mx_cuotas.obtener_cuotas_jornada() por partido completo. Si el
-    partido no tiene entrada en el dict, analizar_apuestas() recibe
-    cuotas=None y cuotas_totales=None para ese partido y sigue
-    funcionando igual (sin value_bet, sin check de apostabilidad real
-    en Total de Goles).
+    if "resultado_montecarlo" in st.session_state:
+        mc = st.session_state["resultado_montecarlo"]
+        df_mc = pd.DataFrame([
+            {"": flag(eq), "Equipo": eq, "Prob. Liguilla (%)": mc["prob_liguilla"][eq],
+             "Prob. Campeón (%)": mc["prob_campeon"][eq],
+             "Posición promedio": mc["posicion_promedio"][eq]}
+            for eq in EQUIPOS
+        ]).sort_values("Prob. Campeón (%)", ascending=False).reset_index(drop=True)
 
-    NO guarda nada en Supabase — solo simula y arma el paquete de
-    resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
-    de liga_mx_supabase.py) se hace aparte, en app.py o en
-    liga_mx_supabase.guardar_jornada_completa(), para no acoplar este
-    módulo (que no sabe nada de Supabase) con la capa de persistencia.
+        st.dataframe(
+            df_mc, use_container_width=True, hide_index=True,
+            column_config={
+                "Prob. Liguilla (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
+                "Prob. Campeón (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
+            },
+        )
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            st.markdown("**Top 10 — Probabilidad de Liguilla**")
+            st.bar_chart(df_mc.nlargest(10, "Prob. Liguilla (%)").set_index("Equipo")["Prob. Liguilla (%)"])
+        with col_c2:
+            st.markdown("**Top 10 — Probabilidad de Campeón**")
+            st.bar_chart(df_mc.nlargest(10, "Prob. Campeón (%)").set_index("Equipo")["Prob. Campeón (%)"])
+    else:
+        st.info("Presiona el botón para correr la simulación completa del torneo.")
 
-    Devuelve:
-        {
-          "jornada": int,
-          "partidos": [
-              {
-                "local": str, "visitante": str, "arbitro": str,
-                "resultado_sim": dict,      # salida de simular_partido()
-                "apuestas": list,           # salida de analizar_apuestas()
-                "parlay": dict | None,      # salida de armar_parlay()
-              },
-              ...
-          ],
-        }
-    """
-    if jornada is None:
-        jornada = detectar_jornada_actual()
-    if jornada is None:
-        return {"jornada": None, "partidos": []}
+# ─────────────────────────────────────────────────────────────────────────
+# TAB — Modelo (informativo, NO editable)
+# ─────────────────────────────────────────────────────────────────────────
+with tab_info:
+    st.markdown("#### ¿Cómo funciona el modelo?")
+    st.markdown(f"""
+El predictor usa **simulación Monte Carlo con distribución de Poisson** — {N_SIMS_PARTIDO:,} simulaciones
+por partido, el mismo enfoque que casas de apuestas y modelos académicos serios.
 
-    cuotas_por_partido = cuotas_por_partido or {}
-    resultados = []
-    for local, visit, jorn, estadio, resultado_real, arbitro in partidos_de_jornada(jornada):
-        if resultado_real is not None:
-            # ya se jugó de verdad — no tiene caso "simular" un resultado
-            # que ya conocemos; se omite del paquete de simulación.
-            continue
-        r = simular_partido(local, visit, n=n, peso_elo=peso_elo,
-                             peso_altitud=peso_altitud, peso_arbitro=peso_arbitro,
-                             factor_clima=factor_clima, sesgo_por_equipo=sesgo_por_equipo)
-        cuotas_partido = cuotas_por_partido.get((local, visit)) or {}
-        apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos,
-                                      cuotas=cuotas_partido.get("cuotas"),
-                                      cuotas_totales=cuotas_partido.get("cuotas_totales"))
-        parlay = armar_parlay(apuestas)
-        resultados.append({
-            "local": local, "visitante": visit,
-            "arbitro": r.get("arbitro", "Sin asignar"),
-            "resultado_sim": r,
-            "apuestas": apuestas,
-            "parlay": parlay,
-        })
+**En cada simulación el modelo combina:**
+- **Ataque/Defensa** — FUERZA_ATAQUE/FUERZA_DEFENSA de cada equipo, calibradas con el Clausura 2026 y
+  **recalibradas solas** con cada resultado real que se agrega (media móvil exponencial, α=0.15)
+- **Momentum vía Elo** — ajuste acotado (±8%) según cuánto se movió el Elo de cada equipo desde el
+  arranque del torneo (fórmula Elo estándar de fútbol, con ventaja de local y multiplicador por goleada)
+- **Forma real** — promedio real de goles anotados/recibidos en los partidos ya jugados (tope ±8%)
+- **Corrección de sesgo del propio modelo** — ajuste acotado (±15%) basado en qué tan bien (o mal) ha
+  venido prediciendo el modelo a CADA equipo en particular, comparando goles esperados guardados en el
+  historial contra los goles reales — separado por local/visita. Solo se activa una vez que un equipo
+  acumula 8+ partidos evaluados en ese rol; antes de eso, no tiene efecto.
+- **Altitud** — bono de +{BONUS_ALTITUD_LOCAL} al λ del local si su ciudad está a ≥{ALTITUD_UMBRAL:,}m
+  y el visitante no está aclimatado a la altura
+- **Árbitro** — promedio real de tarjetas del árbitro asignado (cuando lo tenemos) vs. el promedio de
+  liga ({PROMEDIO_LIGA_AMARILLAS} amarillas/partido)
+- **Fatiga Leagues Cup** — reduce el λ ofensivo {(1-FACTOR_FATIGA_LEAGUES_CUP)*100:.0f}% si el equipo jugó
+  Leagues Cup en los 7 días previos
 
-    return {"jornada": jornada, "partidos": resultados}
+Los factores de Ataque/Defensa, Momentum vía Elo y Forma real se recalculan solos cada vez que arranca la
+app, reproduciendo todos los partidos que ya tienen resultado en `PARTIDOS` — no hay que tocar código ni
+una base de datos aparte, basta con seguir agregando los resultados reales jornada a jornada. La
+corrección de sesgo del propio modelo se recalcula igual de automático, leyendo el historial de
+predicciones ya evaluadas de Supabase.
 
+**¿Qué se recomienda como apuesta?**
+Un umbral **dinámico**: entre 80% y 90% de probabilidad según qué tan avanzado está el torneo (más
+partidos jugados = el modelo tiene más evidencia real y el umbral baja hasta el piso de 80%; al arranque
+de temporada exige hasta 90%). Todo lo que llegue a ese umbral aparece en "Apuestas sugeridas" (por
+partido) y en "Apuestas más fuertes de hoy" (todos los partidos del día) — una sola línea por rubro
+(ej. solo la mejor de Total Goles), pero varios rubros distintos pueden aparecer juntos (ej. Total Goles
++ Tarjetas + Córners a la vez si los tres cumplen).
 
-    print("── calcular_lambdas() de ejemplo ──")
-    for h, a in [("Toluca", "Tijuana"), ("America", "Guadalajara"), ("Atlante", "Tigres")]:
-        lh, la = calcular_lambdas(h, a)
-        print(f"  {h} (λ={lh:.2f})  vs  {a} (λ={la:.2f})")
+Mercados que evalúa: Resultado (1X2) · Doble Oportunidad (1X/X2) · Empate Sin Apuesta (DNB) · Hándicap
+Asiático (-1.0/-2.0 del favorito) · Total de Goles (Over/Under) · Ambos Marcan · Tarjetas · Córners.
+No incluye goles por mitades ni resultado al descanso — el modelo simula el partido completo con una sola
+λ de Poisson por equipo, no reparte los goles entre el primer y segundo tiempo.
 
-    print("\n── simular_temporada() de ejemplo (1 corrida) ──")
-    resultado = simular_temporada()
-    print("Top 8 (clasifican a Liguilla):")
-    for fila in resultado["tabla_final"][:8]:
-        print(f"  {fila['posicion']:>2}. {fila['equipo']:<20} PTS={fila['PTS']:<3} DG={fila['DG']:<4} GF={fila['GF']}")
-    print("\nCampeón simulado:", resultado["liguilla"]["campeon"])
+**Pesos actuales del modelo** (fijos, no ajustables desde la interfaz):
 
-    print("\n── simular_partido() de ejemplo (500k sims, para no tardar en la prueba) ──")
-    r = simular_partido("America", "Guadalajara", n=500_000)
-    print(f"  América {r['prob_home']:.1f}% - Empate {r['prob_draw']:.1f}% - Guadalajara {r['prob_away']:.1f}%")
-    print(f"  Goles esperados: {r['goles_home']:.2f} - {r['goles_away']:.2f}")
-    sugs = analizar_apuestas("America", "Guadalajara", r)
-    print("  Apuestas sugeridas:", [(a["seleccion"], a["nivel"]) for a in sugs])
-    parlay = armar_parlay(sugs)
-    print("  Parlay:", parlay)
+| Factor | Peso |
+|---|---|
+| ELO (ataque/defensa) | {PESO_ELO} |
+| Altitud | {PESO_ALTITUD} |
+| Árbitro | {PESO_ARBITRO} |
+
+**Mercados de apuestas sugeridos:** Resultado (1X2), Doble Oportunidad, Total de Goles (Over/Under),
+Ambos Marcan, Tarjetas totales (roja cuenta como 2 amarillas, igual que las casas de apuestas), y Córners.
+""")
+    st.markdown("---")
+    n_jugados = n_partidos_procesados(PARTIDOS)
+    st.markdown(f"#### ELO Ratings — 18 equipos (recalibrado con {n_jugados} partidos jugados)")
+    sorted_elo = sorted(ELO_ACTUALIZADO.items(), key=lambda x: x[1], reverse=True)
+    cols = st.columns(3)
+    for i, (equipo, elo) in enumerate(sorted_elo):
+        with cols[i % 3]:
+            st.markdown(f"{flag(equipo)} **{equipo}** — `{round(elo, 1)}`")
+
+    if n_jugados > 0:
+        with st.expander(f"📈 Movimiento de Elo tras los últimos {n_jugados} partidos"):
+            movimientos = resumen_movimiento_elo(ELO_BASE, ELO_ACTUALIZADO, top=10)
+            for equipo, antes, despues, delta in movimientos:
+                color = "#6b9b7d" if delta > 0 else ("#c0685a" if delta < 0 else "#888")
+                signo = "+" if delta > 0 else ""
+                st.markdown(
+                    f"{flag(equipo)} **{equipo}** — {antes} → {despues} "
+                    f"<span style='color:{color}'>({signo}{delta})</span>",
+                    unsafe_allow_html=True,
+                )
