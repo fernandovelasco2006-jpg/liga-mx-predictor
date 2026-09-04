@@ -1528,30 +1528,27 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Hándicap Asiático", f"✅ {away_team} -2.0 (gana por 3+)", r["prob_hcap_away_m20"],
            "Empuje (reembolso) si gana por exactamente 2")
 
-    # 5. Total de Goles (Over/Under) — cada línea se verifica contra
-    # cuotas_totales (si se pasó) para saber si es realmente apostable
-    # en alguna casa real (ver calcular_value_bet_totales() en
-    # liga_mx_cuotas.py) — confirmado con datos reales que ninguna casa
-    # ofrece líneas de 0.5 goles, así que esa selección normalmente
-    # queda marcada "no_apostable": True cuando se pasan cuotas_totales.
-    if r["prob_over05"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 0.5 (al menos 1 gol)", r["prob_over05"], f"{r['prob_over05']:.1f}% de simulaciones",
-           linea_totales=0.5, direccion_totales="over")
+    # 5. Total de Goles (Over/Under) — decisión explícita del usuario:
+    # Over 0.5 NUNCA se recomienda (confirmado con datos reales que
+    # ninguna casa de apuestas ofrece esa línea para Liga MX — es
+    # matemáticamente correcta pero inapostable en la práctica), aunque
+    # r["prob_over05"] siga calculándose internamente para otros usos
+    # (ver top5, goles_home/goles_away). El resto de las líneas (1.5,
+    # 2.5, 3.5) SÍ se recomiendan normalmente, sin depender de si hay
+    # cuotas_totales disponibles — a diferencia del diseño anterior, que
+    # las descartaba si no encontraba una casa real con esa línea
+    # exacta. Se prefirió excluir 0.5 de forma fija en vez de depender
+    # de la disponibilidad de cuotas en cada consulta a The Odds API.
     if r["prob_over15"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones",
-           linea_totales=1.5, direccion_totales="over")
+        ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones")
     if r["prob_over25"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones",
-           linea_totales=2.5, direccion_totales="over")
+        ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones")
     if r["prob_over35"] >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones",
-           linea_totales=3.5, direccion_totales="over")
+        ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones")
     if (100 - r["prob_over15"]) >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones",
-           linea_totales=1.5, direccion_totales="under")
+        ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones")
     if (100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
-        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones",
-           linea_totales=2.5, direccion_totales="under")
+        ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones")
 
     # 6. Ambos Marcan (BTTS)
     if r["prob_btts"] >= UMBRAL_RECOMENDACION:
@@ -1886,4 +1883,3 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     print("  Apuestas sugeridas:", [(a["seleccion"], a["nivel"]) for a in sugs])
     parlay = armar_parlay(sugs)
     print("  Parlay:", parlay)
-                                  
