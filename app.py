@@ -757,13 +757,22 @@ with tab_pred:
                          "confianza": pata["confianza"]}
                         for pata in super_parlay["patas"]
                     ]
-                    guardar_parlay_diario(
+                    ok_guardado = guardar_parlay_diario(
                         SUPABASE_URL, SUPABASE_KEY, hoy,
                         selecciones_super_parlay, super_parlay["prob_combinada"],
                         id_personalizado=f"superparlay_jornada_{resultado_jornada['jornada']}",
                     )
-                except Exception:
-                    pass
+                    # DIAGNÓSTICO TEMPORAL — quitar una vez confirmado que
+                    # el guardado funciona en producción. guardar_parlay_
+                    # diario() devuelve False en silencio si Supabase
+                    # rechaza la escritura (permisos RLS, columna
+                    # faltante, etc.) — sin este aviso, ese fallo era
+                    # invisible para el usuario.
+                    if not ok_guardado:
+                        st.warning(f"⚠️ Diagnóstico: guardar_parlay_diario() devolvió False para "
+                                   f"superparlay_jornada_{resultado_jornada['jornada']} — revisar Logs/RLS en Supabase.")
+                except Exception as e:
+                    st.warning(f"⚠️ Diagnóstico: excepción al guardar Super Parlay: {type(e).__name__}: {e}")
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Resultados reales
