@@ -1141,14 +1141,21 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
 # Score, es una señal seria de que la ingeniería adicional (Elo, forma,
 # árbitro, clima, sesgo por equipo...) no está aportando valor real.
 #
-# Cálculo ANALÍTICO con scipy.stats.poisson (no Monte Carlo) — el
-# baseline es tan simple que no hace falta simular millones de veces;
-# la distribución exacta de la diferencia de dos Poisson independientes
-# se puede sumar directo.
+# Cálculo ANALÍTICO con la fórmula estándar de Poisson (e^-λ · λ^k / k!,
+# vía math.exp/math.factorial de la librería estándar — sin scipy, que
+# no está en requirements.txt y causaba ModuleNotFoundError en
+# producción) — el baseline es tan simple que no hace falta simular
+# millones de veces ni depender de una librería externa nueva.
 # ─────────────────────────────────────────────────────────────────────────
-from scipy.stats import poisson as _scipy_poisson
+import math as _math
 
 MAX_GOLES_BASELINE = 10  # techo de seguridad para la suma exacta — P(>10 goles) es despreciable
+
+
+def _poisson_pmf(k: int, lam: float) -> float:
+    """P(X=k) para X ~ Poisson(lam), calculado con la librería estándar
+    (math.exp, math.factorial) — sin depender de scipy."""
+    return _math.exp(-lam) * (lam ** k) / _math.factorial(k)
 
 
 def simular_partido_baseline(home_team: str, away_team: str) -> dict:
@@ -1171,9 +1178,9 @@ def simular_partido_baseline(home_team: str, away_team: str) -> dict:
 
     prob_home = prob_draw = prob_away = 0.0
     for gh in range(MAX_GOLES_BASELINE + 1):
-        p_gh = _scipy_poisson.pmf(gh, lam_h)
+        p_gh = _poisson_pmf(gh, lam_h)
         for ga in range(MAX_GOLES_BASELINE + 1):
-            p_ga = _scipy_poisson.pmf(ga, lam_a)
+            p_ga = _poisson_pmf(ga, lam_a)
             p_conjunta = p_gh * p_ga
             if gh > ga:
                 prob_home += p_conjunta
@@ -1879,3 +1886,4 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     print("  Apuestas sugeridas:", [(a["seleccion"], a["nivel"]) for a in sugs])
     parlay = armar_parlay(sugs)
     print("  Parlay:", parlay)
+                                  
