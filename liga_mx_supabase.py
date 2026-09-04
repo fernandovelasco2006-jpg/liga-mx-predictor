@@ -8,6 +8,16 @@ import requests
 from datetime import datetime, timezone, timedelta
 from liga_mx_predictor_skeleton import DATOS_REALES_LIGAMX
 
+# Import opcional — liga_mx_algoritmo.py importa cosas del skeleton pero
+# no de este módulo, así que no hay dependencia circular real; se deja
+# como try/except de todas formas por si algún entorno de pruebas carga
+# liga_mx_supabase.py de forma aislada.
+try:
+    from liga_mx_algoritmo import simular_partido_baseline
+except ImportError:
+    def simular_partido_baseline(home_team, away_team):
+        return {"prob_home": 33.33, "prob_draw": 33.33, "prob_away": 33.34}
+
 TZ_MX = timezone(timedelta(hours=-6))
 
 
@@ -358,6 +368,79 @@ def calcular_brier_score(historial_predicciones: list) -> dict:
         "brier": round(suma_brier / n_validas, 3),
         "n_evaluadas": n_validas,
         "por_equipo": por_equipo,
+    }
+
+
+def comparar_modelo_vs_baseline(historial_predicciones: list) -> dict:
+    """
+    Calcula qué Brier Score HUBIERA tenido un modelo "tonto" de
+    referencia (ver liga_mx_algoritmo.simular_partido_baseline(): Poisson
+    puro con el promedio de liga para ambos equipos, sin Elo, forma
+    real, árbitro, altitud, clima ni sesgo por equipo) sobre los MISMOS
+    partidos ya evaluados, y lo compara contra el Brier Score real del
+    modelo completo.
+
+    Es la prueba más honesta de si toda la ingeniería adicional (Elo,
+    forma real, árbitro dinámico, clima, sesgo por equipo...) realmente
+    mejora las predicciones, o si un modelo mucho más simple rendiría
+    igual o mejor — si "mejora_pct" sale negativo o cercano a 0, es una
+    señal seria de que algo en la calibración no está aportando.
+
+    Devuelve:
+        {"brier_modelo": float, "brier_baseline": float,
+         "mejora_pct": float, "n_evaluadas": int}
+    mejora_pct > 0 significa que el modelo real es MEJOR (Brier más
+    bajo) que el baseline, en el porcentaje indicado. None si no hay
+    partidos evaluados.
+    """
+    evaluadas = [
+        p for p in historial_predicciones
+        if p.get("goles_local") is not None and p.get("goles_visitante") is not None
+    ]
+    if not evaluadas:
+        return {"brier_modelo": None, "brier_baseline": None, "mejora_pct": None, "n_evaluadas": 0}
+
+    suma_brier_modelo = 0.0
+    suma_brier_baseline = 0.0
+    n_validas = 0
+
+    for p in evaluadas:
+        try:
+            gh, ga = int(p["goles_local"]), int(p["goles_visitante"])
+            p_local_modelo = float(p["prob_local"]) / 100.0
+            p_empate_modelo = float(p["prob_empate"]) / 100.0
+            p_visita_modelo = float(p["prob_visitante"]) / 100.0
+        except (TypeError, ValueError, KeyError):
+            continue
+
+        y_local = 1.0 if gh > ga else 0.0
+        y_empate = 1.0 if gh == ga else 0.0
+        y_visita = 1.0 if gh < ga else 0.0
+
+        brier_modelo = (p_local_modelo - y_local) ** 2 + (p_empate_modelo - y_empate) ** 2 + (p_visita_modelo - y_visita) ** 2
+        suma_brier_modelo += brier_modelo
+
+        base = simular_partido_baseline(p["local"], p["visitante"])
+        p_local_base = base["prob_home"] / 100.0
+        p_empate_base = base["prob_draw"] / 100.0
+        p_visita_base = base["prob_away"] / 100.0
+        brier_baseline = (p_local_base - y_local) ** 2 + (p_empate_base - y_empate) ** 2 + (p_visita_base - y_visita) ** 2
+        suma_brier_baseline += brier_baseline
+
+        n_validas += 1
+
+    if n_validas == 0:
+        return {"brier_modelo": None, "brier_baseline": None, "mejora_pct": None, "n_evaluadas": 0}
+
+    brier_modelo_prom = suma_brier_modelo / n_validas
+    brier_baseline_prom = suma_brier_baseline / n_validas
+    mejora_pct = ((brier_baseline_prom - brier_modelo_prom) / brier_baseline_prom * 100) if brier_baseline_prom > 0 else 0.0
+
+    return {
+        "brier_modelo": round(brier_modelo_prom, 3),
+        "brier_baseline": round(brier_baseline_prom, 3),
+        "mejora_pct": round(mejora_pct, 1),
+        "n_evaluadas": n_validas,
     }
 
 
