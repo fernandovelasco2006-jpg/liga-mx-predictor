@@ -639,16 +639,25 @@ def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 8,
     return suspendidos
 
 
-def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, prob_combinada: float) -> bool:
+def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, prob_combinada: float,
+                           id_personalizado: str = None) -> bool:
     """
     Guarda EL parlay del día (una sola fila por fecha) combinando la
     mejor apuesta de cada partido del día. selecciones = lista de dicts
     con local, visitante, jornada, mercado, seleccion, confianza.
+
+    id_personalizado: opcional — si se pasa, se usa como "id" de la fila
+    en vez del default f"parlay_{fecha}". Permite reutilizar esta misma
+    función/tabla para variantes que no son "el parlay del día" (ej. el
+    Super Parlay de una jornada completa, guardado como
+    f"superparlay_jornada_{jornada}" desde app.py) sin duplicar la
+    lógica de guardado ni crear una tabla nueva — ambos tipos conviven
+    en parlays_historial_ligamx, distinguibles por su prefijo de id.
     """
     if not (url and key) or len(selecciones) < 2:
         return False
     ahora = datetime.now(TZ_MX)
-    parlay_id = f"parlay_{fecha}"
+    parlay_id = id_personalizado or f"parlay_{fecha}"
     payload = {
         "id": parlay_id,
         "fecha": fecha,
@@ -667,6 +676,20 @@ def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, pro
         )
         if chk.status_code == 200 and not chk.json():
             requests.post(f"{url}/rest/v1/parlays_historial_ligamx", headers=_headers(key), json=payload, timeout=5)
+            return True
+        if chk.status_code == 200 and chk.json():
+            # La fila ya existe (ej. se re-simuló la misma jornada) —
+            # actualiza en vez de dejarla congelada con datos viejos.
+            # Mismo criterio que se corrigió en guardar_apuestas(): una
+            # actualización real cuenta como guardado exitoso.
+            requests.patch(
+                f"{url}/rest/v1/parlays_historial_ligamx",
+                headers=_headers(key, prefer=""),
+                params={"id": f"eq.{parlay_id}"},
+                json={"selecciones": selecciones, "prob_combinada": round(prob_combinada, 1),
+                      "n_partidos": len(selecciones)},
+                timeout=5,
+            )
             return True
     except Exception:
         pass
