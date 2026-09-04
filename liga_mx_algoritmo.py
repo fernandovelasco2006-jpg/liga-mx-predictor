@@ -1130,6 +1130,66 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
     return amarillas_esp, rojas_esp
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# simular_partido_baseline() — MODELO DE REFERENCIA para comparar contra
+# el modelo real. Poisson puro con LIGA_PROMEDIO_GOLES para ambos
+# equipos (sin ELO, sin forma real, sin árbitro, sin altitud, sin
+# clima) — la única diferencia entre local y visitante es la ventaja de
+# localía estándar (×1.12, la misma constante que usa calcular_lambdas()
+# para no exagerar la simplicidad del baseline hasta el punto de no ser
+# comparable). Si el modelo real no le gana con claridad a esto en Brier
+# Score, es una señal seria de que la ingeniería adicional (Elo, forma,
+# árbitro, clima, sesgo por equipo...) no está aportando valor real.
+#
+# Cálculo ANALÍTICO con scipy.stats.poisson (no Monte Carlo) — el
+# baseline es tan simple que no hace falta simular millones de veces;
+# la distribución exacta de la diferencia de dos Poisson independientes
+# se puede sumar directo.
+# ─────────────────────────────────────────────────────────────────────────
+from scipy.stats import poisson as _scipy_poisson
+
+MAX_GOLES_BASELINE = 10  # techo de seguridad para la suma exacta — P(>10 goles) es despreciable
+
+
+def simular_partido_baseline(home_team: str, away_team: str) -> dict:
+    """
+    Versión "tonta" de simular_partido(): mismos dos λ para cualquier
+    partido salvo la ventaja de localía — no usa ELO, forma real,
+    árbitro, altitud, clima ni sesgo por equipo. Sirve como punto de
+    comparación (ver liga_mx_supabase.comparar_modelo_vs_baseline()):
+    si el modelo real no supera claramente a esto, la complejidad
+    adicional no se está traduciendo en mejores predicciones.
+
+    Devuelve solo prob_home/prob_draw/prob_away (lo que hace falta para
+    comparar Brier Score contra las predicciones ya guardadas en
+    predicciones_ligamx) — no calcula tarjetas, córners ni otros
+    mercados, ya que el objetivo es la comparación de 1X2, no un
+    producto completo.
+    """
+    lam_h = LIGA_PROMEDIO_GOLES * 1.12
+    lam_a = LIGA_PROMEDIO_GOLES
+
+    prob_home = prob_draw = prob_away = 0.0
+    for gh in range(MAX_GOLES_BASELINE + 1):
+        p_gh = _scipy_poisson.pmf(gh, lam_h)
+        for ga in range(MAX_GOLES_BASELINE + 1):
+            p_ga = _scipy_poisson.pmf(ga, lam_a)
+            p_conjunta = p_gh * p_ga
+            if gh > ga:
+                prob_home += p_conjunta
+            elif gh == ga:
+                prob_draw += p_conjunta
+            else:
+                prob_away += p_conjunta
+
+    total = prob_home + prob_draw + prob_away  # <1.0 por el techo MAX_GOLES_BASELINE, se renormaliza
+    return {
+        "prob_home": round(prob_home / total * 100, 2),
+        "prob_draw": round(prob_draw / total * 100, 2),
+        "prob_away": round(prob_away / total * 100, 2),
+    }
+
+
 def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
                      peso_elo: float = 1.0, peso_altitud: float = 1.0,
                      peso_arbitro: float = 1.0, factor_clima: float = 1.0,
