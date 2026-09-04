@@ -1331,6 +1331,48 @@ with tab_info:
     else:
         st.caption("Conecta Supabase para ver métricas de calibración real del modelo.")
 
+    # ── Backtesting formal contra el Clausura 2026 COMPLETO (153
+    # partidos, 17 jornadas) — muestra mucho más grande y estable que
+    # el historial actual del Apertura 2026. Bajo demanda (botón) en
+    # vez de automático porque simular 153 partidos toma varios
+    # segundos. No depende de Supabase (usa datos fijos de
+    # liga_mx_backtesting.py), así que vive fuera del if/else de arriba.
+    # Ver liga_mx_backtesting.py para la limitación metodológica
+    # honesta (el modelo ya "vio" datos agregados de este mismo torneo
+    # al calibrar FUERZA_ATAQUE/FUERZA_DEFENSA). ───────────────────────
+    with st.expander("🧪 Backtesting formal — Clausura 2026 completo (153 partidos)", expanded=False):
+        st.caption(
+            "Corre el modelo actual contra los 153 partidos YA CONOCIDOS del Clausura 2026 completo — "
+            "una muestra 30 veces más grande que el historial real del Apertura. Nota metodológica: el "
+            "modelo ya usa datos agregados de este mismo torneo (FUERZA_ATAQUE/FUERZA_DEFENSA) para "
+            "calibrar sus valores base, así que esto mide consistencia interna del modelo, no su "
+            "capacidad de predecir partidos que nunca ha visto — para eso, lo relevante es el historial "
+            "real del Apertura 2026 de arriba."
+        )
+        if st.button("🧪 Correr backtesting (153 partidos)", key="btn_backtesting"):
+            with st.spinner("Simulando 153 partidos del Clausura 2026..."):
+                from liga_mx_backtesting import correr_backtesting_clausura
+                st.session_state["resultado_backtesting"] = correr_backtesting_clausura(n_sims=200_000)
+
+        if "resultado_backtesting" in st.session_state:
+            bt = st.session_state["resultado_backtesting"]
+            color_bt = "#4ade80" if bt["mejora_pct"] > 5 else ("#f0c040" if bt["mejora_pct"] > -5 else "#f87171")
+            bt1, bt2, bt3, bt4 = st.columns(4)
+            with bt1:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{bt["brier_modelo"]}</div>'
+                            f'<div class="metric-lbl">Brier · Modelo</div></div>', unsafe_allow_html=True)
+            with bt2:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{bt["brier_baseline"]}</div>'
+                            f'<div class="metric-lbl">Brier · Baseline</div></div>', unsafe_allow_html=True)
+            with bt3:
+                signo_bt = "+" if bt["mejora_pct"] >= 0 else ""
+                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:{color_bt}">{signo_bt}{bt["mejora_pct"]}%</div>'
+                            f'<div class="metric-lbl">Mejora del modelo</div></div>', unsafe_allow_html=True)
+            with bt4:
+                st.markdown(f'<div class="metric-box"><div class="metric-val">{bt["accuracy_ganador"]}%</div>'
+                            f'<div class="metric-lbl">Accuracy favorito</div></div>', unsafe_allow_html=True)
+            st.caption(f"Basado en los {bt['n_partidos']} partidos de fase regular del Clausura 2026 completo.")
+
     n_jugados_salud = n_partidos_procesados(PARTIDOS)
     st.markdown(
         f'<div class="model-note">📅 <b>Datos actualizados:</b> {n_jugados_salud} partidos del Apertura 2026 '
