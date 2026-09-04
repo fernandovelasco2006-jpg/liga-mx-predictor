@@ -17,15 +17,31 @@ jornadas de 9 partidos sin repetir equipo). "Mazatlán" se mapea a
 datos heredados del Clausura 2026, ya que Atlante ocupó su lugar en el
 Apertura 2026 tras el ascenso).
 
-IMPORTANTE — limitación metodológica honesta: el modelo actual usa
-FUERZA_ATAQUE/FUERZA_DEFENSA que YA fueron calibradas a partir de este
-mismo Clausura 2026 (ver liga_mx_algoritmo.py) — así que este backtesting
-no es una prueba "a ciegas" en el sentido estricto (el modelo ya "vio"
-estos datos agregados al construir sus priors). Sirve para verificar
-consistencia interna y calibración (Brier Score, over/under-confianza),
-NO como evidencia de que el modelo generaliza a datos nunca vistos. Para
-eso, lo relevante es el historial real del Apertura 2026 en Supabase
-(predicciones hechas ANTES de conocer el resultado).
+IMPORTANTE — limitación metodológica honesta, y REGLA DE USO explícita:
+el modelo actual usa FUERZA_ATAQUE/FUERZA_DEFENSA/TARJETAS_EQUIPO_LIGAMX
+que YA fueron calibradas a partir de este mismo Clausura 2026 (ver
+liga_mx_algoritmo.py) — así que este backtesting NO es una prueba "a
+ciegas" en el sentido estricto. El modelo ya "vio" estos datos agregados
+al construir sus priors, así que cualquier número de mejora que arroje
+está inflado por diseño (el modelo está parcialmente "recordando" datos
+que ya conocía, no prediciendo información nueva).
+
+REGLA: este módulo sirve ÚNICAMENTE como sanity check (¿el código corre
+sin errores? ¿las probabilidades tienen sentido? ¿el modelo le gana al
+menos a un baseline tonto, aunque sea por poco?) — NUNCA como señal para
+ajustar peso_elo, peso_altitud, peso_arbitro, peso_forma_elo, o
+cualquier otro parámetro del modelo. Ajustar esos pesos para "mejorar el
+resultado del Clausura" sería overfitting/data leakage: optimizar contra
+el examen que ya tienes las respuestas, sin mejorar la capacidad real
+de predecir partidos futuros.
+
+La ÚNICA fuente confiable para decidir si ajustar el modelo es el
+historial REAL del Apertura 2026 en Supabase (predicciones_ligamx +
+apuestas_historial_ligamx) — cada predicción ahí se guardó ANTES de
+conocer el resultado, así que es genuinamente "a ciegas". Usa
+liga_mx_supabase.calcular_brier_score(), calcular_calibracion_por_bin()
+y comparar_modelo_vs_baseline() sobre ESE historial para cualquier
+decisión de calibración real.
 """
 
 CLAUSURA_2026_PARTIDOS = [
