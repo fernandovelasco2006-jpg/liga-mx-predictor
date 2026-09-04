@@ -23,6 +23,7 @@ try:
         actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
+        comparar_modelo_vs_baseline,
         calcular_sesgo_por_equipo, guardar_jornada_completa,
     )
     SUPABASE_MODULO_DISPONIBLE = True
@@ -762,17 +763,18 @@ with tab_pred:
                         selecciones_super_parlay, super_parlay["prob_combinada"],
                         id_personalizado=f"superparlay_jornada_{resultado_jornada['jornada']}",
                     )
-                    # DIAGNÓSTICO TEMPORAL — quitar una vez confirmado que
-                    # el guardado funciona en producción. guardar_parlay_
-                    # diario() devuelve False en silencio si Supabase
-                    # rechaza la escritura (permisos RLS, columna
-                    # faltante, etc.) — sin este aviso, ese fallo era
-                    # invisible para el usuario.
-                    if not ok_guardado:
-                        st.warning(f"⚠️ Diagnóstico: guardar_parlay_diario() devolvió False para "
-                                   f"superparlay_jornada_{resultado_jornada['jornada']} — revisar Logs/RLS en Supabase.")
+                    st.session_state["ultimo_error_guardado"] = None if ok_guardado else \
+                        f"guardar_parlay_diario() devolvió False para superparlay_jornada_{resultado_jornada['jornada']}"
                 except Exception as e:
-                    st.warning(f"⚠️ Diagnóstico: excepción al guardar Super Parlay: {type(e).__name__}: {e}")
+                    # No se muestra directo al usuario (una excepción
+                    # técnica en medio de "Simular Jornada" se ve poco
+                    # profesional) — queda registrada en session_state,
+                    # visible solo en el tab ⚙️ Modelo si hace falta
+                    # diagnosticar. Bug real de este tipo ya se detectó
+                    # y corrigió una vez (parámetro id_personalizado
+                    # faltante en una versión desfasada de
+                    # liga_mx_supabase.py) gracias a exponerlo temporal.
+                    st.session_state["ultimo_error_guardado"] = f"{type(e).__name__}: {e}"
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Resultados reales
@@ -1248,6 +1250,98 @@ with tab_tabla:
 # TAB — Modelo (informativo, NO editable)
 # ─────────────────────────────────────────────────────────────────────────
 with tab_info:
+    if st.session_state.get("ultimo_error_guardado"):
+        with st.expander("🔧 Diagnóstico técnico (solo visible si algo falló al guardar)", expanded=False):
+            st.caption(f"Último error al guardar en Supabase: `{st.session_state['ultimo_error_guardado']}`")
+
+    # ── Panel de salud del modelo — resumen ejecutivo siempre visible,
+    # no escondido en un expander. Reutiliza los mismos cálculos que ya
+    # existen en el tab Apuestas Hist. (calcular_brier_score,
+    # calcular_calibracion_por_bin) — un proyecto que muestra su propia
+    # calibración con evidencia real, no solo predicciones sueltas,
+    # comunica mucho más rigor a quien lo revise. ─────────────────────
+    st.markdown("#### 📊 Salud del modelo")
+    if SUPABASE_DISPONIBLE:
+        historial_pred_salud = cargar_historial_predicciones(SUPABASE_URL, SUPABASE_KEY)
+        brier_salud = calcular_brier_score(historial_pred_salud)
+        if brier_salud["n_evaluadas"] > 0:
+            col_s1, col_s2, col_s3 = st.columns(3)
+            color_brier_salud = "#4ade80" if brier_salud["brier"] < 0.55 else ("#f0c040" if brier_salud["brier"] < 0.667 else "#f87171")
+            with col_s1:
+                st.markdown(
+                    f'<div class="metric-box"><div class="metric-val" style="color:{color_brier_salud}">'
+                    f'{brier_salud["brier"]}</div><div class="metric-lbl">Brier Score (1X2)</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with col_s2:
+                st.markdown(
+                    f'<div class="metric-box"><div class="metric-val">{brier_salud["n_evaluadas"]}</div>'
+                    f'<div class="metric-lbl">Predicciones evaluadas</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with col_s3:
+                jornada_actual_salud = detectar_jornada_actual()
+                st.markdown(
+                    f'<div class="metric-box"><div class="metric-val">{jornada_actual_salud or "—"}</div>'
+                    f'<div class="metric-lbl">Jornada actual</div></div>',
+                    unsafe_allow_html=True,
+                )
+            st.caption(
+                "Brier Score: 0 = predicciones perfectas · 0.667 = igual que tirar una moneda entre 3 "
+                "opciones. Detalle completo (por equipo, por rango de confianza) en 🎲 Apuestas Hist. "
+                "→ Auto-calibración por mercado."
+            )
+
+            # ── Comparación contra un modelo baseline (Poisson puro,
+            # sin Elo/forma/árbitro/clima) — la prueba más honesta de si
+            # toda la calibración adicional realmente mejora las
+            # predicciones. Ver liga_mx_algoritmo.simular_partido_
+            # baseline() y liga_mx_supabase.comparar_modelo_vs_
+            # baseline(). ────────────────────────────────────────────
+            comparacion = comparar_modelo_vs_baseline(historial_pred_salud)
+            if comparacion["n_evaluadas"] > 0:
+                mejora = comparacion["mejora_pct"]
+                color_mejora = "#4ade80" if mejora > 5 else ("#f0c040" if mejora > -5 else "#f87171")
+                veredicto = (
+                    "El modelo completo SÍ mejora claramente sobre el baseline simple." if mejora > 5 else
+                    "El modelo y el baseline rinden parecido — la calibración adicional aún no muestra ventaja clara." if mejora > -5 else
+                    "⚠️ El baseline simple está rindiendo MEJOR que el modelo completo con esta muestra."
+                )
+                with st.expander(f"🆚 Modelo completo vs. baseline simple (Poisson puro) — {comparacion['n_evaluadas']} partidos", expanded=False):
+                    st.caption(
+                        "El baseline usa el mismo promedio de goles de liga para CUALQUIER partido (sin "
+                        "Elo, forma real, árbitro, altitud, clima ni sesgo por equipo) — solo la ventaja de "
+                        "localía estándar. Si el modelo completo no le gana con claridad, es señal de que "
+                        "la ingeniería adicional todavía no se traduce en mejores predicciones."
+                    )
+                    cb1, cb2, cb3 = st.columns(3)
+                    with cb1:
+                        st.markdown(f'<div class="metric-box"><div class="metric-val">{comparacion["brier_modelo"]}</div>'
+                                    f'<div class="metric-lbl">Brier · Modelo completo</div></div>', unsafe_allow_html=True)
+                    with cb2:
+                        st.markdown(f'<div class="metric-box"><div class="metric-val">{comparacion["brier_baseline"]}</div>'
+                                    f'<div class="metric-lbl">Brier · Baseline simple</div></div>', unsafe_allow_html=True)
+                    with cb3:
+                        signo = "+" if mejora >= 0 else ""
+                        st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:{color_mejora}">{signo}{mejora}%</div>'
+                                    f'<div class="metric-lbl">Mejora del modelo</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="color:{color_mejora};font-size:0.8rem;margin-top:0.5rem">{veredicto}</div>', unsafe_allow_html=True)
+        else:
+            st.caption("Aún no hay suficientes partidos evaluados para calcular la calibración del modelo.")
+    else:
+        st.caption("Conecta Supabase para ver métricas de calibración real del modelo.")
+
+    n_jugados_salud = n_partidos_procesados(PARTIDOS)
+    st.markdown(
+        f'<div class="model-note">📅 <b>Datos actualizados:</b> {n_jugados_salud} partidos del Apertura 2026 '
+        f'cargados con resultado real · Árbitros: Sofascore + Transfermarkt (temporada 25/26, consultada '
+        f'31/ago/2026) + desempeño real del Apertura en vivo · Cuotas: The Odds API '
+        f'{"(conectado)" if CUOTAS_MODULO_DISPONIBLE and ODDS_API_KEY else "(no configurado)"} · '
+        f'Clima: Visual Crossing {"(conectado)" if CLIMA_MODULO_DISPONIBLE and WEATHER_API_KEY else "(no configurado)"}.</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
     st.markdown("#### ¿Cómo funciona el modelo?")
     st.markdown(f"""
 El predictor usa **simulación Monte Carlo con distribución de Poisson** — {N_SIMS_PARTIDO:,} simulaciones
