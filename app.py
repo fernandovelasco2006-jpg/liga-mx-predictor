@@ -1343,11 +1343,13 @@ with tab_info:
     with st.expander("🧪 Backtesting formal — Clausura 2026 completo (153 partidos)", expanded=False):
         st.caption(
             "Corre el modelo actual contra los 153 partidos YA CONOCIDOS del Clausura 2026 completo — "
-            "una muestra 30 veces más grande que el historial real del Apertura. Nota metodológica: el "
-            "modelo ya usa datos agregados de este mismo torneo (FUERZA_ATAQUE/FUERZA_DEFENSA) para "
-            "calibrar sus valores base, así que esto mide consistencia interna del modelo, no su "
-            "capacidad de predecir partidos que nunca ha visto — para eso, lo relevante es el historial "
-            "real del Apertura 2026 de arriba."
+            "una muestra 30 veces más grande que el historial real del Apertura. ⚠️ Nota metodológica: el "
+            "modelo ya usa datos agregados de este mismo torneo (FUERZA_ATAQUE/FUERZA_DEFENSA/tarjetas) "
+            "para calibrar sus valores base, así que este resultado está inflado por diseño y sirve SOLO "
+            "como sanity check (¿el modelo funciona? ¿supera al menos a un baseline tonto?) — nunca como "
+            "señal para ajustar pesos del modelo. Para decisiones reales de calibración, la única fuente "
+            "confiable es el historial del Apertura 2026 de arriba, donde cada predicción se hizo antes "
+            "de conocer el resultado."
         )
         if st.button("🧪 Correr backtesting (153 partidos)", key="btn_backtesting"):
             with st.spinner("Simulando 153 partidos del Clausura 2026..."):
