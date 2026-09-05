@@ -414,6 +414,29 @@ if partidos_hoy_global:
                     f'<b style="color:#e5007d">{parlay_hoy["prob_combinada"]:.1f}%</b></div></div>',
                     unsafe_allow_html=True,
                 )
+                if SUPABASE_DISPONIBLE:
+                    try:
+                        # Guarda también el parlay individual de ESTE
+                        # partido (ej. "Over 8.5 córners + Over 1.5
+                        # goles" de Atlético San Luis-Guadalajara) —
+                        # antes solo se guardaba el Parlay del Día
+                        # combinado y el Super Parlay de Jornada. Id
+                        # único por partido+fecha para no chocar con
+                        # esos otros ni entre partidos distintos del
+                        # mismo día.
+                        selecciones_parlay_partido = [
+                            {"local": local, "visitante": visit, "jornada": jornada,
+                             "mercado": a["mercado"], "seleccion": a["seleccion"].replace("✅ ", ""),
+                             "confianza": a["confianza"]}
+                            for a in parlay_hoy["selecciones"]
+                        ]
+                        guardar_parlay_diario(
+                            SUPABASE_URL, SUPABASE_KEY, hoy,
+                            selecciones_parlay_partido, parlay_hoy["prob_combinada"],
+                            id_personalizado=f"parlay_partido_{local}_{visit}_{hoy}".replace(" ", "_"),
+                        )
+                    except Exception as e:
+                        st.session_state["ultimo_error_guardado"] = f"{type(e).__name__}: {e}"
         if total_apuestas_hoy == 0:
             st.info("Hoy no hay señales de confianza ALTA. El modelo es conservador.")
         st.caption("⚠️ Solo informativo · Apuesta responsablemente")
@@ -855,6 +878,25 @@ with tab_apuestas:
                         f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
                         unsafe_allow_html=True,
                     )
+                    if SUPABASE_DISPONIBLE:
+                        try:
+                            # Mismo id que en el panel de arriba de la
+                            # página (mismo partido, misma fecha) — si
+                            # ya se guardó ahí, esto actualiza en vez de
+                            # duplicar (ver guardar_parlay_diario()).
+                            selecciones_parlay_tab = [
+                                {"local": local, "visitante": visit, "jornada": jornada,
+                                 "mercado": a["mercado"], "seleccion": a["seleccion"].replace("✅ ", ""),
+                                 "confianza": a["confianza"]}
+                                for a in parlay["selecciones"]
+                            ]
+                            guardar_parlay_diario(
+                                SUPABASE_URL, SUPABASE_KEY, hoy,
+                                selecciones_parlay_tab, parlay["prob_combinada"],
+                                id_personalizado=f"parlay_partido_{local}_{visit}_{hoy}".replace(" ", "_"),
+                            )
+                        except Exception as e:
+                            st.session_state["ultimo_error_guardado"] = f"{type(e).__name__}: {e}"
     st.markdown('<div style="font-size:0.65rem;color:#4a5568;padding-top:1rem;border-top:1px solid #1f4a2e;'
                 'margin-top:1rem">⚠️ Solo informativo · Apuesta responsablemente</div>', unsafe_allow_html=True)
 
@@ -1116,8 +1158,13 @@ with tab_parlays:
                 # "parlay_YYYY-MM-DD") — mismo tipo de fila en la misma
                 # tabla, pero conviene que el usuario sepa cuál es cuál
                 # en la lista en vez de verlos idénticos.
-                es_super_parlay_jornada = str(parlay.get("id", "")).startswith("superparlay_jornada_")
-                etiqueta_tipo = "🏆 Super Parlay de Jornada" if es_super_parlay_jornada else "📅 Parlay del Día"
+                id_parlay = str(parlay.get("id", ""))
+                if id_parlay.startswith("superparlay_jornada_"):
+                    etiqueta_tipo = "🏆 Super Parlay de Jornada"
+                elif id_parlay.startswith("parlay_partido_"):
+                    etiqueta_tipo = "⚽ Parlay de Partido"
+                else:
+                    etiqueta_tipo = "📅 Parlay del Día"
 
                 patas_html = "".join(
                     f'<div style="font-size:0.72rem;color:#e8f0ea;margin-top:0.15rem">'
