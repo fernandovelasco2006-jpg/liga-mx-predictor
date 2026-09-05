@@ -1232,40 +1232,103 @@ with tab_parlays:
                         f'<div class="metric-lbl">❌ Perdidas</div></div>', unsafe_allow_html=True)
 
         with st.expander("➕ Registrar nueva apuesta real", expanded=False):
-            with st.form("form_apuesta_real"):
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    casa_form = st.text_input("Casa de apuestas", value="PlayDoit")
-                    tipo_form = st.selectbox("Tipo", ["individual", "sgp", "parlay"])
-                    momio_form = st.number_input("Momio (cuota decimal)", min_value=1.01, value=1.50, step=0.01)
-                with col_f2:
-                    monto_form = st.number_input("Monto apostado (MXN)", min_value=1.0, value=20.0, step=1.0)
-                    id_boleto_form = st.text_input("ID del boleto (opcional)")
-                descripcion_form = st.text_area(
-                    "Descripción de la(s) selección(es) — una por línea, ej.: "
-                    "Atlas vs Atlante | Empate Sin Apuesta | Gana Atlas"
-                )
-                if st.form_submit_button("Guardar apuesta"):
-                    lineas_sel = [l.strip() for l in descripcion_form.split("\n") if l.strip()]
-                    selecciones_form = []
-                    for linea in lineas_sel:
-                        partes = [p.strip() for p in linea.split("|")]
-                        if len(partes) >= 3:
-                            selecciones_form.append({"partido": partes[0], "mercado": partes[1], "seleccion": partes[2]})
-                        else:
-                            selecciones_form.append({"partido": linea, "mercado": "", "seleccion": ""})
-                    if selecciones_form:
-                        nuevo_id = guardar_apuesta_real(
-                            SUPABASE_URL, SUPABASE_KEY, casa_form, hoy, tipo_form,
-                            selecciones_form, momio_form, monto_form,
-                            id_boleto_casa=id_boleto_form or None,
-                        )
-                        if nuevo_id:
-                            st.success(f"✅ Apuesta registrada (id: {nuevo_id})")
-                        else:
-                            st.error("No se pudo guardar — revisa la conexión a Supabase.")
+            modo_registro = st.radio(
+                "¿Qué quieres registrar?", ["Apuesta individual", "Parlay"],
+                horizontal=True, key="modo_registro_apuesta_real",
+            )
+
+            if modo_registro == "Apuesta individual":
+                historial_ap_real = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
+                opciones_ap = {
+                    f'{a.get("local","")} vs {a.get("visitante","")} · {a.get("mercado","")} → '
+                    f'{a.get("seleccion","")} (J{a.get("jornada","?")})': a
+                    for a in historial_ap_real
+                }
+                if not opciones_ap:
+                    st.caption("Aún no hay apuestas sugeridas guardadas en el historial.")
+                else:
+                    seleccion_texto = st.selectbox("Elige la apuesta que colocaste", list(opciones_ap.keys()),
+                                                    key="select_apuesta_individual")
+                    ap_elegida = opciones_ap[seleccion_texto]
+                    with st.form("form_apuesta_real_individual"):
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            casa_form = st.text_input("Casa de apuestas", value="PlayDoit")
+                            momio_form = st.number_input("Momio (cuota decimal)", min_value=1.01, value=1.50, step=0.01)
+                        with col_f2:
+                            monto_form = st.number_input("Monto apostado (MXN)", min_value=1.0, value=20.0, step=1.0)
+                            id_boleto_form = st.text_input("ID del boleto (opcional)")
+                        if st.form_submit_button("Guardar apuesta"):
+                            selecciones_form = [{
+                                "partido": f'{ap_elegida.get("local","")} vs {ap_elegida.get("visitante","")}',
+                                "mercado": ap_elegida.get("mercado", ""),
+                                "seleccion": ap_elegida.get("seleccion", ""),
+                            }]
+                            nuevo_id = guardar_apuesta_real(
+                                SUPABASE_URL, SUPABASE_KEY, casa_form, hoy, "individual",
+                                selecciones_form, momio_form, monto_form,
+                                id_boleto_casa=id_boleto_form or None,
+                            )
+                            if nuevo_id:
+                                st.success(f"✅ Apuesta registrada (id: {nuevo_id})")
+                            else:
+                                st.error("No se pudo guardar — revisa la conexión a Supabase.")
+
+            else:  # Parlay
+                historial_parlays_real = cargar_historial_parlays(SUPABASE_URL, SUPABASE_KEY)
+                opciones_parlay = {}
+                for p in historial_parlays_real:
+                    pid = str(p.get("id", ""))
+                    if pid.startswith("superparlay_jornada_"):
+                        etiqueta_p = f'🏆 Super Parlay Jornada {pid.replace("superparlay_jornada_", "")}'
+                    elif pid.startswith("parlay_partido_"):
+                        etiqueta_p = f'⚽ Parlay de partido · {p.get("fecha","")}'
                     else:
-                        st.warning("Agrega al menos una selección antes de guardar.")
+                        etiqueta_p = f'📅 Parlay del Día · {p.get("fecha","")}'
+                    etiqueta_p += f' — {p.get("n_partidos", "?")} entradas ({p.get("prob_combinada", 0):.1f}%)'
+                    opciones_parlay[etiqueta_p] = p
+
+                if not opciones_parlay:
+                    st.caption("Aún no hay parlays guardados en el historial.")
+                else:
+                    seleccion_parlay_texto = st.selectbox("Elige el parlay que colocaste", list(opciones_parlay.keys()),
+                                                           key="select_parlay_real")
+                    parlay_elegido = opciones_parlay[seleccion_parlay_texto]
+                    selecciones_preview = parlay_elegido.get("selecciones", [])
+                    if isinstance(selecciones_preview, str):
+                        import json as _json
+                        try:
+                            selecciones_preview = _json.loads(selecciones_preview)
+                        except Exception:
+                            selecciones_preview = []
+                    with st.container():
+                        for s in selecciones_preview:
+                            st.caption(f'• {s.get("local","")} vs {s.get("visitante","")} — {s.get("mercado","")} → {s.get("seleccion","")}')
+
+                    with st.form("form_apuesta_real_parlay"):
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            casa_form_p = st.text_input("Casa de apuestas", value="PlayDoit")
+                            momio_form_p = st.number_input("Momio (cuota decimal)", min_value=1.01, value=2.00, step=0.01)
+                        with col_f2:
+                            monto_form_p = st.number_input("Monto apostado (MXN)", min_value=1.0, value=20.0, step=1.0)
+                            id_boleto_form_p = st.text_input("ID del boleto (opcional)")
+                        if st.form_submit_button("Guardar parlay"):
+                            tipo_p = "sgp" if str(parlay_elegido.get("id", "")).startswith("parlay_partido_") else "parlay"
+                            selecciones_form_p = [
+                                {"partido": f'{s.get("local","")} vs {s.get("visitante","")}',
+                                 "mercado": s.get("mercado", ""), "seleccion": s.get("seleccion", "")}
+                                for s in selecciones_preview
+                            ]
+                            nuevo_id_p = guardar_apuesta_real(
+                                SUPABASE_URL, SUPABASE_KEY, casa_form_p, hoy, tipo_p,
+                                selecciones_form_p, momio_form_p, monto_form_p,
+                                id_boleto_casa=id_boleto_form_p or None,
+                            )
+                            if nuevo_id_p:
+                                st.success(f"✅ Parlay registrado (id: {nuevo_id_p})")
+                            else:
+                                st.error("No se pudo guardar — revisa la conexión a Supabase.")
 
         if apuestas_reales:
             st.markdown("##### Historial de apuestas reales")
