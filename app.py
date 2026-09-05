@@ -23,6 +23,7 @@ try:
         actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
         guardar_apuesta_real, cargar_apuestas_reales, calcular_roi_real, actualizar_resultado_apuesta_real,
+        eliminar_apuesta_real,
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
         comparar_modelo_vs_baseline,
         calcular_sesgo_por_equipo, guardar_jornada_completa,
@@ -1355,7 +1356,7 @@ with tab_parlays:
                 )
 
                 if resultado_a == "pendiente":
-                    col_r1, col_r2 = st.columns(2)
+                    col_r1, col_r2, col_r3 = st.columns(3)
                     with col_r1:
                         if st.button("✅ Marcar ganada", key=f"gano_{a['id']}"):
                             actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], True,
@@ -1366,6 +1367,18 @@ with tab_parlays:
                             actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], False,
                                                                float(a["momio"]), float(a["monto_apostado"]))
                             st.rerun()
+                    with col_r3:
+                        if st.button("🗑️ Eliminar", key=f"del_{a['id']}"):
+                            eliminar_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"])
+                            st.rerun()
+                else:
+                    # Ya resuelta (ganada/perdida) — solo se ofrece
+                    # eliminar, por si se dio de alta mal (casa, momio o
+                    # selección equivocada) y hace falta corregirlo
+                    # borrando y volviendo a registrar.
+                    if st.button("🗑️ Eliminar (registrada por error)", key=f"del_{a['id']}"):
+                        eliminar_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"])
+                        st.rerun()
         else:
             st.caption("Aún no hay apuestas reales registradas.")
 
