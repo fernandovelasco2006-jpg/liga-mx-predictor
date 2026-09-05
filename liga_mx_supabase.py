@@ -779,6 +779,157 @@ def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, pro
     return False
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# APUESTAS REALES — a diferencia de apuestas_historial_ligamx (que
+# registra TODAS las sugerencias del modelo, se hayan apostado o no),
+# esta tabla es un registro MANUAL de las apuestas que de verdad se
+# colocaron con dinero real en una casa externa (PlayDoit, Caliente,
+# etc.), siguiendo una recomendación del modelo. Es la única fuente
+# capaz de responder la pregunta que realmente importa al final:
+# "¿seguir las recomendaciones del modelo da ganancia real en dinero?"
+# — el Brier Score y accuracy miden calibración estadística, no ROI.
+#
+# Requiere la tabla apuestas_reales_ligamx (ver
+# crear_tabla_apuestas_reales.sql, correr una vez en el SQL Editor de
+# Supabase antes de usar estas funciones).
+# ─────────────────────────────────────────────────────────────────────────
+def guardar_apuesta_real(url: str, key: str, casa: str, fecha: str, tipo: str,
+                          selecciones: list, momio: float, monto_apostado: float,
+                          id_boleto_casa: str = None) -> str:
+    """
+    Registra una apuesta real colocada con dinero real. Genera su
+    propio id interno (no depende del id_boleto_casa, que puede no
+    estar disponible o repetirse entre casas distintas).
+
+    tipo: "individual" (una sola selección), "sgp" (Same Game Parlay —
+    2+ mercados del MISMO partido combinados en una cuota), o "parlay"
+    (selecciones de partidos distintos combinadas).
+
+    selecciones: lista de dicts {"local":..., "visitante":...,
+    "mercado":..., "seleccion":...} — una entrada por cada pata real
+    del boleto (para "individual" es una lista de un solo elemento).
+
+    Devuelve el id generado (string) si se guardó bien, o None si falló
+    — a diferencia de otras funciones de este módulo que devuelven
+    bool, aquí se necesita el id de vuelta para poder marcar el
+    resultado después con actualizar_resultado_apuesta_real().
+    """
+    if not (url and key) or not selecciones:
+        return None
+    ahora = datetime.now(TZ_MX)
+    apuesta_id = f"real_{casa}_{fecha}_{ahora.strftime('%H%M%S')}".replace(" ", "_")
+    payload = {
+        "id": apuesta_id,
+        "id_boleto_casa": id_boleto_casa,
+        "casa": casa,
+        "fecha": fecha,
+        "tipo": tipo,
+        "selecciones": selecciones,
+        "momio": momio,
+        "monto_apostado": monto_apostado,
+        "resultado": "pendiente",
+        "creado_en": ahora.strftime("%Y-%m-%d %H:%M"),
+    }
+    try:
+        resp = requests.post(f"{url}/rest/v1/apuestas_reales_ligamx", headers=_headers(key), json=payload, timeout=5)
+        return apuesta_id if resp.status_code in (200, 201) else None
+    except Exception:
+        return None
+
+
+def actualizar_resultado_apuesta_real(url: str, key: str, apuesta_id: str, gano: bool,
+                                       momio: float, monto_apostado: float) -> bool:
+    """
+    Marca una apuesta real como ganada o perdida, y calcula la ganancia
+    neta: (monto*momio - monto) si ganó, -monto si perdió. Se llama
+    manualmente (no hay forma automática de saber si un boleto de una
+    casa externa ganó — a diferencia de apuestas_historial_ligamx, que
+    sí se resuelve solo contra PARTIDOS).
+    """
+    if not (url and key):
+        return False
+    ganancia_neta = round(monto_apostado * (momio - 1), 2) if gano else round(-monto_apostado, 2)
+    try:
+        resp = requests.patch(
+            f"{url}/rest/v1/apuestas_reales_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"id": f"eq.{apuesta_id}"},
+            json={"resultado": "ganado" if gano else "perdido", "ganancia_neta": ganancia_neta},
+            timeout=5,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def cargar_apuestas_reales(url: str, key: str) -> list:
+    """Trae todas las apuestas reales registradas, más recientes primero."""
+    if not (url and key):
+        return []
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/apuestas_reales_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "*", "order": "creado_en.desc", "limit": 500},
+            timeout=10,
+        )
+        return resp.json() if resp.status_code == 200 else []
+    except Exception:
+        return []
+
+
+def calcular_roi_real(apuestas_reales: list) -> dict:
+    """
+    Calcula el ROI real (retorno sobre inversión) de las apuestas
+    colocadas con dinero real — la métrica que de verdad importa: no
+    "¿el modelo predice bien?" sino "¿seguir sus recomendaciones da
+    ganancia?". Solo cuenta apuestas ya resueltas (resultado != None y
+    != "pendiente").
+
+    Devuelve:
+        {"total_apostado": float, "ganancia_neta_total": float,
+         "roi_pct": float, "n_ganadas": int, "n_perdidas": int,
+         "n_pendientes": int}
+    roi_pct = ganancia_neta_total / total_apostado * 100 — positivo
+    significa ganancia real, negativo significa pérdida real.
+    """
+    resueltas = [a for a in apuestas_reales if a.get("resultado") in ("ganado", "perdido")]
+    pendientes = [a for a in apuestas_reales if a.get("resultado") == "pendiente"]
+
+    if not resueltas:
+        return {"total_apostado": 0.0, "ganancia_neta_total": 0.0, "roi_pct": None,
+                "n_ganadas": 0, "n_perdidas": 0, "n_pendientes": len(pendientes)}
+
+    total_apostado = 0.0
+    ganancia_neta_total = 0.0
+    n_ganadas = 0
+    n_perdidas = 0
+
+    for a in resueltas:
+        try:
+            monto = float(a["monto_apostado"])
+            ganancia = float(a.get("ganancia_neta", 0) or 0)
+        except (TypeError, ValueError, KeyError):
+            continue
+        total_apostado += monto
+        ganancia_neta_total += ganancia
+        if a["resultado"] == "ganado":
+            n_ganadas += 1
+        else:
+            n_perdidas += 1
+
+    roi_pct = (ganancia_neta_total / total_apostado * 100) if total_apostado > 0 else 0.0
+
+    return {
+        "total_apostado": round(total_apostado, 2),
+        "ganancia_neta_total": round(ganancia_neta_total, 2),
+        "roi_pct": round(roi_pct, 1),
+        "n_ganadas": n_ganadas,
+        "n_perdidas": n_perdidas,
+        "n_pendientes": len(pendientes),
+    }
+
+
 def cargar_historial_parlays(url: str, key: str) -> list:
     """Trae todos los parlays diarios guardados, más recientes primero."""
     if not (url and key):
