@@ -22,6 +22,7 @@ try:
         calcular_stats_apuestas, calcular_stats_por_mercado, calcular_mercados_suspendidos,
         actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
+        guardar_apuesta_real, cargar_apuestas_reales, calcular_roi_real, actualizar_resultado_apuesta_real,
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
         comparar_modelo_vs_baseline,
         calcular_sesgo_por_equipo, guardar_jornada_completa,
@@ -1191,6 +1192,119 @@ with tab_parlays:
             '"pendientes" hasta que agregues el dato real a DATOS_REALES_LIGAMX.</div>',
             unsafe_allow_html=True,
         )
+
+    # ─────────────────────────────────────────────────────────────────
+    # 💵 APUESTAS REALES / ROI — a diferencia de todo lo anterior en
+    # este tab (que mide si el MODELO predice bien), esta sección
+    # registra apuestas colocadas con DINERO REAL en una casa externa
+    # (PlayDoit, etc.) y mide si SEGUIR las recomendaciones da ganancia
+    # real — la pregunta que en realidad importa al final del día.
+    # Requiere la tabla apuestas_reales_ligamx (ver
+    # crear_tabla_apuestas_reales.sql). ────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 💵 Apuestas Reales — ROI")
+    st.caption(
+        "Registro manual de apuestas colocadas con DINERO REAL en una casa externa, siguiendo "
+        "recomendaciones del modelo — mide ganancia/pérdida real, no solo si el modelo acertó "
+        "la probabilidad."
+    )
+
+    if not SUPABASE_DISPONIBLE:
+        st.warning("⚠️ Conecta Supabase para registrar y trackear apuestas reales.")
+    else:
+        apuestas_reales = cargar_apuestas_reales(SUPABASE_URL, SUPABASE_KEY)
+        roi = calcular_roi_real(apuestas_reales)
+
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        color_roi = "#4ade80" if (roi["roi_pct"] or 0) > 0 else ("#f87171" if roi["roi_pct"] is not None else "#8fbfa0")
+        with rc1:
+            texto_roi = f"{roi['roi_pct']:+.1f}%" if roi["roi_pct"] is not None else "—"
+            st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:{color_roi}">{texto_roi}</div>'
+                        f'<div class="metric-lbl">ROI real</div></div>', unsafe_allow_html=True)
+        with rc2:
+            st.markdown(f'<div class="metric-box"><div class="metric-val">${roi["ganancia_neta_total"]:.0f}</div>'
+                        f'<div class="metric-lbl">Ganancia neta (MXN)</div></div>', unsafe_allow_html=True)
+        with rc3:
+            st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#4ade80">{roi["n_ganadas"]}</div>'
+                        f'<div class="metric-lbl">✅ Ganadas</div></div>', unsafe_allow_html=True)
+        with rc4:
+            st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#f87171">{roi["n_perdidas"]}</div>'
+                        f'<div class="metric-lbl">❌ Perdidas</div></div>', unsafe_allow_html=True)
+
+        with st.expander("➕ Registrar nueva apuesta real", expanded=False):
+            with st.form("form_apuesta_real"):
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    casa_form = st.text_input("Casa de apuestas", value="PlayDoit")
+                    tipo_form = st.selectbox("Tipo", ["individual", "sgp", "parlay"])
+                    momio_form = st.number_input("Momio (cuota decimal)", min_value=1.01, value=1.50, step=0.01)
+                with col_f2:
+                    monto_form = st.number_input("Monto apostado (MXN)", min_value=1.0, value=20.0, step=1.0)
+                    id_boleto_form = st.text_input("ID del boleto (opcional)")
+                descripcion_form = st.text_area(
+                    "Descripción de la(s) selección(es) — una por línea, ej.: "
+                    "Atlas vs Atlante | Empate Sin Apuesta | Gana Atlas"
+                )
+                if st.form_submit_button("Guardar apuesta"):
+                    lineas_sel = [l.strip() for l in descripcion_form.split("\n") if l.strip()]
+                    selecciones_form = []
+                    for linea in lineas_sel:
+                        partes = [p.strip() for p in linea.split("|")]
+                        if len(partes) >= 3:
+                            selecciones_form.append({"partido": partes[0], "mercado": partes[1], "seleccion": partes[2]})
+                        else:
+                            selecciones_form.append({"partido": linea, "mercado": "", "seleccion": ""})
+                    if selecciones_form:
+                        nuevo_id = guardar_apuesta_real(
+                            SUPABASE_URL, SUPABASE_KEY, casa_form, hoy, tipo_form,
+                            selecciones_form, momio_form, monto_form,
+                            id_boleto_casa=id_boleto_form or None,
+                        )
+                        if nuevo_id:
+                            st.success(f"✅ Apuesta registrada (id: {nuevo_id})")
+                        else:
+                            st.error("No se pudo guardar — revisa la conexión a Supabase.")
+                    else:
+                        st.warning("Agrega al menos una selección antes de guardar.")
+
+        if apuestas_reales:
+            st.markdown("##### Historial de apuestas reales")
+            for a in apuestas_reales:
+                resultado_a = a.get("resultado", "pendiente")
+                icono_a = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳"}.get(resultado_a, "⏳")
+                color_a = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827"}.get(resultado_a, "#111827")
+                selecciones_a = a.get("selecciones", [])
+                if isinstance(selecciones_a, str):
+                    import json as _json
+                    try:
+                        selecciones_a = _json.loads(selecciones_a)
+                    except Exception:
+                        selecciones_a = []
+                texto_sel = " + ".join(
+                    f'{s.get("partido","")}: {s.get("mercado","")} → {s.get("seleccion","")}'
+                    for s in selecciones_a
+                )
+                st.markdown(
+                    f'<div style="background:{color_a};border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.4rem;font-size:0.8rem">'
+                    f'{icono_a} <b>{a.get("casa","")}</b> · {a.get("fecha","")} · momio {a.get("momio","")} · ${a.get("monto_apostado","")} MXN'
+                    f'<div style="color:#8fbfa0;font-size:0.72rem;margin-top:0.2rem">{texto_sel}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+                if resultado_a == "pendiente":
+                    col_r1, col_r2 = st.columns(2)
+                    with col_r1:
+                        if st.button("✅ Marcar ganada", key=f"gano_{a['id']}"):
+                            actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], True,
+                                                               float(a["momio"]), float(a["monto_apostado"]))
+                            st.rerun()
+                    with col_r2:
+                        if st.button("❌ Marcar perdida", key=f"perdio_{a['id']}"):
+                            actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], False,
+                                                               float(a["momio"]), float(a["monto_apostado"]))
+                            st.rerun()
+        else:
+            st.caption("Aún no hay apuestas reales registradas.")
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Tabla / Temporada (posiciones actuales + simular todo el torneo)
