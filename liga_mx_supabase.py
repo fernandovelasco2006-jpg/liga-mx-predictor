@@ -34,8 +34,26 @@ def _id_prediccion(local: str, visit: str, jornada: int) -> str:
     return f"pred_{local}_{visit}_J{jornada}".replace(" ", "_")
 
 
-def _id_apuesta(local: str, visit: str, jornada: int, indice: int) -> str:
-    return f"ap_{local}_{visit}_{indice}_J{jornada}".replace(" ", "_")
+def _id_apuesta(local: str, visit: str, jornada: int, mercado: str, seleccion: str) -> str:
+    """
+    Id determinístico basado en el CONTENIDO real de la apuesta
+    (mercado + selección), no en su posición dentro de la lista de
+    sugerencias de ese partido. Antes se usaba un índice de posición
+    (_id_apuesta(local, visit, jornada, i)) — eso causaba que, si el
+    mismo partido se simulaba en momentos distintos y el orden de
+    mercados sugeridos cambiaba (ej. "Doble Oportunidad" en la
+    posición 0 hoy, "Empate Sin Apuesta" en la posición 0 mañana), la
+    fila vieja se SOBRESCRIBÍA en Supabase con la nueva — perdiendo
+    apuestas reales del historial sin ningún aviso. Con el id basado en
+    contenido, cada combinación única (partido, jornada, mercado,
+    selección) tiene su propia fila estable; solo se actualiza a sí
+    misma si se vuelve a generar exactamente igual (ej. al reabrir la
+    app el mismo día), nunca pisa una fila de un mercado distinto.
+    """
+    import hashlib
+    contenido = f"{mercado}|{seleccion}".lower().strip()
+    hash_corto = hashlib.md5(contenido.encode()).hexdigest()[:8]
+    return f"ap_{local}_{visit}_J{jornada}_{hash_corto}".replace(" ", "_")
 
 
 def guardar_prediccion(url: str, key: str, local: str, visit: str, jornada: int,
@@ -107,7 +125,7 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
             acierto = evaluar_acierto(s, local, visit, gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
         payload = {
-            "id": _id_apuesta(local, visit, jornada, i),
+            "id": _id_apuesta(local, visit, jornada, s["mercado"], s["seleccion"]),
             "local": local, "visitante": visit, "jornada": jornada,
             "fecha_partido": ahora.strftime("%Y-%m-%d"),
             "guardada_en": ahora.strftime("%Y-%m-%d %H:%M"),
@@ -858,6 +876,28 @@ def actualizar_resultado_apuesta_real(url: str, key: str, apuesta_id: str, gano:
             timeout=5,
         )
         return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def eliminar_apuesta_real(url: str, key: str, apuesta_id: str) -> bool:
+    """
+    Borra por completo una apuesta real registrada por error (casa
+    equivocada, momio mal tecleado, selección incorrecta, etc.) —
+    a diferencia del resto de este módulo, aquí SÍ tiene sentido un
+    delete real: es un registro manual del usuario, no una predicción
+    del modelo que deba conservarse para auditoría.
+    """
+    if not (url and key):
+        return False
+    try:
+        resp = requests.delete(
+            f"{url}/rest/v1/apuestas_reales_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"id": f"eq.{apuesta_id}"},
+            timeout=5,
+        )
+        return resp.status_code in (200, 204)
     except Exception:
         return False
 
