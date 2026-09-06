@@ -970,6 +970,88 @@ def calcular_roi_real(apuestas_reales: list) -> dict:
     }
 
 
+def calcular_ev_apuestas_reales(apuestas_reales: list) -> list:
+    """
+    Para cada apuesta real registrada, compara la probabilidad IMPLÍCITA
+    del momio real de la casa (1/momio) contra la confianza que el
+    modelo le había asignado cuando generó la sugerencia (guardada en
+    cada selección al momento de registrar la apuesta, ver
+    guardar_apuesta_real() / app.py) — mismo cálculo de Expected Value
+    que liga_mx_cuotas.calcular_value_bet(), pero con tus momios reales
+    de la casa donde de verdad apostaste, en vez de los que trae The
+    Odds API.
+
+    Para boletos de una sola pata (individual), el EV es directo. Para
+    parlays/SGP (2+ patas), se calcula:
+      - prob_modelo_combinada = producto de las confianzas individuales
+        de cada pata (asumiendo independencia, mismo criterio que
+        armar_parlay()/armar_super_parlay_jornada())
+      - EV = (prob_modelo_combinada × momio_del_boleto) - 1
+    Esto responde: "¿el momio que me dio la casa por TODO el parlay es
+    mejor o peor de lo que el modelo cree que debería pagar?"
+
+    Solo procesa apuestas donde CADA pata tiene su "confianza" guardada
+    (ver nota en guardar_apuesta_real) — apuestas registradas antes de
+    este cambio, sin ese dato, se omiten con "ev_pct": None en vez de
+    inventar un valor.
+
+    Devuelve una lista (mismo orden que la entrada) de dicts:
+        {"id": str, "prob_modelo_pct": float | None, "prob_implicita_pct": float,
+         "ev_pct": float | None, "tiene_valor": bool}
+    """
+    resultado = []
+    for a in apuestas_reales:
+        selecciones = a.get("selecciones", [])
+        if isinstance(selecciones, str):
+            import json as _json
+            try:
+                selecciones = _json.loads(selecciones)
+            except Exception:
+                selecciones = []
+
+        try:
+            momio = float(a.get("momio"))
+        except (TypeError, ValueError):
+            resultado.append({"id": a.get("id"), "prob_modelo_pct": None, "prob_implicita_pct": None,
+                               "ev_pct": None, "tiene_valor": False})
+            continue
+
+        prob_implicita_pct = round(1.0 / momio * 100, 1) if momio > 0 else None
+
+        confianzas = []
+        for s in selecciones:
+            c = s.get("confianza")
+            if c is None:
+                confianzas = None
+                break
+            try:
+                confianzas.append(float(c))
+            except (TypeError, ValueError):
+                confianzas = None
+                break
+
+        if not confianzas:
+            resultado.append({"id": a.get("id"), "prob_modelo_pct": None,
+                               "prob_implicita_pct": prob_implicita_pct, "ev_pct": None, "tiene_valor": False})
+            continue
+
+        prob_modelo_combinada = 1.0
+        for c in confianzas:
+            prob_modelo_combinada *= c / 100.0
+        prob_modelo_pct = round(prob_modelo_combinada * 100, 1)
+
+        ev_pct = round((prob_modelo_combinada * momio - 1.0) * 100, 1)
+        resultado.append({
+            "id": a.get("id"),
+            "prob_modelo_pct": prob_modelo_pct,
+            "prob_implicita_pct": prob_implicita_pct,
+            "ev_pct": ev_pct,
+            "tiene_valor": ev_pct > 5.0,  # mismo umbral que liga_mx_cuotas.UMBRAL_VALUE_EV
+        })
+
+    return resultado
+
+
 def cargar_historial_parlays(url: str, key: str) -> list:
     """Trae todos los parlays diarios guardados, más recientes primero."""
     if not (url and key):
@@ -1149,6 +1231,112 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
         except Exception:
             continue
     return actualizados
+
+
+def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: list) -> int:
+    """
+    Resuelve automáticamente las apuestas reales pendientes (dinero
+    real, ver guardar_apuesta_real()) en cuanto TODOS los partidos que
+    involucran quedan con resultado real cargado — mismo patrón que
+    actualizar_parlays_pendientes(), pero además calcula ganancia_neta
+    al resolver (positiva si ganó: monto*(momio-1); negativa si perdió:
+    -monto), que parlays_historial_ligamx no necesita porque no trackea
+    dinero real.
+
+    Para que una apuesta real "gane", TODAS sus selecciones deben
+    acertar (individual = 1 selección, SGP/parlay = 2+) — mismo
+    criterio que cualquier boleto de casa de apuestas real. Si falta el
+    resultado de algún partido involucrado, o falta el dato real de
+    tarjetas/córners para evaluar alguna selección, la apuesta se queda
+    pendiente (no se resuelve a medias).
+
+    LIMITACIÓN CONOCIDA — reembolsos dentro de un parlay: si una
+    selección es "Empate Sin Apuesta (DNB)" y ESE partido específico
+    terminó en empate, evaluar_acierto() devuelve None (se reembolsa esa
+    pata, no cuenta como acierto ni fallo) — correcto para un boleto de
+    una sola pata. Pero dentro de un parlay/SGP de varias patas, una
+    casa real recalcularía el momio del boleto completo quitando esa
+    pata reembolsada (ej. un parlay de 3 patas con 1 reembolsada se
+    resuelve como parlay de 2). Esta función NO simula ese recálculo:
+    si CUALQUIER pata queda en None (ninguna en False), el boleto
+    completo se queda "pendiente" indefinidamente en vez de resolverse
+    con el momio ajustado — hay que resolverlo a mano en ese caso
+    específico (poco frecuente: solo aplica a mercados DNB/Draw No Bet
+    dentro de un parlay cuando ese partido termina en empate).
+
+    Requiere que cada selección tenga "local"/"visitante" guardados por
+    separado (no solo el texto combinado "partido") — ver app.py,
+    guardar_apuesta_real(). Apuestas registradas ANTES de ese cambio no
+    tienen ese campo y se omiten silenciosamente (quedan pendientes
+    hasta que se borren y se vuelvan a registrar).
+    """
+    if not (url and key):
+        return 0
+    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+
+    try:
+        resp = requests.get(
+            f"{url}/rest/v1/apuestas_reales_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"select": "*", "resultado": "eq.pendiente", "limit": 200},
+            timeout=10,
+        )
+        pendientes = resp.json() if resp.status_code == 200 else []
+    except Exception:
+        return 0
+
+    actualizadas = 0
+    for apuesta in pendientes:
+        selecciones = apuesta.get("selecciones", [])
+        if isinstance(selecciones, str):
+            import json as _json
+            try:
+                selecciones = _json.loads(selecciones)
+            except Exception:
+                continue
+
+        estados = []
+        for sel in selecciones:
+            local_sel, visit_sel = sel.get("local"), sel.get("visitante")
+            if not local_sel or not visit_sel:
+                estados.append(None)  # selección vieja sin local/visitante separados — no se puede evaluar
+                continue
+            resultado_partido = mapa_resultados.get((local_sel, visit_sel))
+            if resultado_partido is None:
+                estados.append(None)
+                continue
+            gh, ga = resultado_partido
+            datos = DATOS_REALES_LIGAMX.get(f"{local_sel}_{visit_sel}", {})
+            acierto = evaluar_acierto(sel, local_sel, visit_sel, gh, ga,
+                                       am_reales=datos.get("am"), co_reales=datos.get("co"))
+            estados.append(acierto)
+
+        if any(e is False for e in estados):
+            gano = False
+        elif estados and all(e is True for e in estados):
+            gano = True
+        else:
+            continue  # sigue pendiente (falta resultado o dato real de alguna pata)
+
+        try:
+            momio = float(apuesta["momio"])
+            monto = float(apuesta["monto_apostado"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        ganancia_neta = round(monto * (momio - 1), 2) if gano else round(-monto, 2)
+
+        try:
+            requests.patch(
+                f"{url}/rest/v1/apuestas_reales_ligamx",
+                headers=_headers(key, prefer=""),
+                params={"id": f"eq.{apuesta['id']}"},
+                json={"resultado": "ganado" if gano else "perdido", "ganancia_neta": ganancia_neta},
+                timeout=8,
+            )
+            actualizadas += 1
+        except Exception:
+            continue
+    return actualizadas
 
 
 def guardar_jornada_completa(url: str, key: str, resultado_simulacion: dict) -> dict:
