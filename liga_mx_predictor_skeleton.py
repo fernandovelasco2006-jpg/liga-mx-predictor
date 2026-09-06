@@ -117,9 +117,9 @@ PARTIDOS = [
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', (0, 2), 'Katia Itzel Garcia Mendoza'),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
-    ('Tigres', 'Necaxa', 7, 'Estadio Universitario', None, 'Karen Hernandez Andrade'),
+    ('Tigres', 'Necaxa', 7, 'Estadio Universitario', (1, 1), 'Karen Hernandez Andrade'),
     ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
-    ('Atlas', 'Atlante', 7, 'Estadio Jalisco', None, 'Ivan Antonio Lopez Sanchez'),
+    ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
     ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', None, None),
     ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', None, None),
     ('Necaxa', 'Puebla', 8, 'Estadio Victoria', None, None),
@@ -810,6 +810,8 @@ DATOS_REALES_LIGAMX = {
     # Jornada 7 — resultados y estadísticas confirmados (fuente: Sofascore)
     "FC Juarez_Pachuca":          {"am": 10, "co": 4,  "ro": 0},  # 6 JUA + 4 PAC | 1 JUA + 3 PAC
     "Atletico San Luis_Guadalajara": {"am": 1, "co": 5,  "ro": 0},  # 1 ASL + 0 GDL | 3 ASL + 2 GDL
+    "Atlas_Atlante":              {"am": 5,  "co": 4,  "ro": 0},  # 2 ATL + 3 ATE | 3 ATL + 1 ATE
+    "Tigres_Necaxa":               {"am": 5,  "co": 9,  "ro": 0},  # 3 TIG + 2 NEC | 6 TIG + 3 NEC
 }
 
 # ─────────────────────────────────────────────────────────────────────────
