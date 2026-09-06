@@ -115,7 +115,7 @@ PARTIDOS = [
     ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', (1, 3), 'Luis Enrique Santander Aguirre'),
     ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, None),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', (0, 2), 'Katia Itzel Garcia Mendoza'),
-    ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', None, 'Jorge Abraham Camacho Peregrina'),
+    ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
     ('Tigres', 'Necaxa', 7, 'Estadio Universitario', None, 'Karen Hernandez Andrade'),
     ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
@@ -809,6 +809,7 @@ DATOS_REALES_LIGAMX = {
 
     # Jornada 7 — resultados y estadísticas confirmados (fuente: Sofascore)
     "FC Juarez_Pachuca":          {"am": 10, "co": 4,  "ro": 0},  # 6 JUA + 4 PAC | 1 JUA + 3 PAC
+    "Atletico San Luis_Guadalajara": {"am": 1, "co": 5,  "ro": 0},  # 1 ASL + 0 GDL | 3 ASL + 2 GDL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
