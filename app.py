@@ -23,6 +23,7 @@ try:
         actualizar_aciertos_pendientes,
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
         guardar_apuesta_real, cargar_apuestas_reales, calcular_roi_real, actualizar_resultado_apuesta_real,
+        calcular_ev_apuestas_reales, actualizar_apuestas_reales_pendientes,
         eliminar_apuesta_real,
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
         comparar_modelo_vs_baseline,
@@ -227,6 +228,7 @@ if SUPABASE_DISPONIBLE and not st.session_state.get("aciertos_lm_actualizados"):
         try:
             actualizar_aciertos_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
             actualizar_parlays_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
+            actualizar_apuestas_reales_pendientes(SUPABASE_URL, SUPABASE_KEY, partidos_jugados)
         except Exception:
             pass
     st.session_state["aciertos_lm_actualizados"] = True
@@ -1262,8 +1264,11 @@ with tab_parlays:
                         if st.form_submit_button("Guardar apuesta"):
                             selecciones_form = [{
                                 "partido": f'{ap_elegida.get("local","")} vs {ap_elegida.get("visitante","")}',
+                                "local": ap_elegida.get("local", ""),
+                                "visitante": ap_elegida.get("visitante", ""),
                                 "mercado": ap_elegida.get("mercado", ""),
                                 "seleccion": ap_elegida.get("seleccion", ""),
+                                "confianza": ap_elegida.get("confianza"),
                             }]
                             nuevo_id = guardar_apuesta_real(
                                 SUPABASE_URL, SUPABASE_KEY, casa_form, hoy, "individual",
@@ -1318,7 +1323,9 @@ with tab_parlays:
                             tipo_p = "sgp" if str(parlay_elegido.get("id", "")).startswith("parlay_partido_") else "parlay"
                             selecciones_form_p = [
                                 {"partido": f'{s.get("local","")} vs {s.get("visitante","")}',
-                                 "mercado": s.get("mercado", ""), "seleccion": s.get("seleccion", "")}
+                                 "local": s.get("local", ""), "visitante": s.get("visitante", ""),
+                                 "mercado": s.get("mercado", ""), "seleccion": s.get("seleccion", ""),
+                                 "confianza": s.get("confianza")}
                                 for s in selecciones_preview
                             ]
                             nuevo_id_p = guardar_apuesta_real(
@@ -1333,6 +1340,7 @@ with tab_parlays:
 
         if apuestas_reales:
             st.markdown("##### Historial de apuestas reales")
+            ev_por_id = {e["id"]: e for e in calcular_ev_apuestas_reales(apuestas_reales)}
             for a in apuestas_reales:
                 resultado_a = a.get("resultado", "pendiente")
                 icono_a = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳"}.get(resultado_a, "⏳")
@@ -1348,10 +1356,29 @@ with tab_parlays:
                     f'{s.get("partido","")}: {s.get("mercado","")} → {s.get("seleccion","")}'
                     for s in selecciones_a
                 )
+
+                # Badge de EV — compara la probabilidad implícita de TU
+                # momio real contra lo que el modelo creía cuando
+                # sugirió la apuesta (ver calcular_ev_apuestas_reales()).
+                # Vacío si la apuesta se registró antes de que se
+                # guardara "confianza" por selección, o si el momio no
+                # es válido.
+                ev_info = ev_por_id.get(a.get("id"), {})
+                badge_ev = ""
+                if ev_info.get("ev_pct") is not None:
+                    color_ev = "#4ade80" if ev_info["ev_pct"] > 5 else ("#f0c040" if ev_info["ev_pct"] > -5 else "#f87171")
+                    signo_ev = "+" if ev_info["ev_pct"] >= 0 else ""
+                    badge_ev = (
+                        f'<div style="margin-top:0.3rem;font-size:0.68rem;color:{color_ev}">'
+                        f'💰 Modelo: {ev_info["prob_modelo_pct"]:.1f}% · Casa implica: {ev_info["prob_implicita_pct"]:.1f}% '
+                        f'· EV {signo_ev}{ev_info["ev_pct"]:.1f}%</div>'
+                    )
+
                 st.markdown(
                     f'<div style="background:{color_a};border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.4rem;font-size:0.8rem">'
                     f'{icono_a} <b>{a.get("casa","")}</b> · {a.get("fecha","")} · momio {a.get("momio","")} · ${a.get("monto_apostado","")} MXN'
-                    f'<div style="color:#8fbfa0;font-size:0.72rem;margin-top:0.2rem">{texto_sel}</div></div>',
+                    f'<div style="color:#8fbfa0;font-size:0.72rem;margin-top:0.2rem">{texto_sel}</div>'
+                    f'{badge_ev}</div>',
                     unsafe_allow_html=True,
                 )
 
