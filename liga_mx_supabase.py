@@ -1201,7 +1201,14 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
     """
     Revisa cada parlay pendiente: si TODAS sus patas ya tienen
     resultado real, evalúa cada una y marca el parlay completo como
-    'ganado' (si todas acertaron) o 'perdido' (si al menos una falló).
+    'ganado' (si todas acertaron), 'perdido' (si al menos una falló), o
+    'reembolsado' (si ninguna falló, pero al menos una selección
+    Empate Sin Apuesta quedó en empate — se reembolsa esa pata, mismo
+    criterio y misma limitación ya documentada en
+    actualizar_apuestas_reales_pendientes(): no se simula el recálculo
+    de momio de una casa real cuando hay reembolso mezclado con otras
+    patas acertadas dentro del mismo parlay).
+
     Si falta el resultado de algún partido de la pata, o falta el dato
     real de tarjetas/córners para evaluar esa pata, se queda pendiente.
     """
@@ -1231,22 +1238,31 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
                 continue
 
         estados = []
+        hay_reembolso = False
         for sel in selecciones:
             clave = (sel.get("local"), sel.get("visitante"))
             resultado = mapa_resultados.get(clave)
             if resultado is None:
-                estados.append(None)
+                estados.append(None)  # el partido aún no se ha jugado — sigue pendiente de verdad
                 continue
             gh, ga = resultado
             datos = DATOS_REALES_LIGAMX.get(f"{sel.get('local')}_{sel.get('visitante')}", {})
             acierto = evaluar_acierto(sel, sel.get("local"), sel.get("visitante"), gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
             estados.append(acierto)
+            if acierto is None:
+                hay_reembolso = True  # partido ya jugado, pero DNB empatado -> reembolso, no falta de dato
+
+        todos_los_partidos_jugados = all(
+            mapa_resultados.get((s.get("local"), s.get("visitante"))) is not None for s in selecciones
+        )
 
         if any(e is False for e in estados):
             nuevo_resultado = "perdido"
         elif estados and all(e is True for e in estados):
             nuevo_resultado = "ganado"
+        elif hay_reembolso and todos_los_partidos_jugados:
+            nuevo_resultado = "reembolsado"
         else:
             continue  # sigue pendiente
 
