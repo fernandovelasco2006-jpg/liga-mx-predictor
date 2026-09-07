@@ -120,10 +120,18 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
         if s["nivel"] != "ALTA":
             continue
         acierto = None
+        es_nulo = False
         if gh is not None:
             datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}", {})
             acierto = evaluar_acierto(s, local, visit, gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
+            if acierto is None and s["mercado"] == "Empate Sin Apuesta" and gh == ga:
+                # Reembolso permanente (partido ya jugado, terminó en
+                # empate) — se marca "nulo" explícito para que
+                # calcular_stats_apuestas() lo excluya del accuracy sin
+                # dejarlo pendiente para siempre (ver misma lógica en
+                # actualizar_aciertos_pendientes()).
+                es_nulo = True
         payload = {
             "id": _id_apuesta(local, visit, jornada, s["mercado"], s["seleccion"]),
             "local": local, "visitante": visit, "jornada": jornada,
@@ -135,6 +143,7 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
             "resultado_real": f"{gh}-{ga}" if gh is not None else None,
             "goles_local": gh, "goles_visitante": ga,
             "acierto": acierto,
+            "nulo": es_nulo,
         }
         try:
             chk = requests.get(
@@ -626,8 +635,20 @@ def calcular_sesgo_por_equipo(historial_predicciones: list,
 
 
 def calcular_stats_apuestas(historial: list) -> dict:
-    evaluadas = [a for a in historial if a.get("acierto") is not None]
-    pendientes = [a for a in historial if a.get("acierto") is None]
+    """
+    accuracy se calcula SOLO sobre apuestas con acierto True/False —
+    las marcadas "nulo": True (ver actualizar_aciertos_pendientes():
+    selección Empate Sin Apuesta cuyo partido terminó en empate, se
+    reembolsa el stake) se excluyen tanto del cálculo de accuracy como
+    del conteo de "pendientes" — no afectan el número ni para bien ni
+    para mal, y tampoco se quedan pendientes para siempre (antes de
+    este campo, se confundían con "falta de dato real" y nunca se
+    resolvían).
+    """
+    nulas = [a for a in historial if a.get("nulo") is True]
+    resto = [a for a in historial if not a.get("nulo")]
+    evaluadas = [a for a in resto if a.get("acierto") is not None]
+    pendientes = [a for a in resto if a.get("acierto") is None]
     aciertos = [a for a in evaluadas if a["acierto"]]
     fallos = [a for a in evaluadas if not a["acierto"]]
     accuracy = (len(aciertos) / len(evaluadas) * 100) if evaluadas else 0.0
@@ -637,8 +658,10 @@ def calcular_stats_apuestas(historial: list) -> dict:
         "fallos": len(fallos),
         "total_evaluadas": len(evaluadas),
         "total_pendientes": len(pendientes),
+        "total_nulas": len(nulas),
         "evaluadas": evaluadas,
         "pendientes": pendientes,
+        "nulas": nulas,
     }
 
 
@@ -1175,13 +1198,36 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
         clave = (ap.get("local"), ap.get("visitante"))
         resultado = mapa_resultados.get(clave)
         if resultado is None:
-            continue
+            continue  # el partido AÚN no se ha jugado — sigue pendiente de verdad
         gh, ga = resultado
         datos = DATOS_REALES_LIGAMX.get(f"{ap.get('local')}_{ap.get('visitante')}", {})
         acierto = evaluar_acierto(ap, ap.get("local"), ap.get("visitante"), gh, ga,
                                    am_reales=datos.get("am"), co_reales=datos.get("co"))
         if acierto is None:
-            continue  # sigue sin poder evaluarse (ej. falta dato real de tarjetas/córners)
+            if ap.get("mercado") == "Empate Sin Apuesta" and gh == ga:
+                # El partido YA se jugó y terminó en empate — esto es un
+                # reembolso PERMANENTE (nunca va a "desbloquearse" como
+                # sí pasaría con Tarjetas/Córners sin dato todavía). Se
+                # marca explícitamente como "nulo" en vez de dejarlo con
+                # acierto=None para siempre — antes este caso se
+                # confundía con "falta dato real" y quedaba pendiente
+                # eternamente, contaminando el conteo de pendientes sin
+                # nunca resolverse. calcular_stats_apuestas() debe
+                # excluir "nulo" del cálculo de accuracy, igual que ya
+                # excluye None, pero sin contarlo como pendiente.
+                try:
+                    requests.patch(
+                        f"{url}/rest/v1/apuestas_historial_ligamx",
+                        headers=_headers(key, prefer=""),
+                        params={"id": f"eq.{ap['id']}"},
+                        json={"resultado_real": f"{gh}-{ga}", "goles_local": gh, "goles_visitante": ga,
+                              "acierto": None, "nulo": True},
+                        timeout=5,
+                    )
+                    actualizadas += 1
+                except Exception:
+                    continue
+            continue  # otros None (ej. falta dato real de tarjetas/córners) — sigue pendiente de verdad
         try:
             requests.patch(
                 f"{url}/rest/v1/apuestas_historial_ligamx",
