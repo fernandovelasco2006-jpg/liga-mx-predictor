@@ -113,7 +113,7 @@ PARTIDOS = [
     ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', (0, 0), 'Jesus Rafael Lopez Valle'),
     ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', (4, 0), 'Abraham De Jesus Quirarte Contreras'),
     ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', (1, 3), 'Luis Enrique Santander Aguirre'),
-    ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, None),
+    ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, 'Maximiliano Quintero Hernandez'),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', (0, 2), 'Katia Itzel Garcia Mendoza'),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
@@ -121,7 +121,7 @@ PARTIDOS = [
     ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
     ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', None, None),
-    ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', None, None),
+    ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', (1, 0), None),
     ('Necaxa', 'Puebla', 8, 'Estadio Victoria', None, None),
     ('Atlante', 'Pachuca', 8, 'Estadio Banorte', None, None),
     ('Tijuana', 'Queretaro', 8, 'Estadio Caliente', None, None),
@@ -272,7 +272,7 @@ HORARIOS_PARTIDO = {
     ('Santos Laguna', 'Tigres'): '2026-08-29 20:00',
     ('Toluca', 'FC Juarez'): '2026-08-30 17:00',
     ('Monterrey', 'Atletico San Luis'): '2026-08-30 19:00',
-    ('Puebla', 'Toluca'): '2026-09-15 19:00',
+    ('Puebla', 'Toluca'): '2026-09-06 17:00',
     ('FC Juarez', 'Pachuca'): '2026-09-04 21:00',
     ('Atletico San Luis', 'Guadalajara'): '2026-09-05 17:00',
     ('Queretaro', 'Monterrey'): '2026-11-14 17:00',
@@ -812,6 +812,7 @@ DATOS_REALES_LIGAMX = {
     "Atletico San Luis_Guadalajara": {"am": 1, "co": 5,  "ro": 0},  # 1 ASL + 0 GDL | 3 ASL + 2 GDL
     "Atlas_Atlante":              {"am": 5,  "co": 4,  "ro": 0},  # 2 ATL + 3 ATE | 3 ATL + 1 ATE
     "Tigres_Necaxa":               {"am": 5,  "co": 9,  "ro": 0},  # 3 TIG + 2 NEC | 6 TIG + 3 NEC
+    "Cruz Azul_Santos Laguna":     {"am": 1,  "co": 14, "ro": 0},  # 0 CAZ + 1 SAN | 9 CAZ + 5 SAN
 }
 
 # ─────────────────────────────────────────────────────────────────────────
