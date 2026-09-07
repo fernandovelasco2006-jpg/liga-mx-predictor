@@ -880,6 +880,31 @@ def actualizar_resultado_apuesta_real(url: str, key: str, apuesta_id: str, gano:
         return False
 
 
+def marcar_reembolsada_apuesta_real(url: str, key: str, apuesta_id: str) -> bool:
+    """
+    Marca una apuesta real como "reembolsada" — el caso de una
+    selección Empate Sin Apuesta (DNB) cuyo partido terminó en empate:
+    la casa reembolsa el stake, no cuenta como ganancia ni pérdida
+    (ganancia_neta = 0.0, no afecta calcular_roi_real()). Botón manual
+    de respaldo para los casos que actualizar_apuestas_reales_
+    pendientes() no resuelve solo (ver limitación documentada ahí:
+    parlays con reembolso mezclado con otras patas).
+    """
+    if not (url and key):
+        return False
+    try:
+        resp = requests.patch(
+            f"{url}/rest/v1/apuestas_reales_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"id": f"eq.{apuesta_id}"},
+            json={"resultado": "reembolsado", "ganancia_neta": 0.0},
+            timeout=5,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 def eliminar_apuesta_real(url: str, key: str, apuesta_id: str) -> bool:
     """
     Borra por completo una apuesta real registrada por error (casa
@@ -923,22 +948,27 @@ def calcular_roi_real(apuestas_reales: list) -> dict:
     Calcula el ROI real (retorno sobre inversión) de las apuestas
     colocadas con dinero real — la métrica que de verdad importa: no
     "¿el modelo predice bien?" sino "¿seguir sus recomendaciones da
-    ganancia?". Solo cuenta apuestas ya resueltas (resultado != None y
-    != "pendiente").
+    ganancia?". Solo cuenta apuestas ya resueltas con resultado
+    "ganado" o "perdido" — las "reembolsadas" (ver actualizar_apuestas_
+    reales_pendientes(): boletos donde una selección Empate Sin Apuesta
+    quedó en empate) NO afectan el ROI, ya que ni ganan ni pierden
+    dinero real, y se reportan aparte en "n_reembolsadas".
 
     Devuelve:
         {"total_apostado": float, "ganancia_neta_total": float,
          "roi_pct": float, "n_ganadas": int, "n_perdidas": int,
-         "n_pendientes": int}
+         "n_reembolsadas": int, "n_pendientes": int}
     roi_pct = ganancia_neta_total / total_apostado * 100 — positivo
     significa ganancia real, negativo significa pérdida real.
     """
     resueltas = [a for a in apuestas_reales if a.get("resultado") in ("ganado", "perdido")]
     pendientes = [a for a in apuestas_reales if a.get("resultado") == "pendiente"]
+    reembolsadas = [a for a in apuestas_reales if a.get("resultado") == "reembolsado"]
 
     if not resueltas:
         return {"total_apostado": 0.0, "ganancia_neta_total": 0.0, "roi_pct": None,
-                "n_ganadas": 0, "n_perdidas": 0, "n_pendientes": len(pendientes)}
+                "n_ganadas": 0, "n_perdidas": 0, "n_reembolsadas": len(reembolsadas),
+                "n_pendientes": len(pendientes)}
 
     total_apostado = 0.0
     ganancia_neta_total = 0.0
@@ -966,6 +996,7 @@ def calcular_roi_real(apuestas_reales: list) -> dict:
         "roi_pct": round(roi_pct, 1),
         "n_ganadas": n_ganadas,
         "n_perdidas": n_perdidas,
+        "n_reembolsadas": len(reembolsadas),
         "n_pendientes": len(pendientes),
     }
 
@@ -1295,7 +1326,8 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
             except Exception:
                 continue
 
-        estados = []
+        estados = []          # True (acertó) / False (falló) / None (sin dato — sigue pendiente)
+        hay_reembolso = False  # True si alguna pata YA JUGADA quedó en None por empate en DNB (no por falta de datos)
         for sel in selecciones:
             local_sel, visit_sel = sel.get("local"), sel.get("visitante")
             if not local_sel or not visit_sel:
@@ -1303,34 +1335,62 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
                 continue
             resultado_partido = mapa_resultados.get((local_sel, visit_sel))
             if resultado_partido is None:
-                estados.append(None)
+                estados.append(None)  # el partido AÚN no se ha jugado — sigue pendiente de verdad
                 continue
             gh, ga = resultado_partido
             datos = DATOS_REALES_LIGAMX.get(f"{local_sel}_{visit_sel}", {})
             acierto = evaluar_acierto(sel, local_sel, visit_sel, gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
             estados.append(acierto)
+            if acierto is None:
+                # El partido YA tiene resultado, pero evaluar_acierto()
+                # dio None de todas formas — esto pasa específicamente
+                # en Empate Sin Apuesta (DNB) cuando ese partido terminó
+                # en empate: la pata se reembolsa, no es "falta de dato".
+                hay_reembolso = True
+
+        todos_los_partidos_jugados = all(
+            mapa_resultados.get((s.get("local"), s.get("visitante"))) is not None
+            for s in selecciones if s.get("local") and s.get("visitante")
+        )
 
         if any(e is False for e in estados):
-            gano = False
+            gano, reembolsado = False, False
         elif estados and all(e is True for e in estados):
-            gano = True
+            gano, reembolsado = True, False
+        elif hay_reembolso and todos_los_partidos_jugados:
+            # Todas las selecciones YA tienen resultado real (ningún
+            # partido pendiente de jugarse), ninguna falló, y al menos
+            # una se reembolsó — con las patas restantes todas en
+            # acierto, el boleto se marca "reembolsado" completo (ganancia
+            # neta $0). Si hubiera además una pata en acierto=True junto
+            # a la reembolsada, en una casa real el momio se recalcularía
+            # sobre las patas restantes — esa variante más fina no se
+            # simula aquí (ver limitación ya documentada arriba); se
+            # opta por el resultado más conservador y honesto: "reembolso
+            # total" en vez de inventar un momio ajustado.
+            gano, reembolsado = None, True
         else:
-            continue  # sigue pendiente (falta resultado o dato real de alguna pata)
+            continue  # sigue pendiente (falta resultado real de algún partido)
 
         try:
             momio = float(apuesta["momio"])
             monto = float(apuesta["monto_apostado"])
         except (TypeError, ValueError, KeyError):
             continue
-        ganancia_neta = round(monto * (momio - 1), 2) if gano else round(-monto, 2)
+
+        if reembolsado:
+            resultado_final, ganancia_neta = "reembolsado", 0.0
+        else:
+            resultado_final = "ganado" if gano else "perdido"
+            ganancia_neta = round(monto * (momio - 1), 2) if gano else round(-monto, 2)
 
         try:
             requests.patch(
                 f"{url}/rest/v1/apuestas_reales_ligamx",
                 headers=_headers(key, prefer=""),
                 params={"id": f"eq.{apuesta['id']}"},
-                json={"resultado": "ganado" if gano else "perdido", "ganancia_neta": ganancia_neta},
+                json={"resultado": resultado_final, "ganancia_neta": ganancia_neta},
                 timeout=8,
             )
             actualizadas += 1
