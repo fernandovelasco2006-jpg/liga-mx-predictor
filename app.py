@@ -1145,9 +1145,9 @@ with tab_parlays:
             st.markdown("---")
             for parlay in historial_parlays:
                 resultado_p = parlay.get("resultado", "pendiente")
-                icono = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳"}.get(resultado_p, "⏳")
-                color = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827"}.get(resultado_p, "#111827")
-                borde = {"ganado": "#2d6b45", "perdido": "#6b2d2d", "pendiente": "#1f4a2e"}.get(resultado_p, "#1f4a2e")
+                icono = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳", "reembolsado": "⚪"}.get(resultado_p, "⏳")
+                color = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827", "reembolsado": "#1a1a1a"}.get(resultado_p, "#111827")
+                borde = {"ganado": "#2d6b45", "perdido": "#6b2d2d", "pendiente": "#1f4a2e", "reembolsado": "#3a3a3a"}.get(resultado_p, "#1f4a2e")
 
                 selecciones_p = parlay.get("selecciones", [])
                 if isinstance(selecciones_p, str):
