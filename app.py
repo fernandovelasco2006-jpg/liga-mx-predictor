@@ -24,7 +24,7 @@ try:
         guardar_parlay_diario, cargar_historial_parlays, actualizar_parlays_pendientes,
         guardar_apuesta_real, cargar_apuestas_reales, calcular_roi_real, actualizar_resultado_apuesta_real,
         calcular_ev_apuestas_reales, actualizar_apuestas_reales_pendientes,
-        eliminar_apuesta_real,
+        eliminar_apuesta_real, marcar_reembolsada_apuesta_real,
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
         comparar_modelo_vs_baseline,
         calcular_sesgo_por_equipo, guardar_jornada_completa,
@@ -1218,7 +1218,7 @@ with tab_parlays:
         apuestas_reales = cargar_apuestas_reales(SUPABASE_URL, SUPABASE_KEY)
         roi = calcular_roi_real(apuestas_reales)
 
-        rc1, rc2, rc3, rc4 = st.columns(4)
+        rc1, rc2, rc3, rc4, rc5 = st.columns(5)
         color_roi = "#4ade80" if (roi["roi_pct"] or 0) > 0 else ("#f87171" if roi["roi_pct"] is not None else "#8fbfa0")
         with rc1:
             texto_roi = f"{roi['roi_pct']:+.1f}%" if roi["roi_pct"] is not None else "—"
@@ -1233,6 +1233,9 @@ with tab_parlays:
         with rc4:
             st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#f87171">{roi["n_perdidas"]}</div>'
                         f'<div class="metric-lbl">❌ Perdidas</div></div>', unsafe_allow_html=True)
+        with rc5:
+            st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#8fbfa0">{roi.get("n_reembolsadas", 0)}</div>'
+                        f'<div class="metric-lbl">⚪ Reembolsadas</div></div>', unsafe_allow_html=True)
 
         with st.expander("➕ Registrar nueva apuesta real", expanded=False):
             modo_registro = st.radio(
@@ -1343,8 +1346,8 @@ with tab_parlays:
             ev_por_id = {e["id"]: e for e in calcular_ev_apuestas_reales(apuestas_reales)}
             for a in apuestas_reales:
                 resultado_a = a.get("resultado", "pendiente")
-                icono_a = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳"}.get(resultado_a, "⏳")
-                color_a = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827"}.get(resultado_a, "#111827")
+                icono_a = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳", "reembolsado": "⚪"}.get(resultado_a, "⏳")
+                color_a = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827", "reembolsado": "#1a1a1a"}.get(resultado_a, "#111827")
                 selecciones_a = a.get("selecciones", [])
                 if isinstance(selecciones_a, str):
                     import json as _json
@@ -1383,26 +1386,31 @@ with tab_parlays:
                 )
 
                 if resultado_a == "pendiente":
-                    col_r1, col_r2, col_r3 = st.columns(3)
+                    col_r1, col_r2, col_r3, col_r4 = st.columns(4)
                     with col_r1:
-                        if st.button("✅ Marcar ganada", key=f"gano_{a['id']}"):
+                        if st.button("✅ Ganada", key=f"gano_{a['id']}"):
                             actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], True,
                                                                float(a["momio"]), float(a["monto_apostado"]))
                             st.rerun()
                     with col_r2:
-                        if st.button("❌ Marcar perdida", key=f"perdio_{a['id']}"):
+                        if st.button("❌ Perdida", key=f"perdio_{a['id']}"):
                             actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], False,
                                                                float(a["momio"]), float(a["monto_apostado"]))
                             st.rerun()
                     with col_r3:
+                        if st.button("⚪ Reembolsada", key=f"reembolso_{a['id']}",
+                                     help="Selección Empate Sin Apuesta (DNB) cuyo partido terminó en empate — el stake se devuelve, no cuenta como ganancia ni pérdida."):
+                            marcar_reembolsada_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"])
+                            st.rerun()
+                    with col_r4:
                         if st.button("🗑️ Eliminar", key=f"del_{a['id']}"):
                             eliminar_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"])
                             st.rerun()
                 else:
-                    # Ya resuelta (ganada/perdida) — solo se ofrece
-                    # eliminar, por si se dio de alta mal (casa, momio o
-                    # selección equivocada) y hace falta corregirlo
-                    # borrando y volviendo a registrar.
+                    # Ya resuelta (ganada/perdida/reembolsada) — solo se
+                    # ofrece eliminar, por si se dio de alta mal (casa,
+                    # momio o selección equivocada) y hace falta
+                    # corregirlo borrando y volviendo a registrar.
                     if st.button("🗑️ Eliminar (registrada por error)", key=f"del_{a['id']}"):
                         eliminar_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"])
                         st.rerun()
