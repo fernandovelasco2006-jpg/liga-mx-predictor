@@ -1763,50 +1763,70 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
 # -------------------------------------------------------------------------
 def detectar_jornada_actual() -> int:
     """
-    Devuelve la jornada del PRÓXIMO PARTIDO CRONOLÓGICO sin resultado —
-    es decir, mirando todos los partidos pendientes de PARTIDOS (sin
-    importar a qué jornada pertenecen) y tomando la fecha/hora más
-    próxima en HORARIOS_PARTIDO, se devuelve la jornada de ESE partido.
+    Devuelve la jornada cuya MEDIANA de fechas de partidos pendientes
+    esté más cerca de "ahora" (en valor absoluto, antes o después) —
+    la jornada "más próxima según la fecha de sus juegos", no la que
+    tiene el partido pendiente aislado más próximo.
 
-    ANTES: devolvía la primera jornada (numéricamente) que aún tuviera
-    algún partido pendiente — esto se rompe cuando una jornada tiene
-    partidos reprogramados muy lejos en el calendario (ej. Jornada 7
-    con partidos movidos a octubre/noviembre) mientras la siguiente
-    jornada ya está jugándose en fechas normales: la app se quedaba
-    "atascada" mostrando la Jornada 7 como actual durante semanas,
-    aunque en la práctica ya se estuviera jugando la Jornada 8. Cambio
-    hecho por decisión explícita del usuario tras detectar este caso
-    real en producción.
+    Por qué mediana y no promedio ni "próximo partido cronológico"
+    (versión anterior de esta función): un solo partido reprogramado
+    muy lejos (ej. 3 de los 4 pendientes de una jornada movidos a
+    noviembre, con 1 solo rezagado jugándose hoy) puede "anclar" tanto
+    al mínimo cronológico como al promedio, haciendo que esa jornada
+    parezca la actual aunque en la práctica ya casi toda esté en el
+    futuro lejano. La mediana ignora ese arrastre de un extremo: con
+    3 de 4 partidos en noviembre, la mediana cae en noviembre también,
+    y la jornada deja de "bloquear" el avance a la siguiente aunque le
+    quede un partido suelto por jugarse antes.
 
-    Partidos sin horario en HORARIOS_PARTIDO se ignoran para esta
-    comparación (no se puede ordenar cronológicamente algo sin fecha) —
-    en el caso extremo de que NINGÚN partido pendiente tenga horario
-    cargado, cae de vuelta al criterio anterior (primera jornada
-    numérica con pendientes) para no devolver None de forma innecesaria.
+    Ejemplo real que motivó este diseño: Jornada 7 con 3 partidos
+    reprogramados a 14/11 y solo Pumas-León jugándose el 10/09 — con el
+    criterio anterior (mínimo cronológico), Jornada 7 seguía "actual"
+    hasta que Pumas-León se jugara, aunque el usuario ya quería ver
+    Jornada 8 (con 9/9 partidos en fechas normales de septiembre) desde
+    antes de que Pumas-León arrancara. Con la mediana, Jornada 7 pasa a
+    tener mediana en noviembre y Jornada 8 gana por estar más cerca de
+    "ahora".
+
+    Partidos sin horario en HORARIOS_PARTIDO se ignoran para el cálculo
+    de mediana de su jornada (no se puede ubicar en el tiempo algo sin
+    fecha). Si NINGÚN partido pendiente de ninguna jornada tiene
+    horario cargado, cae al criterio más simple: la primera jornada
+    numérica con partidos pendientes.
 
     Si todos los partidos ya tienen resultado (temporada terminada),
     devuelve None.
     """
-    pendientes = [
-        (local, visit, jornada)
-        for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
-        if resultado is None
-    ]
-    if not pendientes:
-        return None
+    pendientes_por_jornada = defaultdict(list)
+    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
+        if resultado is not None:
+            continue
+        horario_str = HORARIOS_PARTIDO.get((local, visit))
+        if not horario_str:
+            continue
+        try:
+            fecha = datetime.strptime(horario_str, "%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+        pendientes_por_jornada[jornada].append(fecha)
 
-    con_horario = [
-        (HORARIOS_PARTIDO[(local, visit)], jornada)
-        for local, visit, jornada in pendientes
-        if (local, visit) in HORARIOS_PARTIDO
-    ]
-    if con_horario:
-        con_horario.sort(key=lambda x: x[0])
-        return con_horario[0][1]
+    if not pendientes_por_jornada:
+        # Ningún partido pendiente tiene horario cargado — fallback al
+        # criterio más simple posible en vez de no poder decidir nada.
+        jornadas_pendientes = sorted({
+            jornada for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
+            if resultado is None
+        })
+        return jornadas_pendientes[0] if jornadas_pendientes else None
 
-    # Fallback: ningún partido pendiente tiene horario cargado — vuelve
-    # al criterio anterior en vez de no poder determinar nada.
-    return min(jornada for _local, _visit, jornada in pendientes)
+    ahora = datetime.now()
+    medianas = {}
+    for jornada, fechas in pendientes_por_jornada.items():
+        fechas.sort()
+        n = len(fechas)
+        medianas[jornada] = fechas[n // 2] if n % 2 == 1 else fechas[n // 2 - 1]
+
+    return min(medianas.keys(), key=lambda j: abs((medianas[j] - ahora).total_seconds()))
 
 
 def partidos_de_jornada(jornada: int) -> list:
