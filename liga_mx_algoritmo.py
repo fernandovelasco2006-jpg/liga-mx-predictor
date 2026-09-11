@@ -1,4 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────────
+¡# ─────────────────────────────────────────────────────────────────────────
 # LIGA MX · APERTURA 2026 · ALGORITMO — calcular_lambdas() + simular_temporada()
 #
 # Este módulo asume que ya importaste desde tu liga_mx_predictor_skeleton.py:
@@ -1763,16 +1763,50 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
 # ─────────────────────────────────────────────────────────────────────────
 def detectar_jornada_actual() -> int:
     """
-    Devuelve el número de la primera jornada que todavía tiene al menos
-    un partido con resultado=None en PARTIDOS — es decir, la próxima
-    jornada por jugar/simular. Si todos los partidos ya tienen
-    resultado (temporada terminada), devuelve None.
+    Devuelve la jornada del PRÓXIMO PARTIDO CRONOLÓGICO sin resultado —
+    es decir, mirando todos los partidos pendientes de PARTIDOS (sin
+    importar a qué jornada pertenecen) y tomando la fecha/hora más
+    próxima en HORARIOS_PARTIDO, se devuelve la jornada de ESE partido.
+
+    ANTES: devolvía la primera jornada (numéricamente) que aún tuviera
+    algún partido pendiente — esto se rompe cuando una jornada tiene
+    partidos reprogramados muy lejos en el calendario (ej. Jornada 7
+    con partidos movidos a octubre/noviembre) mientras la siguiente
+    jornada ya está jugándose en fechas normales: la app se quedaba
+    "atascada" mostrando la Jornada 7 como actual durante semanas,
+    aunque en la práctica ya se estuviera jugando la Jornada 8. Cambio
+    hecho por decisión explícita del usuario tras detectar este caso
+    real en producción.
+
+    Partidos sin horario en HORARIOS_PARTIDO se ignoran para esta
+    comparación (no se puede ordenar cronológicamente algo sin fecha) —
+    en el caso extremo de que NINGÚN partido pendiente tenga horario
+    cargado, cae de vuelta al criterio anterior (primera jornada
+    numérica con pendientes) para no devolver None de forma innecesaria.
+
+    Si todos los partidos ya tienen resultado (temporada terminada),
+    devuelve None.
     """
-    jornadas_pendientes = sorted({
-        jornada for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
+    pendientes = [
+        (local, visit, jornada)
+        for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
         if resultado is None
-    })
-    return jornadas_pendientes[0] if jornadas_pendientes else None
+    ]
+    if not pendientes:
+        return None
+
+    con_horario = [
+        (HORARIOS_PARTIDO[(local, visit)], jornada)
+        for local, visit, jornada in pendientes
+        if (local, visit) in HORARIOS_PARTIDO
+    ]
+    if con_horario:
+        con_horario.sort(key=lambda x: x[0])
+        return con_horario[0][1]
+
+    # Fallback: ningún partido pendiente tiene horario cargado — vuelve
+    # al criterio anterior en vez de no poder determinar nada.
+    return min(jornada for _local, _visit, jornada in pendientes)
 
 
 def partidos_de_jornada(jornada: int) -> list:
