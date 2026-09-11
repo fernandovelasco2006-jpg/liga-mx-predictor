@@ -500,11 +500,23 @@ with tab_pred:
             partidos_filtrados = [p for p in PARTIDOS if (p[4] is None) != es_por_jugarse]
 
         jornadas = sorted(set(p[2] for p in partidos_filtrados))
-        # "Por jugarse" arranca en la jornada más próxima (index 0, ya que
-        # jornadas está ordenado ascendente). "Jugados" arranca en la más
-        # reciente en vez de la Jornada 1 — es lo que casi siempre se quiere
-        # revisar.
-        idx_default = 0 if es_por_jugarse else len(jornadas) - 1
+        # "Por jugarse" arranca en la jornada DETECTADA por
+        # detectar_jornada_actual() (mediana de fechas más próxima a
+        # hoy — ver liga_mx_algoritmo.py) en vez de siempre la más baja
+        # numéricamente. Antes, con partidos reprogramados muy lejos
+        # (ej. 3 de 4 pendientes de Jornada 7 movidos a noviembre), este
+        # selector seguía abriendo en Jornada 7 aunque "Jornada
+        # detectada" (más abajo, junto a Simular Jornada) ya mostrara
+        # correctamente Jornada 8 — inconsistencia confirmada en
+        # producción que confundía al usuario. Si la jornada detectada
+        # no tiene partidos en esta lista (ej. ya se jugaron todos y
+        # solo quedan los "Jugados"), cae al criterio anterior (0).
+        # "Jugados" sigue arrancando en la más reciente, sin cambios.
+        if es_por_jugarse:
+            jornada_detectada = detectar_jornada_actual()
+            idx_default = jornadas.index(jornada_detectada) if jornada_detectada in jornadas else 0
+        else:
+            idx_default = len(jornadas) - 1
         jornada_sel = st.selectbox("Jornada", jornadas, index=idx_default, key=f"jornada_pred_{filtro_estado}")
         partidos_j = [p for p in partidos_filtrados if p[2] == jornada_sel]
         opciones = {f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}": i for i, p in enumerate(partidos_j)}
