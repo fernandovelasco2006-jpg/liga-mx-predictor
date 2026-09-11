@@ -1,4 +1,4 @@
-¡# ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 # LIGA MX · APERTURA 2026 · ALGORITMO — calcular_lambdas() + simular_temporada()
 #
 # Este módulo asume que ya importaste desde tu liga_mx_predictor_skeleton.py:
