@@ -283,7 +283,7 @@ HORARIOS_PARTIDO = {
     ('Cruz Azul', 'Santos Laguna'): '2026-09-06 17:00',
     ('Necaxa', 'Puebla'): '2026-09-11 19:00',
     ('Atlante', 'Pachuca'): '2026-09-11 21:00',
-    ('Tijuana', 'Queretaro'): '2026-09-11 20:10',
+    ('Tijuana', 'Queretaro'): '2026-09-11 21:10',
     ('Cruz Azul', 'America'): '2026-09-12 21:15',
     ('Toluca', 'Atlas'): '2026-09-12 17:05',
     ('Leon', 'Atletico San Luis'): '2026-09-14 19:00',
