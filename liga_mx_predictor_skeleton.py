@@ -122,9 +122,9 @@ PARTIDOS = [
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
     ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', None, None),
     ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', (1, 0), None),
-    ('Necaxa', 'Puebla', 8, 'Estadio Victoria', None, 'Joaquin Alberto Vizcarra Armenta'),
-    ('Atlante', 'Pachuca', 8, 'Estadio Banorte', None, 'Marco Antonio Ortiz Nava'),
-    ('Tijuana', 'Queretaro', 8, 'Estadio Caliente', None, 'Fernando Hernandez Gomez'),
+    ('Necaxa', 'Puebla', 8, 'Estadio Victoria', (0, 1), 'Joaquin Alberto Vizcarra Armenta'),
+    ('Atlante', 'Pachuca', 8, 'Estadio Banorte', (0, 3), 'Marco Antonio Ortiz Nava'),
+    ('Tijuana', 'Queretaro', 8, 'Estadio Caliente', (0, 1), 'Fernando Hernandez Gomez'),
     ('Cruz Azul', 'America', 8, 'Estadio Banorte', None, 'Luis Enrique Santander Aguirre'),
     ('Toluca', 'Atlas', 8, 'Estadio Nemesio Diez', None, 'Mario Terrazas Chavez'),
     ('Leon', 'Atletico San Luis', 8, 'Estadio Nou Camp', None, 'Daniel Quintero Huitron'),
@@ -813,6 +813,11 @@ DATOS_REALES_LIGAMX = {
     "Atlas_Atlante":              {"am": 5,  "co": 4,  "ro": 0},  # 2 ATL + 3 ATE | 3 ATL + 1 ATE
     "Tigres_Necaxa":               {"am": 5,  "co": 9,  "ro": 0},  # 3 TIG + 2 NEC | 6 TIG + 3 NEC
     "Cruz Azul_Santos Laguna":     {"am": 1,  "co": 14, "ro": 0},  # 0 CAZ + 1 SAN | 9 CAZ + 5 SAN
+
+    # Jornada 8 — resultados y estadísticas confirmados (fuente: Sofascore)
+    "Necaxa_Puebla":               {"am": 4,  "co": 13, "ro": 1},  # 1 NEC + 3 PUE | 8 NEC + 5 PUE | 1 NEC + 0 PUE roja
+    "Tijuana_Queretaro":           {"am": 5,  "co": 17, "ro": 0},  # 0 TIJ + 5 QRO | 13 TIJ + 4 QRO
+    "Atlante_Pachuca":             {"am": 6,  "co": 10, "ro": 0},  # 2 ATL + 4 PAC | 5 ATL + 5 PAC
 }
 
 # ─────────────────────────────────────────────────────────────────────────
