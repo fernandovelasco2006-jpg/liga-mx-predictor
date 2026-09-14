@@ -1160,9 +1160,9 @@ with tab_parlays:
             st.markdown("---")
             for parlay in historial_parlays:
                 resultado_p = parlay.get("resultado", "pendiente")
-                icono = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳", "reembolsado": "⚪"}.get(resultado_p, "⏳")
-                color = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827", "reembolsado": "#1a1a1a"}.get(resultado_p, "#111827")
-                borde = {"ganado": "#2d6b45", "perdido": "#6b2d2d", "pendiente": "#1f4a2e", "reembolsado": "#3a3a3a"}.get(resultado_p, "#1f4a2e")
+                icono = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳", "reembolsado": "⚪", "parcial": "🔵"}.get(resultado_p, "⏳")
+                color = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827", "reembolsado": "#1a1a1a", "parcial": "#0d1a2e"}.get(resultado_p, "#111827")
+                borde = {"ganado": "#2d6b45", "perdido": "#6b2d2d", "pendiente": "#1f4a2e", "reembolsado": "#3a3a3a", "parcial": "#2d5a8a"}.get(resultado_p, "#1f4a2e")
 
                 selecciones_p = parlay.get("selecciones", [])
                 if isinstance(selecciones_p, str):
@@ -1252,7 +1252,7 @@ with tab_parlays:
             unsafe_allow_html=True,
         )
 
-        rc1, rc2, rc3, rc4, rc5 = st.columns(5)
+        rc1, rc2, rc3, rc4, rc5, rc6 = st.columns(6)
         color_roi = "#4ade80" if (roi["roi_pct"] or 0) > 0 else ("#f87171" if roi["roi_pct"] is not None else "#8fbfa0")
         with rc1:
             texto_roi = f"{roi['roi_pct']:+.1f}%" if roi["roi_pct"] is not None else "—"
@@ -1270,6 +1270,9 @@ with tab_parlays:
         with rc5:
             st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#8fbfa0">{roi.get("n_reembolsadas", 0)}</div>'
                         f'<div class="metric-lbl">⚪ Reembolsadas</div></div>', unsafe_allow_html=True)
+        with rc6:
+            st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#5a9fd4">{roi.get("n_parciales", 0)}</div>'
+                        f'<div class="metric-lbl">🔵 Parciales (revisar)</div></div>', unsafe_allow_html=True)
 
         with st.expander("➕ Registrar nueva apuesta real", expanded=False):
             modo_registro = st.radio(
@@ -1380,8 +1383,8 @@ with tab_parlays:
             ev_por_id = {e["id"]: e for e in calcular_ev_apuestas_reales(apuestas_reales)}
             for a in apuestas_reales:
                 resultado_a = a.get("resultado", "pendiente")
-                icono_a = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳", "reembolsado": "⚪"}.get(resultado_a, "⏳")
-                color_a = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827", "reembolsado": "#1a1a1a"}.get(resultado_a, "#111827")
+                icono_a = {"ganado": "✅", "perdido": "❌", "pendiente": "⏳", "reembolsado": "⚪", "parcial": "🔵"}.get(resultado_a, "⏳")
+                color_a = {"ganado": "#0d2818", "perdido": "#1a0d0d", "pendiente": "#111827", "reembolsado": "#1a1a1a", "parcial": "#0d1a2e"}.get(resultado_a, "#111827")
                 selecciones_a = a.get("selecciones", [])
                 if isinstance(selecciones_a, str):
                     import json as _json
@@ -1419,7 +1422,14 @@ with tab_parlays:
                     unsafe_allow_html=True,
                 )
 
-                if resultado_a == "pendiente":
+                if resultado_a in ("pendiente", "parcial"):
+                    if resultado_a == "parcial":
+                        st.caption(
+                            "🔵 Resultado mixto: al menos una selección se reembolsó (DNB empatado) y al "
+                            "menos una ganó — decide manualmente el monto real que pagó la casa para las "
+                            "patas restantes (Ganada, con el momio/monto ajustado que corresponda), o "
+                            "márcala Perdida/Reembolsada según cómo haya resuelto la casa el boleto."
+                        )
                     col_r1, col_r2, col_r3, col_r4 = st.columns(4)
                     with col_r1:
                         if st.button("✅ Ganada", key=f"gano_{a['id']}"):
