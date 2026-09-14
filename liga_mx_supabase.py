@@ -987,11 +987,12 @@ def calcular_roi_real(apuestas_reales: list) -> dict:
     resueltas = [a for a in apuestas_reales if a.get("resultado") in ("ganado", "perdido")]
     pendientes = [a for a in apuestas_reales if a.get("resultado") == "pendiente"]
     reembolsadas = [a for a in apuestas_reales if a.get("resultado") == "reembolsado"]
+    parciales = [a for a in apuestas_reales if a.get("resultado") == "parcial"]
 
     if not resueltas:
         return {"total_apostado": 0.0, "ganancia_neta_total": 0.0, "roi_pct": None,
                 "n_ganadas": 0, "n_perdidas": 0, "n_reembolsadas": len(reembolsadas),
-                "n_pendientes": len(pendientes)}
+                "n_parciales": len(parciales), "n_pendientes": len(pendientes)}
 
     total_apostado = 0.0
     ganancia_neta_total = 0.0
@@ -1020,6 +1021,7 @@ def calcular_roi_real(apuestas_reales: list) -> dict:
         "n_ganadas": n_ganadas,
         "n_perdidas": n_perdidas,
         "n_reembolsadas": len(reembolsadas),
+        "n_parciales": len(parciales),
         "n_pendientes": len(pendientes),
     }
 
@@ -1246,14 +1248,21 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
 def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) -> int:
     """
     Revisa cada parlay pendiente: si TODAS sus patas ya tienen
-    resultado real, evalúa cada una y marca el parlay completo como
-    'ganado' (si todas acertaron), 'perdido' (si al menos una falló), o
-    'reembolsado' (si ninguna falló, pero al menos una selección
-    Empate Sin Apuesta quedó en empate — se reembolsa esa pata, mismo
-    criterio y misma limitación ya documentada en
-    actualizar_apuestas_reales_pendientes(): no se simula el recálculo
-    de momio de una casa real cuando hay reembolso mezclado con otras
-    patas acertadas dentro del mismo parlay).
+    resultado real, evalúa cada una y marca el parlay completo como:
+      - 'perdido' si al menos una pata falló (sin importar las demás),
+      - 'ganado' si TODAS las patas evaluadas acertaron (True) — ninguna
+        reembolsada,
+      - 'reembolsado' si TODAS las patas evaluadas son reembolso (ver
+        evaluar_acierto(): Empate Sin Apuesta con ese partido
+        terminando en empate) — ninguna ganó ni perdió,
+      - 'parcial' si hay una MEZCLA: al menos una pata reembolsada y al
+        menos una ganada, pero ninguna perdida. Decisión explícita del
+        usuario: en vez de forzar este caso a "reembolsado" (que
+        escondía que sí hubo una pata ganadora real) o intentar simular
+        el recálculo de momio de una casa real (no verificable), se
+        expone como su propio estado — el usuario decide manualmente
+        cómo tratarlo para efectos de ROI real, con color propio (azul)
+        distinto de ganado/perdido/reembolsado en la interfaz.
 
     Si falta el resultado de algún partido de la pata, o falta el dato
     real de tarjetas/córners para evaluar esa pata, se queda pendiente.
@@ -1284,7 +1293,6 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
                 continue
 
         estados = []
-        hay_reembolso = False
         for sel in selecciones:
             clave = (sel.get("local"), sel.get("visitante"))
             resultado = mapa_resultados.get(clave)
@@ -1296,21 +1304,26 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
             acierto = evaluar_acierto(sel, sel.get("local"), sel.get("visitante"), gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
             estados.append(acierto)
-            if acierto is None:
-                hay_reembolso = True  # partido ya jugado, pero DNB empatado -> reembolso, no falta de dato
 
         todos_los_partidos_jugados = all(
             mapa_resultados.get((s.get("local"), s.get("visitante"))) is not None for s in selecciones
         )
 
+        # estados_evaluados excluye los None que son "partido aún no
+        # jugado" — sólo tiene sentido distinguir reembolso/ganado/
+        # parcial una vez que TODOS los partidos ya se jugaron.
         if any(e is False for e in estados):
             nuevo_resultado = "perdido"
-        elif estados and all(e is True for e in estados):
+        elif not todos_los_partidos_jugados:
+            continue  # algún partido de la pata sigue sin jugarse — pendiente de verdad
+        elif all(e is True for e in estados):
             nuevo_resultado = "ganado"
-        elif hay_reembolso and todos_los_partidos_jugados:
+        elif all(e is None for e in estados):
             nuevo_resultado = "reembolsado"
+        elif any(e is True for e in estados) and any(e is None for e in estados):
+            nuevo_resultado = "parcial"
         else:
-            continue  # sigue pendiente
+            continue  # caso no cubierto (no debería ocurrir) — se queda pendiente en vez de adivinar
 
         try:
             requests.patch(
@@ -1417,21 +1430,26 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
         )
 
         if any(e is False for e in estados):
-            gano, reembolsado = False, False
+            gano, reembolsado, parcial = False, False, False
         elif estados and all(e is True for e in estados):
-            gano, reembolsado = True, False
+            gano, reembolsado, parcial = True, False, False
         elif hay_reembolso and todos_los_partidos_jugados:
-            # Todas las selecciones YA tienen resultado real (ningún
-            # partido pendiente de jugarse), ninguna falló, y al menos
-            # una se reembolsó — con las patas restantes todas en
-            # acierto, el boleto se marca "reembolsado" completo (ganancia
-            # neta $0). Si hubiera además una pata en acierto=True junto
-            # a la reembolsada, en una casa real el momio se recalcularía
-            # sobre las patas restantes — esa variante más fina no se
-            # simula aquí (ver limitación ya documentada arriba); se
-            # opta por el resultado más conservador y honesto: "reembolso
-            # total" en vez de inventar un momio ajustado.
-            gano, reembolsado = None, True
+            if any(e is True for e in estados):
+                # Mezcla real: al menos una pata ganó Y al menos una se
+                # reembolsó (ninguna perdió) — decisión explícita del
+                # usuario: en vez de forzarlo a "reembolsado" (que
+                # escondía la pata ganadora) o inventar un momio
+                # recalculado (no verificable con certeza), se marca
+                # "parcial" y se deja ganancia_neta en None — el usuario
+                # decide manualmente el monto real con los botones de
+                # Ganada/Perdida/Reembolsada ya existentes en la interfaz,
+                # usando el momio real que la casa haya aplicado a las
+                # patas restantes.
+                gano, reembolsado, parcial = None, False, True
+            else:
+                # Todas las selecciones evaluadas son reembolso (ninguna
+                # ganó, ninguna perdió) — reembolso total, ganancia $0.
+                gano, reembolsado, parcial = None, True, False
         else:
             continue  # sigue pendiente (falta resultado real de algún partido)
 
@@ -1441,7 +1459,9 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
         except (TypeError, ValueError, KeyError):
             continue
 
-        if reembolsado:
+        if parcial:
+            resultado_final, ganancia_neta = "parcial", None
+        elif reembolsado:
             resultado_final, ganancia_neta = "reembolsado", 0.0
         else:
             resultado_final = "ganado" if gano else "perdido"
