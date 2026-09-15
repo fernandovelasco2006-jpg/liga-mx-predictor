@@ -127,7 +127,7 @@ PARTIDOS = [
     ('Tijuana', 'Queretaro', 8, 'Estadio Caliente', (0, 1), 'Fernando Hernandez Gomez'),
     ('Cruz Azul', 'America', 8, 'Estadio Banorte', (4, 3), 'Luis Enrique Santander Aguirre'),
     ('Toluca', 'Atlas', 8, 'Estadio Nemesio Diez', (5, 2), 'Mario Terrazas Chavez'),
-    ('Leon', 'Atletico San Luis', 8, 'Estadio Nou Camp', None, 'Daniel Quintero Huitron'),
+    ('Leon', 'Atletico San Luis', 8, 'Estadio Nou Camp', (2, 0), 'Daniel Quintero Huitron'),
     ('Santos Laguna', 'FC Juarez', 8, 'Estadio TSM Corona', (2, 1), 'Guillermo Pacheco Larios'),
     ('Guadalajara', 'Pumas UNAM', 8, 'Estadio Akron', (3, 0), 'Maximiliano Quintero Hernandez'),
     ('Monterrey', 'Tigres', 8, 'Estadio BBVA', (0, 0), 'Ismael Rosario Lopez Peñuelas'),
@@ -823,6 +823,7 @@ DATOS_REALES_LIGAMX = {
     "Cruz Azul_America":           {"am": 7,  "co": 15, "ro": 0},  # 5 CAZ + 2 AME | 6 CAZ + 9 AME
     "Santos Laguna_FC Juarez":     {"am": 8,  "co": 18, "ro": 0},  # 4 SAN + 4 JUA | 12 SAN + 6 JUA
     "Guadalajara_Pumas UNAM":      {"am": 3,  "co": 10, "ro": 0},  # 1 GDL + 2 PUM | 6 GDL + 4 PUM
+    "Leon_Atletico San Luis":      {"am": 3,  "co": 8,  "ro": 0},  # 1 LEO + 2 ASL | 6 LEO + 2 ASL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
