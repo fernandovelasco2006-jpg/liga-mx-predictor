@@ -272,7 +272,7 @@ HORARIOS_PARTIDO = {
     ('Santos Laguna', 'Tigres'): '2026-08-29 20:00',
     ('Toluca', 'FC Juarez'): '2026-08-30 17:00',
     ('Monterrey', 'Atletico San Luis'): '2026-08-30 19:00',
-    ('Puebla', 'Toluca'): '2026-11-14 17:00',
+    ('Puebla', 'Toluca'): '2026-09-15 19:00',
     ('FC Juarez', 'Pachuca'): '2026-09-04 21:00',
     ('Atletico San Luis', 'Guadalajara'): '2026-09-05 17:00',
     ('Queretaro', 'Monterrey'): '2026-11-14 19:00',
