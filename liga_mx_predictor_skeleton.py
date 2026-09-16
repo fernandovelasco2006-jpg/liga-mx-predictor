@@ -113,7 +113,7 @@ PARTIDOS = [
     ('Santos Laguna', 'Tigres', 6, 'Estadio TSM Corona', (0, 0), 'Jesus Rafael Lopez Valle'),
     ('Toluca', 'FC Juarez', 6, 'Estadio Nemesio Diez', (4, 0), 'Abraham De Jesus Quirarte Contreras'),
     ('Monterrey', 'Atletico San Luis', 6, 'Estadio BBVA', (1, 3), 'Luis Enrique Santander Aguirre'),
-    ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', None, 'Maximiliano Quintero Hernandez'),
+    ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', (0, 1), 'Maximiliano Quintero Hernandez'),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', (0, 2), 'Katia Itzel Garcia Mendoza'),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
@@ -824,6 +824,7 @@ DATOS_REALES_LIGAMX = {
     "Santos Laguna_FC Juarez":     {"am": 8,  "co": 18, "ro": 0},  # 4 SAN + 4 JUA | 12 SAN + 6 JUA
     "Guadalajara_Pumas UNAM":      {"am": 3,  "co": 10, "ro": 0},  # 1 GDL + 2 PUM | 6 GDL + 4 PUM
     "Leon_Atletico San Luis":      {"am": 3,  "co": 8,  "ro": 0},  # 1 LEO + 2 ASL | 6 LEO + 2 ASL
+    "Puebla_Toluca":               {"am": 1,  "co": 11, "ro": 0},  # 0 PUE + 1 TOL | 6 PUE + 5 TOL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
