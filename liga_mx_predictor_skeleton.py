@@ -120,7 +120,7 @@ PARTIDOS = [
     ('Tigres', 'Necaxa', 7, 'Estadio Universitario', (1, 1), 'Karen Hernandez Andrade'),
     ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
-    ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', None, None),
+    ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', (3, 1), None),
     ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', (1, 0), None),
     ('Necaxa', 'Puebla', 8, 'Estadio Victoria', (0, 1), 'Joaquin Alberto Vizcarra Armenta'),
     ('Atlante', 'Pachuca', 8, 'Estadio Banorte', (0, 3), 'Marco Antonio Ortiz Nava'),
@@ -825,6 +825,7 @@ DATOS_REALES_LIGAMX = {
     "Guadalajara_Pumas UNAM":      {"am": 3,  "co": 10, "ro": 0},  # 1 GDL + 2 PUM | 6 GDL + 4 PUM
     "Leon_Atletico San Luis":      {"am": 3,  "co": 8,  "ro": 0},  # 1 LEO + 2 ASL | 6 LEO + 2 ASL
     "Puebla_Toluca":               {"am": 1,  "co": 11, "ro": 0},  # 0 PUE + 1 TOL | 6 PUE + 5 TOL
+    "Pumas UNAM_Leon":             {"am": 3,  "co": 10, "ro": 0},  # 2 PUM + 1 LEO | 8 PUM + 2 LEO
 }
 
 # ─────────────────────────────────────────────────────────────────────────
