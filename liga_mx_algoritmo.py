@@ -1416,6 +1416,14 @@ UMBRAL_MAX_RECOMENDACION = 85.0
 UMBRAL_MIN_RECOMENDACION = 80.0
 PJ_PARA_UMBRAL_MIN = 10  # mismo valor que PARTIDOS_PARA_TOPE_COMPLETO
 
+# UMBRAL_SONDA_MERCADO_SUSPENDIDO — decisión explícita del usuario (ver
+# analizar_apuestas(), bloque "SONDA"): un mercado suspendido por
+# liga_mx_supabase.calcular_mercados_suspendidos() sigue pudiendo
+# aparecer, pero SOLO si su confianza supera este umbral (más alto que
+# UMBRAL_MAX_RECOMENDACION) — genera evidencia fresca de bajo riesgo sin
+# reabrir el mercado al volumen normal.
+UMBRAL_SONDA_MERCADO_SUSPENDIDO = 92.0
+
 
 def _umbral_dinamico(home_team: str, away_team: str) -> float:
     """
@@ -1659,7 +1667,23 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
 
     filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
     if mercados_suspendidos:
-        filtradas = [a for a in filtradas if a["mercado"] not in mercados_suspendidos]
+        # SONDA — decisión explícita del usuario: en vez de bloquear un
+        # mercado suspendido al 100%, se deja pasar SOLO si su confianza
+        # supera UMBRAL_SONDA_MERCADO_SUSPENDIDO (más exigente que el
+        # umbral normal de recomendación). Resuelve un círculo lógico
+        # real: un mercado suspendido nunca vuelve a generar sugerencias
+        # → nunca se guardan apuestas nuevas de ese mercado → la muestra
+        # evaluada nunca crece → calcular_mercados_suspendidos() nunca
+        # tiene evidencia fresca para decidir si ya mejoró → sigue
+        # suspendido para siempre, sin importar si el mercado en
+        # realidad ya se recuperó. La sonda genera evidencia nueva de
+        # bajo riesgo (solo en los casos de mayor confianza posible)
+        # sin exponer al volumen completo de un mercado que ya se sabe
+        # mal calibrado.
+        filtradas = [
+            a for a in filtradas
+            if a["mercado"] not in mercados_suspendidos or a["confianza"] >= UMBRAL_SONDA_MERCADO_SUSPENDIDO
+        ]
     return filtradas
 
 
