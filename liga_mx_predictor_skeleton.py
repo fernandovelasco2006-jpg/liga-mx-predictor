@@ -131,15 +131,15 @@ PARTIDOS = [
     ('Santos Laguna', 'FC Juarez', 8, 'Estadio TSM Corona', (2, 1), 'Guillermo Pacheco Larios'),
     ('Guadalajara', 'Pumas UNAM', 8, 'Estadio Akron', (3, 0), 'Maximiliano Quintero Hernandez'),
     ('Monterrey', 'Tigres', 8, 'Estadio BBVA', (0, 0), 'Ismael Rosario Lopez Peñuelas'),
-    ('Puebla', 'Atlante', 9, 'Estadio Cuauhtemoc', None, None),
-    ('FC Juarez', 'Tigres', 9, 'Estadio Olimpico Benito Juarez', None, None),
-    ('Atletico San Luis', 'Necaxa', 9, 'Estadio Libertad Financiera', None, None),
-    ('Atlas', 'Pumas UNAM', 9, 'Estadio Jalisco', None, None),
-    ('Monterrey', 'Cruz Azul', 9, 'Estadio BBVA', None, None),
-    ('America', 'Guadalajara', 9, 'Estadio Banorte', None, None),
-    ('Toluca', 'Santos Laguna', 9, 'Estadio Nemesio Diez', None, None),
-    ('Pachuca', 'Tijuana', 9, 'Estadio Hidalgo', None, None),
-    ('Queretaro', 'Leon', 9, 'Estadio Corregidora', None, None),
+    ('Puebla', 'Atlante', 9, 'Estadio Cuauhtemoc', None, 'Aldo Ballesteros Barba'),
+    ('FC Juarez', 'Tigres', 9, 'Estadio Olimpico Benito Juarez', None, 'Marco Antonio Ortiz Nava'),
+    ('Atletico San Luis', 'Necaxa', 9, 'Estadio Libertad Financiera', None, 'Katia Itzel Garcia Mendoza'),
+    ('Atlas', 'Pumas UNAM', 9, 'Estadio Jalisco', None, 'Oscar Mejia Garcia'),
+    ('Monterrey', 'Cruz Azul', 9, 'Estadio BBVA', None, 'Jesus Rafael Lopez Valle'),
+    ('America', 'Guadalajara', 9, 'Estadio Banorte', None, 'Victor Alfonso Caceres Hernandez'),
+    ('Toluca', 'Santos Laguna', 9, 'Estadio Nemesio Diez', None, 'Luis Alfredo Garcia Rodriguez'),
+    ('Pachuca', 'Tijuana', 9, 'Estadio Hidalgo', None, 'Jorge Abraham Camacho Peregrina'),
+    ('Queretaro', 'Leon', 9, 'Estadio Corregidora', None, 'Ismael Rosario Lopez Peñuelas'),
     ('Atlante', 'Monterrey', 10, 'Estadio Banorte', None, None),
     ('Tijuana', 'Atlas', 10, 'Estadio Caliente', None, None),
     ('Guadalajara', 'Queretaro', 10, 'Estadio Akron', None, None),
@@ -501,6 +501,12 @@ ARBITROS_LIGA_MX = {
     # TRANSFERMARKT (4.60, 5 PJ) — este valor aquí es solo el prior de
     # esta fuente específica (Sofascore), sin ficha propia consultada.
     "Joaquin Alberto Vizcarra Armenta": (4.5, 0.15),
+    # FALTABA — dirige Atlas-Pumas (J9), primera vez que aparece en
+    # PARTIDOS. Mismo caso que Joaquin Vizcarra: ya tenía ficha en
+    # ARBITROS_LIGA_MX_TRANSFERMARKT (4.71, 7 PJ) pero nunca en esta
+    # tabla — se agrega con prior neutro por consistencia, el dato real
+    # se completa vía _promedio_arbitro_dinamico().
+    "Oscar Mejia Garcia":              (4.5, 0.15),
 }
 ARBITRO_DEFAULT = (4.5, 0.15)  # promedio de los conocidos, como fallback razonable
 
