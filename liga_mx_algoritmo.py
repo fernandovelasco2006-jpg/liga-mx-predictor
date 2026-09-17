@@ -249,26 +249,29 @@ _PROMEDIO_LIGA_AMARILLAS_EQUIPO = sum(v[0] / v[2] for v in TARJETAS_EQUIPO_LIGAM
 # ACTUALIZAR estos números (y el "5" del comentario de arriba) cada vez
 # que se pegue una tabla nueva de ligamx.net.
 TARJETAS_EQUIPO_APERTURA = {
-    "Atlas":              (21, 3, 5),
-    "Pachuca":            (11, 2, 5),
-    "FC Juarez":          (10, 0, 5),
-    "Leon":               (10, 3, 5),
-    "Necaxa":             (10, 2, 5),
-    "Tigres":             (10, 1, 5),
-    "America":            (9, 1, 5),
-    "Cruz Azul":          (9, 0, 5),
-    "Monterrey":          (7, 2, 5),
-    "Tijuana":            (7, 0, 5),
-    "Toluca":             (7, 1, 5),
-    "Guadalajara":        (6, 1, 5),
-    "Pumas UNAM":         (6, 0, 5),
-    "Atletico San Luis":  (5, 1, 5),
-    "Santos Laguna":      (5, 0, 5),
-    "Puebla":             (4, 1, 5),
-    # Atlante y Queretaro no traían conteo propio en la tabla pegada (0
-    # tarjetas registradas) — se dejan fuera a propósito para que
-    # _factor_tarjetas_equipo() caiga de vuelta al dato de Clausura sin
-    # mezclar un "0 tarjetas" engañoso.
+    # (amarillas_totales, rojas_totales, partidos_jugados) — fuente:
+    # tabla oficial de tarjetas del Apertura 2026, consultada 15/sep/2026
+    # (P=7-8 según equipo). Reemplaza la versión anterior (todos en 5
+    # PJ, sin Atlante ni Queretaro) — ahora los 18 equipos tienen dato
+    # real, ninguno cae al fallback de Clausura por falta de data.
+    "Pachuca":            (23, 2, 8),
+    "Queretaro":          (28, 0, 7),
+    "Atlas":              (15, 4, 8),
+    "Necaxa":             (17, 3, 8),
+    "Tigres":             (16, 3, 8),
+    "Leon":               (13, 3, 8),
+    "FC Juarez":          (21, 0, 8),
+    "Monterrey":          (10, 3, 7),
+    "Atlante":            (13, 1, 8),
+    "Cruz Azul":          (16, 0, 8),
+    "Pumas UNAM":         (11, 1, 8),
+    "Santos Laguna":      (14, 0, 8),
+    "America":            (10, 1, 7),
+    "Atletico San Luis":  (9,  1, 8),
+    "Toluca":             (9,  1, 7),
+    "Puebla":             (8,  1, 7),
+    "Guadalajara":        (7,  1, 8),
+    "Tijuana":            (8,  0, 7),
 }
 
 
@@ -548,6 +551,14 @@ def calcular_lambdas(home_team: str, away_team: str,
     lam_home = (ataque_home / LIGA_PROMEDIO_GOLES) * (defensa_away / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
     lam_away = (ataque_away / LIGA_PROMEDIO_GOLES) * (defensa_home / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
 
+    # Guarda el lambda "base" (Elo/Fuerza Ataque-Defensa + sesgo local-
+    # visita, YA aplicados arriba) antes de sumar forma real + momentum
+    # Elo + sesgo del modelo + localía — necesario más abajo para medir
+    # cuánto se alejó el lambda final del base por la ACUMULACIÓN de
+    # esos 4 ajustes adicionales (ver AMORTIGUACIÓN DE EXCESO COMBINADO).
+    lam_home_base = lam_home
+    lam_away_base = lam_away
+
     # 1b. Forma real — ajusta con goles reales, tope progresivo (ver
     # _tope_shrinkage): empieza en 0 con pocos partidos jugados y llega a
     # TOPE_MAX_FORMA (+/-8%) recién a partir de PARTIDOS_PARA_TOPE_COMPLETO.
@@ -601,6 +612,41 @@ def calcular_lambdas(home_team: str, away_team: str,
 
     # Ventaja de localía estándar (típico ~10-15% en fútbol de liga)
     lam_home *= 1.12
+
+    # ── AMORTIGUACIÓN DE EXCESO COMBINADO ──────────────────────────────
+    # Encontrado con evidencia real (panel de calibración por rango de
+    # confianza, liga_mx_supabase.calcular_calibracion_por_bin(), 67
+    # partidos evaluados, 15/sep/2026): el modelo estaba sobre-confiado
+    # específicamente en el rango 40-90% de probabilidad, con la brecha
+    # CRECIENDO conforme sube la confianza (40-50%: +19.1 pts; 70-80%:
+    # +27.9 pts; 80-90%: +32.8 pts) — mientras que en 0-30% el modelo
+    # era demasiado prudente (brechas negativas). Patrón consistente con
+    # que forma real + momentum Elo + sesgo local/visita + localía —
+    # los 4 multiplicativos e independientes entre sí — se ACUMULABAN
+    # sin freno cuando coincidían a favor del mismo equipo (caso
+    # extremo: hasta ×1.57 combinado, ver análisis que motivó este
+    # cambio), separando demasiado a los favoritos claros de lo que la
+    # evidencia real sostiene.
+    #
+    # Corrección: se mide la razón lam_actual/lam_base (lam_base =
+    # ANTES de forma real, Elo, sesgo del modelo y localía — ver
+    # lam_home_base/lam_away_base guardados arriba) y se comprime esa
+    # razón completa con raíz cuadrada antes de aplicarla — razon**0.5
+    # deja casi intactas las razones cercanas a 1.0 (un solo factor
+    # actuando, sin acumulación real) y comprime fuerte las razones
+    # grandes (ej. 1.57 → 1.25, reduciendo el exceso de +57% a +25%),
+    # que es justo donde se detectó la sobre-confianza real. Mismo
+    # criterio se aplica en dirección contraria (razón <1.0, varios
+    # factores en contra del mismo equipo).
+    for _lam_actual, _lam_base, _es_home in ((lam_home, lam_home_base, True), (lam_away, lam_away_base, False)):
+        if _lam_base <= 0 or _lam_actual <= 0:
+            continue
+        razon = _lam_actual / _lam_base
+        razon_comprimida = razon ** 0.5
+        if _es_home:
+            lam_home = _lam_base * razon_comprimida
+        else:
+            lam_away = _lam_base * razon_comprimida
 
     # 2. Factor altitud -----------------------------------------------
     alt_local = ALTITUD_EQUIPO.get(home_team)
