@@ -131,7 +131,7 @@ PARTIDOS = [
     ('Santos Laguna', 'FC Juarez', 8, 'Estadio TSM Corona', (2, 1), 'Guillermo Pacheco Larios'),
     ('Guadalajara', 'Pumas UNAM', 8, 'Estadio Akron', (3, 0), 'Maximiliano Quintero Hernandez'),
     ('Monterrey', 'Tigres', 8, 'Estadio BBVA', (0, 0), 'Ismael Rosario Lopez Peñuelas'),
-    ('Puebla', 'Atlante', 9, 'Estadio Cuauhtemoc', None, 'Aldo Ballesteros Barba'),
+    ('Puebla', 'Atlante', 9, 'Estadio Cuauhtemoc', (1, 1), 'Aldo Ballesteros Barba'),
     ('FC Juarez', 'Tigres', 9, 'Estadio Olimpico Benito Juarez', None, 'Marco Antonio Ortiz Nava'),
     ('Atletico San Luis', 'Necaxa', 9, 'Estadio Libertad Financiera', None, 'Katia Itzel Garcia Mendoza'),
     ('Atlas', 'Pumas UNAM', 9, 'Estadio Jalisco', None, 'Oscar Mejia Garcia'),
@@ -832,6 +832,9 @@ DATOS_REALES_LIGAMX = {
     "Leon_Atletico San Luis":      {"am": 3,  "co": 8,  "ro": 0},  # 1 LEO + 2 ASL | 6 LEO + 2 ASL
     "Puebla_Toluca":               {"am": 1,  "co": 11, "ro": 0},  # 0 PUE + 1 TOL | 6 PUE + 5 TOL
     "Pumas UNAM_Leon":             {"am": 3,  "co": 10, "ro": 0},  # 2 PUM + 1 LEO | 8 PUM + 2 LEO
+
+    # Jornada 9 — resultados y estadísticas confirmados (fuente: Sofascore)
+    "Puebla_Atlante":              {"am": 1,  "co": 17, "ro": 0},  # 1 PUE + 0 ATL | 6 PUE + 11 ATL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
