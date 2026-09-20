@@ -136,7 +136,7 @@ PARTIDOS = [
     ('Atletico San Luis', 'Necaxa', 9, 'Estadio Libertad Financiera', (3, 1), 'Katia Itzel Garcia Mendoza'),
     ('Atlas', 'Pumas UNAM', 9, 'Estadio Jalisco', (1, 1), 'Oscar Mejia Garcia'),
     ('Monterrey', 'Cruz Azul', 9, 'Estadio BBVA', (1, 0), 'Jesus Rafael Lopez Valle'),
-    ('America', 'Guadalajara', 9, 'Estadio Banorte', None, 'Victor Alfonso Caceres Hernandez'),
+    ('America', 'Guadalajara', 9, 'Estadio Banorte', (2, 2), 'Victor Alfonso Caceres Hernandez'),
     ('Toluca', 'Santos Laguna', 9, 'Estadio Nemesio Diez', None, 'Luis Alfredo Garcia Rodriguez'),
     ('Pachuca', 'Tijuana', 9, 'Estadio Hidalgo', None, 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Leon', 9, 'Estadio Corregidora', None, 'Ismael Rosario Lopez Peñuelas'),
@@ -838,6 +838,7 @@ DATOS_REALES_LIGAMX = {
     "Atletico San Luis_Necaxa":    {"am": 2,  "co": 7,  "ro": 0},  # 1 ASL + 1 NEC | 2 ASL + 5 NEC
     "Atlas_Pumas UNAM":            {"am": 0,  "co": 14, "ro": 1},  # 0 ATL + 0 PUM | 8 ATL + 6 PUM | 0 ATL + 1 PUM roja
     "Monterrey_Cruz Azul":         {"am": 3,  "co": 10, "ro": 0},  # 1 MTY + 2 CAZ | 6 MTY + 4 CAZ
+    "America_Guadalajara":         {"am": 4,  "co": 10, "ro": 0},  # 1 AME + 3 GDL | 4 AME + 6 GDL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
