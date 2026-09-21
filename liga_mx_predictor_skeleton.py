@@ -132,14 +132,14 @@ PARTIDOS = [
     ('Guadalajara', 'Pumas UNAM', 8, 'Estadio Akron', (3, 0), 'Maximiliano Quintero Hernandez'),
     ('Monterrey', 'Tigres', 8, 'Estadio BBVA', (0, 0), 'Ismael Rosario Lopez Peñuelas'),
     ('Puebla', 'Atlante', 9, 'Estadio Cuauhtemoc', (1, 1), 'Aldo Ballesteros Barba'),
-    ('FC Juarez', 'Tigres', 9, 'Estadio Olimpico Benito Juarez', None, 'Marco Antonio Ortiz Nava'),
+    ('FC Juarez', 'Tigres', 9, 'Estadio Olimpico Benito Juarez', (2, 0), 'Marco Antonio Ortiz Nava'),
     ('Atletico San Luis', 'Necaxa', 9, 'Estadio Libertad Financiera', (3, 1), 'Katia Itzel Garcia Mendoza'),
     ('Atlas', 'Pumas UNAM', 9, 'Estadio Jalisco', (1, 1), 'Oscar Mejia Garcia'),
     ('Monterrey', 'Cruz Azul', 9, 'Estadio BBVA', (1, 0), 'Jesus Rafael Lopez Valle'),
     ('America', 'Guadalajara', 9, 'Estadio Banorte', (2, 2), 'Victor Alfonso Caceres Hernandez'),
-    ('Toluca', 'Santos Laguna', 9, 'Estadio Nemesio Diez', None, 'Luis Alfredo Garcia Rodriguez'),
-    ('Pachuca', 'Tijuana', 9, 'Estadio Hidalgo', None, 'Jorge Abraham Camacho Peregrina'),
-    ('Queretaro', 'Leon', 9, 'Estadio Corregidora', None, 'Ismael Rosario Lopez Peñuelas'),
+    ('Toluca', 'Santos Laguna', 9, 'Estadio Nemesio Diez', (2, 3), 'Luis Alfredo Garcia Rodriguez'),
+    ('Pachuca', 'Tijuana', 9, 'Estadio Hidalgo', (2, 2), 'Jorge Abraham Camacho Peregrina'),
+    ('Queretaro', 'Leon', 9, 'Estadio Corregidora', (1, 1), 'Ismael Rosario Lopez Peñuelas'),
     ('Atlante', 'Monterrey', 10, 'Estadio Banorte', None, None),
     ('Tijuana', 'Atlas', 10, 'Estadio Caliente', None, None),
     ('Guadalajara', 'Queretaro', 10, 'Estadio Akron', None, None),
@@ -839,6 +839,10 @@ DATOS_REALES_LIGAMX = {
     "Atlas_Pumas UNAM":            {"am": 0,  "co": 14, "ro": 1},  # 0 ATL + 0 PUM | 8 ATL + 6 PUM | 0 ATL + 1 PUM roja
     "Monterrey_Cruz Azul":         {"am": 3,  "co": 10, "ro": 0},  # 1 MTY + 2 CAZ | 6 MTY + 4 CAZ
     "America_Guadalajara":         {"am": 4,  "co": 10, "ro": 0},  # 1 AME + 3 GDL | 4 AME + 6 GDL
+    "Toluca_Santos Laguna":        {"am": 2,  "co": 13, "ro": 1},  # 1 TOL + 1 SAN | 6 TOL + 7 SAN | 1 TOL + 0 SAN roja
+    "Pachuca_Tijuana":             {"am": 4,  "co": 10, "ro": 0},  # 1 PAC + 3 TIJ | 10 PAC + 0 TIJ
+    "Queretaro_Leon":              {"am": 7,  "co": 9,  "ro": 0},  # 4 QRO + 3 LEO | 8 QRO + 1 LEO
+    "FC Juarez_Tigres":            {"am": 2,  "co": 11, "ro": 0},  # 1 JUA + 1 TIG | 2 JUA + 9 TIG
 }
 
 # ─────────────────────────────────────────────────────────────────────────
