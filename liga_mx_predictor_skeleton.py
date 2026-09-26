@@ -140,8 +140,8 @@ PARTIDOS = [
     ('Toluca', 'Santos Laguna', 9, 'Estadio Nemesio Diez', (2, 3), 'Luis Alfredo Garcia Rodriguez'),
     ('Pachuca', 'Tijuana', 9, 'Estadio Hidalgo', (2, 2), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Leon', 9, 'Estadio Corregidora', (1, 1), 'Ismael Rosario Lopez Peñuelas'),
-    ('Atlante', 'Monterrey', 10, 'Estadio Banorte', None, 'Mario Terrazas Chavez'),
-    ('Tijuana', 'Atlas', 10, 'Estadio Caliente', None, 'Luis Enrique Santander Aguirre'),
+    ('Atlante', 'Monterrey', 10, 'Estadio Banorte', (4, 2), 'Mario Terrazas Chavez'),
+    ('Tijuana', 'Atlas', 10, 'Estadio Caliente', (2, 3), 'Luis Enrique Santander Aguirre'),
     ('Guadalajara', 'Queretaro', 10, 'Estadio Akron', None, 'Salvador Perez Villalobos'),
     ('Santos Laguna', 'Pachuca', 10, 'Estadio TSM Corona', None, 'Adonai Escobedo Gonzalez'),
     ('Tigres', 'Puebla', 10, 'Estadio Universitario', None, 'Vicente Jassiel Reynoso Arce'),
@@ -843,6 +843,10 @@ DATOS_REALES_LIGAMX = {
     "Pachuca_Tijuana":             {"am": 4,  "co": 10, "ro": 0},  # 1 PAC + 3 TIJ | 10 PAC + 0 TIJ
     "Queretaro_Leon":              {"am": 7,  "co": 9,  "ro": 0},  # 4 QRO + 3 LEO | 8 QRO + 1 LEO
     "FC Juarez_Tigres":            {"am": 2,  "co": 11, "ro": 0},  # 1 JUA + 1 TIG | 2 JUA + 9 TIG
+
+    # Jornada 10 — resultados y estadísticas confirmados (fuente: Sofascore)
+    "Atlante_Monterrey":           {"am": 4,  "co": 8,  "ro": 0},  # 2 ATL + 2 MTY | 2 ATL + 6 MTY
+    "Tijuana_Atlas":               {"am": 4,  "co": 16, "ro": 0},  # 2 TIJ + 2 ATL | 5 TIJ + 11 ATL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
