@@ -142,10 +142,10 @@ PARTIDOS = [
     ('Queretaro', 'Leon', 9, 'Estadio Corregidora', (1, 1), 'Ismael Rosario Lopez Peñuelas'),
     ('Atlante', 'Monterrey', 10, 'Estadio Banorte', (4, 2), 'Mario Terrazas Chavez'),
     ('Tijuana', 'Atlas', 10, 'Estadio Caliente', (2, 3), 'Luis Enrique Santander Aguirre'),
-    ('Guadalajara', 'Queretaro', 10, 'Estadio Akron', None, 'Salvador Perez Villalobos'),
+    ('Guadalajara', 'Queretaro', 10, 'Estadio Akron', (0, 2), 'Salvador Perez Villalobos'),
     ('Santos Laguna', 'Pachuca', 10, 'Estadio TSM Corona', None, 'Adonai Escobedo Gonzalez'),
     ('Tigres', 'Puebla', 10, 'Estadio Universitario', None, 'Vicente Jassiel Reynoso Arce'),
-    ('Cruz Azul', 'Toluca', 10, 'Estadio Banorte', None, 'Katia Itzel Garcia Mendoza'),
+    ('Cruz Azul', 'Toluca', 10, 'Estadio Banorte', (3, 3), 'Katia Itzel Garcia Mendoza'),
     ('Pumas UNAM', 'Atletico San Luis', 10, 'Estadio Olimpico Universitario', None, 'Victor Alfonso Caceres Hernandez'),
     ('Leon', 'FC Juarez', 10, 'Estadio Nou Camp', None, 'Yonatan Peinado Aguirre'),
     ('Necaxa', 'America', 10, 'Estadio Victoria', None, 'Guillermo Pacheco Larios'),
@@ -847,6 +847,8 @@ DATOS_REALES_LIGAMX = {
     # Jornada 10 — resultados y estadísticas confirmados (fuente: Sofascore)
     "Atlante_Monterrey":           {"am": 4,  "co": 8,  "ro": 0},  # 2 ATL + 2 MTY | 2 ATL + 6 MTY
     "Tijuana_Atlas":               {"am": 4,  "co": 16, "ro": 0},  # 2 TIJ + 2 ATL | 5 TIJ + 11 ATL
+    "Guadalajara_Queretaro":       {"am": 2,  "co": 18, "ro": 1},  # 0 GDL + 2 QRO | 12 GDL + 6 QRO | 1 GDL + 0 QRO roja
+    "Cruz Azul_Toluca":            {"am": 5,  "co": 9,  "ro": 0},  # 4 CAZ + 1 TOL | 4 CAZ + 5 TOL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
