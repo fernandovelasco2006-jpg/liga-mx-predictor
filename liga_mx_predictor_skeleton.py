@@ -143,12 +143,12 @@ PARTIDOS = [
     ('Atlante', 'Monterrey', 10, 'Estadio Banorte', (4, 2), 'Mario Terrazas Chavez'),
     ('Tijuana', 'Atlas', 10, 'Estadio Caliente', (2, 3), 'Luis Enrique Santander Aguirre'),
     ('Guadalajara', 'Queretaro', 10, 'Estadio Akron', (0, 2), 'Salvador Perez Villalobos'),
-    ('Santos Laguna', 'Pachuca', 10, 'Estadio TSM Corona', None, 'Adonai Escobedo Gonzalez'),
-    ('Tigres', 'Puebla', 10, 'Estadio Universitario', None, 'Vicente Jassiel Reynoso Arce'),
+    ('Santos Laguna', 'Pachuca', 10, 'Estadio TSM Corona', (1, 0), 'Adonai Escobedo Gonzalez'),
+    ('Tigres', 'Puebla', 10, 'Estadio Universitario', (1, 0), 'Vicente Jassiel Reynoso Arce'),
     ('Cruz Azul', 'Toluca', 10, 'Estadio Banorte', (3, 3), 'Katia Itzel Garcia Mendoza'),
-    ('Pumas UNAM', 'Atletico San Luis', 10, 'Estadio Olimpico Universitario', None, 'Victor Alfonso Caceres Hernandez'),
-    ('Leon', 'FC Juarez', 10, 'Estadio Nou Camp', None, 'Yonatan Peinado Aguirre'),
-    ('Necaxa', 'America', 10, 'Estadio Victoria', None, 'Guillermo Pacheco Larios'),
+    ('Pumas UNAM', 'Atletico San Luis', 10, 'Estadio Olimpico Universitario', (2, 3), 'Victor Alfonso Caceres Hernandez'),
+    ('Leon', 'FC Juarez', 10, 'Estadio Nou Camp', (2, 1), 'Yonatan Peinado Aguirre'),
+    ('Necaxa', 'America', 10, 'Estadio Victoria', (2, 4), 'Guillermo Pacheco Larios'),
     ('Queretaro', 'Atlante', 11, 'Estadio Corregidora', None, None),
     ('Puebla', 'Leon', 11, 'Estadio Cuauhtemoc', None, None),
     ('Tigres', 'Toluca', 11, 'Estadio Universitario', None, None),
@@ -849,6 +849,11 @@ DATOS_REALES_LIGAMX = {
     "Tijuana_Atlas":               {"am": 4,  "co": 16, "ro": 0},  # 2 TIJ + 2 ATL | 5 TIJ + 11 ATL
     "Guadalajara_Queretaro":       {"am": 2,  "co": 18, "ro": 1},  # 0 GDL + 2 QRO | 12 GDL + 6 QRO | 1 GDL + 0 QRO roja
     "Cruz Azul_Toluca":            {"am": 5,  "co": 9,  "ro": 0},  # 4 CAZ + 1 TOL | 4 CAZ + 5 TOL
+    "Santos Laguna_Pachuca":       {"am": 5,  "co": 15, "ro": 0},  # 2 SAN + 3 PAC | 10 SAN + 5 PAC
+    "Tigres_Puebla":               {"am": 1,  "co": 5,  "ro": 0},  # 0 TIG + 1 PUE | 5 TIG + 0 PUE
+    "Pumas UNAM_Atletico San Luis": {"am": 3, "co": 13, "ro": 0}, # 1 PUM + 2 ASL | 11 PUM + 2 ASL
+    "Leon_FC Juarez":              {"am": 4,  "co": 5,  "ro": 0},  # 2 LEO + 2 JUA | 1 LEO + 4 JUA
+    "Necaxa_America":              {"am": 5,  "co": 8,  "ro": 0},  # 3 NEC + 2 AME | 3 NEC + 5 AME
 }
 
 # ─────────────────────────────────────────────────────────────────────────
