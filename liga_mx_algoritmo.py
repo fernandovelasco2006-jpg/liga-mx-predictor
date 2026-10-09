@@ -1508,13 +1508,37 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     apuestas = []
     UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
 
+    # FIX #3 (de 3 — "todo lo que ayude"): castigo extra de umbral para
+    # los 4 mercados con brecha de calibración confirmada por el panel
+    # de Auto-calibración (confianza del modelo sistemáticamente +15 a
+    # +24 pts por encima del acierto real): Resultado (1X2), Doble
+    # Oportunidad, Empate Sin Apuesta y Tarjetas. Total Goles, Córners,
+    # Ambos Marcan y Hándicap NO llevan este castigo porque su propia
+    # brecha es pequeña o nula (+4.7 y -0.3 pts respectivamente) — son
+    # mercados que dependen de la lambda SUMADA (ritmo de gol/tarjetas),
+    # no de la RAZÓN lambda_home/lambda_away que separa favorito vs
+    # underdog, que es justo donde viven el exceso de confianza y el
+    # exceso de amortiguación insuficiente (ver fixes #1 y #2 arriba).
+    # Este castigo es ADEMÁS de esos dos fixes, no un sustituto: aunque
+    # la razón esté mejor comprimida y el tope de forma tarde más en
+    # alcanzar su máximo, estos 4 mercados sigue pidiendo un margen
+    # mayor sobre el umbral dinámico antes de recomendar, hasta que el
+    # panel de calibración confirme que la brecha se cerró con datos
+    # reales de varias jornadas.
+    CASTIGO_MERCADOS_SOBRECONFIADOS = 6.0  # puntos porcentuales extra
+    MERCADOS_SOBRECONFIADOS = {
+        "Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta", "Tarjetas",
+    }
+    UMBRAL_RECOMENDACION_ESTRICTO = min(UMBRAL_RECOMENDACION + CASTIGO_MERCADOS_SOBRECONFIADOS, 97.0)
+
     def ap(mercado, seleccion, confianza, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
+        umbral_real = UMBRAL_RECOMENDACION_ESTRICTO if mercado in MERCADOS_SOBRECONFIADOS else UMBRAL_RECOMENDACION
         entrada = {
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
             "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el umbral
             "nota": nota,
-            "umbral_aplicado": round(UMBRAL_RECOMENDACION, 1),
+            "umbral_aplicado": round(umbral_real, 1),
         }
         if cuota_decimal is not None:
             entrada["value_bet"] = calcular_value_bet(confianza, cuota_decimal)
@@ -1543,17 +1567,17 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     # 1. Resultado (1X2) — único mercado con value betting (ver docstring)
     cuota_home = cuotas.get("home") if cuotas else None
     cuota_away = cuotas.get("away") if cuotas else None
-    if pa >= UMBRAL_RECOMENDACION:
+    if pa >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
-    if pb >= UMBRAL_RECOMENDACION:
+    if pb >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
 
     # 2. Doble Oportunidad (1X / X2)
     conf_1x = min(pa + pd_, 99)
     conf_x2 = min(pb + pd_, 99)
-    if conf_1x >= UMBRAL_RECOMENDACION and pa < UMBRAL_RECOMENDACION:
+    if conf_1x >= UMBRAL_RECOMENDACION_ESTRICTO and pa < UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
-    if conf_x2 >= UMBRAL_RECOMENDACION and pb < UMBRAL_RECOMENDACION:
+    if conf_x2 >= UMBRAL_RECOMENDACION_ESTRICTO and pb < UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
 
     # 3. Empate Sin Apuesta (Draw No Bet) — probabilidad de ganar,
@@ -1561,10 +1585,10 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     if (pa + pb) > 0:
         conf_dnb_home = pa / (pa + pb) * 100
         conf_dnb_away = pb / (pa + pb) * 100
-        if conf_dnb_home >= UMBRAL_RECOMENDACION:
+        if conf_dnb_home >= UMBRAL_RECOMENDACION_ESTRICTO:
             ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home,
                f"{pa:.1f}% vs {pb:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
-        if conf_dnb_away >= UMBRAL_RECOMENDACION:
+        if conf_dnb_away >= UMBRAL_RECOMENDACION_ESTRICTO:
             ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away,
                f"{pb:.1f}% vs {pa:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
 
@@ -1611,15 +1635,15 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
 
     # 7. Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
-    if r["prob_tarj_over25"] >= UMBRAL_RECOMENDACION:
+    if r["prob_tarj_over25"] >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over35"] >= UMBRAL_RECOMENDACION:
+    if r["prob_tarj_over35"] >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over45"] >= UMBRAL_RECOMENDACION:
+    if r["prob_tarj_over45"] >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over55"] >= UMBRAL_RECOMENDACION:
+    if r["prob_tarj_over55"] >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if (100 - r["prob_tarj_over45"]) >= UMBRAL_RECOMENDACION:
+    if (100 - r["prob_tarj_over45"]) >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
 
     # 8. Córners
