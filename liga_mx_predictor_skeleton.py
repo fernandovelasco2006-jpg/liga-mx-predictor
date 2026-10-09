@@ -308,7 +308,7 @@ HORARIOS_PARTIDO = {
     ('Pumas UNAM', 'Atletico San Luis'): '2026-09-27 12:00',
     ('Leon', 'FC Juarez'): '2026-09-27 19:00',
     ('Necaxa', 'America'): '2026-09-27 21:00',
-    ('Queretaro', 'Atlante'): '2026-10-09 19:00',
+    ('Queretaro', 'Atlante'): '2026-10-10 17:00',  # corregido: estaba mal como 09/10 19:00 (venía de un error de extracción del calendario original); confirmado 10/10 17:00 hora CDMX vía FoxSports
     ('Puebla', 'Leon'): '2026-10-09 19:00',
     ('Tigres', 'Toluca'): '2026-10-09 21:00',
     ('FC Juarez', 'Tijuana'): '2026-10-10 17:00',
