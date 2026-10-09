@@ -12,7 +12,7 @@
 import numpy as np
 from collections import defaultdict
 from datetime import datetime, timedelta
-
+ 
 from liga_mx_predictor_skeleton import (
     EQUIPOS, ELO, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO,
     ARBITROS_LIGA_MX, ARBITRO_DEFAULT, ARBITROS_LIGA_MX_TRANSFERMARKT,
@@ -23,7 +23,7 @@ from liga_mx_elo_update import (
     actualizar_elo, actualizar_fuerza_ataque_defensa,
     resumen_movimiento_elo, n_partidos_procesados,
 )
-
+ 
 # Import opcional — liga_mx_cuotas.py depende de requests y de tener una
 # API key de The Odds API configurada en algún lado; si el módulo no
 # está presente (entorno de pruebas, o el usuario aún no lo agregó al
@@ -34,11 +34,11 @@ try:
 except ImportError:
     def calcular_value_bet(prob_modelo_pct, cuota_decimal):
         return {"ev_pct": None, "prob_implicita_pct": None, "tiene_valor": False}
-
+ 
     def calcular_value_bet_totales(linea_modelo, direccion, cuotas_totales):
         return {"apostable": False, "point_real": None, "ev_pct": None,
                 "prob_implicita_pct": None, "tiene_valor": False, "casa": None}
-
+ 
 # -------------------------------------------------------------------------
 # FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
 # (fuente FotMob: "goals_per_match" / "goals_conceded_per_match" — el
@@ -51,7 +51,7 @@ except ImportError:
 # para CORNERS_EQUIPO y el ELO).
 # -------------------------------------------------------------------------
 LIGA_PROMEDIO_GOLES = 1.3693  # exacto: suma GF de los 18 equipos / (18x17) del Clausura 2026 — antes 1.35 (aproximado)
-
+ 
 # -------------------------------------------------------------------------
 # CORRECCIÓN DIXON-COLES — marcadores bajos correlacionados
 # En fútbol real, 0-0, 1-0, 0-1 y 1-1 ocurren un poco más seguido de lo
@@ -72,8 +72,8 @@ LIGA_PROMEDIO_GOLES = 1.3693  # exacto: suma GF de los 18 equipos / (18x17) del 
 # simulaciones independientes sin relación matemática con el marcador.
 # -------------------------------------------------------------------------
 RHO_DIXON_COLES = -0.13
-
-
+ 
+ 
 def _tau_dixon_coles(x: int, y: int, lam: float, mu: float, rho: float = RHO_DIXON_COLES) -> float:
     """
     Factor de corrección tau(x,y) de Dixon-Coles. Devuelve 1.0 para
@@ -89,8 +89,8 @@ def _tau_dixon_coles(x: int, y: int, lam: float, mu: float, rho: float = RHO_DIX
     if x == 1 and y == 1:
         return 1 - rho
     return 1.0
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # SHRINKAGE PROGRESIVO — el tope de "Forma real" y "Momentum vía Elo" no
 # debería ser el mismo con 2 partidos jugados que con 15. Con pocos datos,
@@ -102,8 +102,8 @@ def _tau_dixon_coles(x: int, y: int, lam: float, mu: float, rho: float = RHO_DIX
 # -------------------------------------------------------------------------
 TOPE_MAX_FORMA = 0.08
 PARTIDOS_PARA_TOPE_COMPLETO = 10
-
-
+ 
+ 
 def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
                      partidos_para_completo: int = PARTIDOS_PARA_TOPE_COMPLETO) -> float:
     """Tope dinámico (0 a tope_max) según cuántos partidos reales lleva
@@ -112,8 +112,8 @@ def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
     if partidos_jugados <= 0:
         return 0.0
     return tope_max * min(partidos_jugados / partidos_para_completo, 1.0)
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # SESGO LOCAL/VISITA — cuánto mejor/peor rinde un equipo jugando en casa
 # vs. de visita, respecto a SU PROPIO promedio de temporada (Clausura
@@ -123,8 +123,8 @@ def _tope_shrinkage(partidos_jugados: int, tope_max: float = TOPE_MAX_FORMA,
 # para no sobre-corregir con ruido.
 # -------------------------------------------------------------------------
 TOPE_SESGO_LOCAL_VISITA = 0.20
-
-
+ 
+ 
 def _razon_capada(valor: float, base: float, tope: float = TOPE_SESGO_LOCAL_VISITA) -> float:
     """valor/base, acotado a [1-tope, 1+tope]. Si falta cualquiera de los
     dos datos, devuelve 1.0 (sin ajuste)."""
@@ -132,9 +132,9 @@ def _razon_capada(valor: float, base: float, tope: float = TOPE_SESGO_LOCAL_VISI
         return 1.0
     razon = valor / base
     return max(1.0 - tope, min(1.0 + tope, razon))
-
+ 
 _elo_promedio = sum(ELO.values()) / len(ELO)
-
+ 
 FUERZA_ATAQUE = {
     # Recalibrado con la tabla exacta del Clausura 2026 (17 partidos,
     # gf/pj — la tabla cuadra perfectamente con W-E-P y puntos de cada
@@ -179,7 +179,7 @@ FUERZA_DEFENSA = {
     "Atlante":            2.18,  # ⚠️ heredado de Mazatlán
     "Santos Laguna":      2.24,
 }
-
+ 
 # -------------------------------------------------------------------------
 # RECALIBRACIÓN DINÁMICA — a partir de aquí, ELO_BASE / FUERZA_ATAQUE_BASE /
 # FUERZA_DEFENSA_BASE son el punto de partida "Clausura 2026" (nunca se
@@ -192,20 +192,20 @@ FUERZA_DEFENSA = {
 ELO_BASE = dict(ELO)
 FUERZA_ATAQUE_BASE = dict(FUERZA_ATAQUE)
 FUERZA_DEFENSA_BASE = dict(FUERZA_DEFENSA)
-
+ 
 ELO_ACTUALIZADO = actualizar_elo(PARTIDOS, ELO_BASE)
 FUERZA_ATAQUE_ACTUALIZADA, FUERZA_DEFENSA_ACTUALIZADA = actualizar_fuerza_ataque_defensa(
     PARTIDOS, FUERZA_ATAQUE_BASE, FUERZA_DEFENSA_BASE
 )
 _elo_promedio_actualizado = sum(ELO_ACTUALIZADO.values()) / len(ELO_ACTUALIZADO)
-
+ 
 # A partir de aquí, FUERZA_ATAQUE y FUERZA_DEFENSA (los nombres que usa el
 # resto de este archivo) YA SON las versiones ajustadas por la forma real
 # del torneo — no las estáticas de arriba. Para comparar "modelo con vs.
 # sin recalibración", usa FUERZA_ATAQUE_BASE / FUERZA_DEFENSA_BASE.
 FUERZA_ATAQUE = FUERZA_ATAQUE_ACTUALIZADA
 FUERZA_DEFENSA = FUERZA_DEFENSA_ACTUALIZADA
-
+ 
 # -------------------------------------------------------------------------
 # TARJETAS POR EQUIPO — Clausura 2026 (fuente FotMob, 17 PJ, ver arriba)
 # vs. Apertura 2026 EN VIVO (fuente ligamx.net, tabla oficial de
@@ -242,7 +242,7 @@ TARJETAS_EQUIPO_LIGAMX = {
     "Monterrey":          (26, 1, 17),
 }
 _PROMEDIO_LIGA_AMARILLAS_EQUIPO = sum(v[0] / v[2] for v in TARJETAS_EQUIPO_LIGAMX.values()) / len(TARJETAS_EQUIPO_LIGAMX)
-
+ 
 # Apertura 2026 EN VIVO — (amarillas_totales, rojas_totales, partidos_jugados)
 # Fuente: ligamx.net, tabla "Tarjetas Amarillas"/"Tarjetas Rojas" por
 # club, consultada tras la Jornada 5 (5 PJ para todos los equipos).
@@ -273,14 +273,14 @@ TARJETAS_EQUIPO_APERTURA = {
     "Guadalajara":        (7,  1, 8),
     "Tijuana":            (8,  0, 7),
 }
-
-
+ 
+ 
 def _factor_tarjetas_equipo(equipo: str) -> float:
     """
     Qué tan por encima/debajo del promedio de liga está el ESTILO
     disciplinario del equipo (independiente del árbitro). 1.0 = promedio
     de liga. Tope [0.7, 1.4] para no sobre-ajustar con muestras chicas.
-
+ 
     Mezcla Clausura 2026 (base robusta, 17 PJ) con Apertura 2026 EN VIVO
     (TARJETAS_EQUIPO_APERTURA) usando el mismo shrinkage progresivo que
     _tope_shrinkage(): con 0 PJ del Apertura, 100% Clausura; a partir de
@@ -288,18 +288,18 @@ def _factor_tarjetas_equipo(equipo: str) -> float:
     """
     datos_clausura = TARJETAS_EQUIPO_LIGAMX.get(equipo)
     datos_apertura = TARJETAS_EQUIPO_APERTURA.get(equipo)
-
+ 
     prom_clausura = None
     if datos_clausura and datos_clausura[2] > 0:
         am_c, _ro_c, pj_c = datos_clausura
         prom_clausura = am_c / pj_c
-
+ 
     prom_apertura = None
     pj_apertura = 0
     if datos_apertura and datos_apertura[2] > 0:
         am_a, _ro_a, pj_apertura = datos_apertura
         prom_apertura = am_a / pj_apertura
-
+ 
     if prom_clausura is None and prom_apertura is None:
         return 1.0
     if prom_clausura is None:
@@ -309,9 +309,9 @@ def _factor_tarjetas_equipo(equipo: str) -> float:
     else:
         peso_apertura = min(pj_apertura / PARTIDOS_PARA_TOPE_COMPLETO, 1.0)
         promedio_mezclado = (1 - peso_apertura) * prom_clausura + peso_apertura * prom_apertura
-
+ 
     return max(0.7, min(1.4, promedio_mezclado / _PROMEDIO_LIGA_AMARILLAS_EQUIPO))
-
+ 
 # -------------------------------------------------------------------------
 # FECHAS DE LEAGUES CUP POR EQUIPO — fase de grupos confirmada (4-13 de
 # agosto 2026). Los 18 equipos de Liga MX participan, 3 partidos cada
@@ -354,7 +354,7 @@ LEAGUES_CUP_FECHAS = {
                             "2026-08-25", "2026-08-26", "2026-08-27"],  # + cuartos vs Austin FC (fecha exacta TBD)
 }
 FACTOR_FATIGA_LEAGUES_CUP = 0.90   # -10% lambda ofensivo, como pediste
-
+ 
 ALTITUD_UMBRAL = 1700       # metros — a partir de aquí se considera "altura"
 BONUS_ALTITUD_LOCAL = 0.20  # +0.2 lambda para el local en altura, como pediste
 EQUIPOS_ACLIMATADOS_ALTURA = {
@@ -363,16 +363,16 @@ EQUIPOS_ACLIMATADOS_ALTURA = {
     "Toluca", "Pachuca", "Queretaro", "Atletico San Luis", "Leon",
     "Necaxa", "Pumas UNAM", "America", "Cruz Azul", "Atlante",
 }
-
-
+ 
+ 
 def _buscar_arbitro(home_team: str, away_team: str):
     """Busca el árbitro asignado a un partido dentro de PARTIDOS."""
     for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
         if local == home_team and visit == away_team:
             return arbitro
     return None
-
-
+ 
+ 
 def _buscar_fecha_partido(home_team: str, away_team: str):
     """Busca la fecha/hora del partido en HORARIOS_PARTIDO."""
     horario = HORARIOS_PARTIDO.get((home_team, away_team))
@@ -382,8 +382,8 @@ def _buscar_fecha_partido(home_team: str, away_team: str):
         return datetime.strptime(horario, "%Y-%m-%d %H:%M")
     except ValueError:
         return None
-
-
+ 
+ 
 def _jugo_leagues_cup_reciente(equipo: str, fecha_partido: datetime) -> bool:
     """True si el equipo jugó Leagues Cup en los 7 días previos a fecha_partido."""
     if fecha_partido is None:
@@ -397,8 +397,8 @@ def _jugo_leagues_cup_reciente(equipo: str, fecha_partido: datetime) -> bool:
         if timedelta(0) <= (fecha_partido - f_dt) <= timedelta(days=7):
             return True
     return False
-
-
+ 
+ 
 def _forma_real_liga_mx() -> dict:
     """
     Calcula (goles_favor, goles_contra, partidos_jugados) REALES por
@@ -415,8 +415,8 @@ def _forma_real_liga_mx() -> dict:
         forma[local][0] += gh; forma[local][1] += ga; forma[local][2] += 1
         forma[visit][0] += ga; forma[visit][1] += gh; forma[visit][2] += 1
     return forma
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # PROMEDIO_LIGA_AMARILLAS_BASE (Clausura 2026, 4.3) — YA NO se usa fijo.
 # Confirmado con datos reales del Apertura 2026 (52 partidos con dato de
@@ -438,8 +438,8 @@ def _forma_real_liga_mx() -> dict:
 # -------------------------------------------------------------------------
 PROMEDIO_LIGA_AMARILLAS_BASE = 4.3
 PARTIDOS_PARA_TOPE_COMPLETO_LIGA = 50  # ~una jornada completa (9) x 5-6 jornadas
-
-
+ 
+ 
 def _promedio_liga_amarillas_dinamico() -> float:
     """
     Mezcla PROMEDIO_LIGA_AMARILLAS_BASE (Clausura 2026) con el promedio
@@ -447,7 +447,7 @@ def _promedio_liga_amarillas_dinamico() -> float:
     DATOS_REALES_LIGAMX, mismo patrón que _rojas_reales_por_arbitro()),
     con shrinkage progresivo según cuántos partidos de la liga completa
     ya tienen dato de amarillas confirmado.
-
+ 
     Se recalcula cada vez que se llama (barato — recorre PARTIDOS, ~150
     filas) para que se actualice solo conforme avanza el torneo, sin
     tocar código.
@@ -461,12 +461,12 @@ def _promedio_liga_amarillas_dinamico() -> float:
     ]
     if not amarillas_reales:
         return PROMEDIO_LIGA_AMARILLAS_BASE
-
+ 
     promedio_apertura = sum(amarillas_reales) / len(amarillas_reales)
     peso_apertura = min(len(amarillas_reales) / PARTIDOS_PARA_TOPE_COMPLETO_LIGA, 1.0)
     return (1 - peso_apertura) * PROMEDIO_LIGA_AMARILLAS_BASE + peso_apertura * promedio_apertura
-
-
+ 
+ 
 def calcular_lambdas(home_team: str, away_team: str,
                       peso_elo: float = 1.0,
                       peso_altitud: float = 1.0,
@@ -508,21 +508,21 @@ def calcular_lambdas(home_team: str, away_team: str,
       3. Factor altitud (ventaja para el local en ciudades altas)
       4. Factor árbitro (promedio de tarjetas -> intensidad del partido)
       5. Factor fatiga (Leagues Cup en los últimos 7 días)
-
+ 
     peso_elo, peso_altitud, peso_arbitro, peso_forma_elo: multiplicadores
     para ajustar cuánto pesa cada factor en el resultado final. 1.0 =
     calibración por defecto (la que ya probamos). 0.0 = el factor no
     tiene efecto. 2.0 = el doble de efecto que el calibrado. Pensados
     para conectarse directo a st.slider en la interfaz — sin tocar
     variables globales.
-
+ 
     sesgo_por_equipo: diccionario opcional, salida directa de
     liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
     Si se omite (None, el default), este paso simplemente no se aplica
     — así calcular_lambdas() sigue funcionando exactamente igual que
     antes para quien no le pase este dato (retrocompatible, sin romper
     ninguna llamada existente en simular_partido()/simular_temporada()).
-
+ 
     Devuelve (lambda_home, lambda_away) listos para simular goles con
     una distribución de Poisson.
     """
@@ -533,7 +533,7 @@ def calcular_lambdas(home_team: str, away_team: str,
     defensa_home = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(home_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
     ataque_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_ATAQUE.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
     defensa_away = LIGA_PROMEDIO_GOLES + peso_elo * (FUERZA_DEFENSA.get(away_team, LIGA_PROMEDIO_GOLES) - LIGA_PROMEDIO_GOLES)
-
+ 
     # 1a. Sesgo local/visita — el equipo LOCAL usa su propio sesgo "jugando
     # en casa", el VISITANTE usa su propio sesgo "jugando fuera". No se
     # mezclan (el sesgo de local de un equipo no le aplica cuando visita).
@@ -545,12 +545,12 @@ def calcular_lambdas(home_team: str, away_team: str,
     defensa_home *= 1.0 + peso_local_visita * (razon_defensa_home - 1.0)
     ataque_away *= 1.0 + peso_local_visita * (razon_ataque_away - 1.0)
     defensa_away *= 1.0 + peso_local_visita * (razon_defensa_away - 1.0)
-
+ 
     # Modelo clásico tipo Dixon-Coles: goles esperados del local
     # dependen de SU ataque y de la defensa del VISITANTE (y viceversa).
     lam_home = (ataque_home / LIGA_PROMEDIO_GOLES) * (defensa_away / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
     lam_away = (ataque_away / LIGA_PROMEDIO_GOLES) * (defensa_home / LIGA_PROMEDIO_GOLES) * LIGA_PROMEDIO_GOLES
-
+ 
     # Guarda el lambda "base" (Elo/Fuerza Ataque-Defensa + sesgo local-
     # visita, YA aplicados arriba) antes de sumar forma real + momentum
     # Elo + sesgo del modelo + localía — necesario más abajo para medir
@@ -558,7 +558,7 @@ def calcular_lambdas(home_team: str, away_team: str,
     # esos 4 ajustes adicionales (ver AMORTIGUACIÓN DE EXCESO COMBINADO).
     lam_home_base = lam_home
     lam_away_base = lam_away
-
+ 
     # 1b. Forma real — ajusta con goles reales, tope progresivo (ver
     # _tope_shrinkage): empieza en 0 con pocos partidos jugados y llega a
     # TOPE_MAX_FORMA (+/-8%) recién a partir de PARTIDOS_PARA_TOPE_COMPLETO.
@@ -577,7 +577,7 @@ def calcular_lambdas(home_team: str, away_team: str,
             else:
                 lam_away *= f_of
                 lam_home *= f_def
-
+ 
     # 1c. Momentum vía Elo — compara el Elo actualizado (tras reproducir
     # todos los partidos jugados) contra el Elo base de arranque de
     # temporada. Si un equipo viene rindiendo por encima de lo esperado
@@ -596,7 +596,7 @@ def calcular_lambdas(home_team: str, away_team: str,
     ajuste_elo_away = max(min(delta_elo_away / 1000, tope_elo_away), -tope_elo_away) * peso_forma_elo
     lam_home *= (1.0 + ajuste_elo_home)
     lam_away *= (1.0 + ajuste_elo_away)
-
+ 
     # 1d. Corrección de sesgo del propio modelo (retroalimentación) —
     # ver liga_mx_supabase.calcular_sesgo_por_equipo(). Solo actúa si el
     # llamador pasó el diccionario Y el equipo/rol ya tiene suficiente
@@ -609,10 +609,10 @@ def calcular_lambdas(home_team: str, away_team: str,
             lam_home *= sesgo_home["factor_ataque_local"]
         if "factor_ataque_visita" in sesgo_away:
             lam_away *= sesgo_away["factor_ataque_visita"]
-
+ 
     # Ventaja de localía estándar (típico ~10-15% en fútbol de liga)
     lam_home *= 1.12
-
+ 
     # ── AMORTIGUACIÓN DE EXCESO COMBINADO ──────────────────────────────
     # Encontrado con evidencia real (panel de calibración por rango de
     # confianza, liga_mx_supabase.calcular_calibracion_por_bin(), 67
@@ -647,7 +647,7 @@ def calcular_lambdas(home_team: str, away_team: str,
             lam_home = _lam_base * razon_comprimida
         else:
             lam_away = _lam_base * razon_comprimida
-
+ 
     # 2. Factor altitud -----------------------------------------------
     alt_local = ALTITUD_EQUIPO.get(home_team)
     if alt_local is not None and alt_local >= ALTITUD_UMBRAL:
@@ -659,7 +659,7 @@ def calcular_lambdas(home_team: str, away_team: str,
         else:
             # ambos equipos están acostumbrados a la altura -> bonus reducido
             lam_home += bono * 0.3
-
+ 
     # 3. Factor árbitro ---------------------------------------------
     # Un árbitro que reparte muchas tarjetas normalmente corresponde a
     # partidos más cortados/físicos -> baja un poco el ritmo ofensivo de
@@ -685,24 +685,24 @@ def calcular_lambdas(home_team: str, away_team: str,
     factor_arbitro = 1.0 - max(min(desviacion * 0.015 * peso_arbitro, tope), -tope)
     lam_home *= factor_arbitro
     lam_away *= factor_arbitro
-
+ 
     # 4. Factor fatiga (Leagues Cup) ----------------------------------
     fecha_partido = _buscar_fecha_partido(home_team, away_team)
     if _jugo_leagues_cup_reciente(home_team, fecha_partido):
         lam_home *= FACTOR_FATIGA_LEAGUES_CUP
     if _jugo_leagues_cup_reciente(away_team, fecha_partido):
         lam_away *= FACTOR_FATIGA_LEAGUES_CUP
-
+ 
     # 5. Clima — factor pequeño y simétrico (afecta al partido completo,
     # no a un solo equipo). Viene precalculado de liga_mx_clima.factor_clima()
     # y por defecto es 1.0 (sin ajuste) si no hay API key de clima
     # configurada o no se pudo consultar.
     lam_home *= factor_clima
     lam_away *= factor_clima
-
+ 
     return max(lam_home, 0.15), max(lam_away, 0.15)
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # simular_temporada()
 # -------------------------------------------------------------------------
@@ -732,15 +732,15 @@ def _jugar_partido(home_team: str, away_team: str, rng=None,
         if rng.random() < tau / m_bound:
             return goles_h, goles_a
     return goles_h, goles_a  # fallback de seguridad, en la práctica nunca se llega aquí
-
-
+ 
+ 
 def _tabla_vacia() -> dict:
     return {
         equipo: {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0, "DG": 0, "PTS": 0}
         for equipo in EQUIPOS
     }
-
-
+ 
+ 
 def _actualizar_tabla(tabla, home, away, gh, ga):
     tabla[home]["PJ"] += 1
     tabla[away]["PJ"] += 1
@@ -763,8 +763,8 @@ def _actualizar_tabla(tabla, home, away, gh, ga):
         tabla[away]["PTS"] += 1
     tabla[home]["DG"] = tabla[home]["GF"] - tabla[home]["GC"]
     tabla[away]["DG"] = tabla[away]["GF"] - tabla[away]["GC"]
-
-
+ 
+ 
 def _ordenar_tabla(tabla: dict) -> list:
     """Puntos > diferencia de goles > goles a favor, como pediste."""
     filas = [{"equipo": eq, **stats} for eq, stats in tabla.items()]
@@ -772,8 +772,8 @@ def _ordenar_tabla(tabla: dict) -> list:
     for i, f in enumerate(filas, start=1):
         f["posicion"] = i
     return filas
-
-
+ 
+ 
 def _ordenar_tabla_con_empates(tabla: dict) -> list:
     """
     Igual que _ordenar_tabla(), pero con numeración tipo competencia:
@@ -792,8 +792,8 @@ def _ordenar_tabla_con_empates(tabla: dict) -> list:
         f["posicion"] = pos_actual
         anterior = clave
     return filas
-
-
+ 
+ 
 def tabla_actual_real() -> list:
     """
     Tabla de posiciones SOLO con los partidos que ya se jugaron de
@@ -810,8 +810,8 @@ def tabla_actual_real() -> list:
         _actualizar_tabla(tabla, local, visit, gh, ga)
         partidos_jugados += 1
     return _ordenar_tabla_con_empates(tabla), partidos_jugados
-
-
+ 
+ 
 def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: int, rng=None,
                              peso_elo: float = 1.0, peso_altitud: float = 1.0,
                              peso_arbitro: float = 1.0) -> dict:
@@ -826,21 +826,21 @@ def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: i
         mejor, peor = equipo_A, equipo_B
     else:
         mejor, peor = equipo_B, equipo_A
-
+ 
     kwargs = dict(peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
     gh1, ga1 = _jugar_partido(peor, mejor, rng, **kwargs)     # ida: local el peor posicionado
     gh2, ga2 = _jugar_partido(mejor, peor, rng, **kwargs)     # vuelta: local el mejor posicionado
-
+ 
     goles_mejor = ga1 + gh2
     goles_peor = gh1 + ga2
-
+ 
     if goles_mejor > goles_peor:
         ganador = mejor
     elif goles_peor > goles_mejor:
         ganador = peor
     else:
         ganador = mejor  # empate global -> avanza el mejor posicionado
-
+ 
     return {
         "equipo_A": equipo_A, "equipo_B": equipo_B,
         "ida": f"{peor} {gh1}-{ga1} {mejor}",
@@ -848,19 +848,19 @@ def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: i
         "marcador_global": f"{mejor} {goles_mejor}-{goles_peor} {peor}",
         "ganador": ganador,
     }
-
-
+ 
+ 
 def simular_temporada(rng=None,
                        peso_elo: float = 1.0,
                        peso_altitud: float = 1.0,
                        peso_arbitro: float = 1.0) -> dict:
     """
     Simula la fase regular completa (17 jornadas) + Liguilla completa.
-
+ 
     peso_elo, peso_altitud, peso_arbitro: se pasan directo a
     calcular_lambdas() en cada partido — pensados para conectarse a
     st.slider() en la interfaz sin usar estado global.
-
+ 
     Devuelve:
         {
           "tabla_final": [...],        # 18 equipos ordenados
@@ -874,9 +874,9 @@ def simular_temporada(rng=None,
     """
     if rng is None:
         rng = np.random.default_rng()
-
+ 
     kwargs = dict(peso_elo=peso_elo, peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
-
+ 
     tabla = _tabla_vacia()
     for home, away, jornada, estadio, resultado_real, arbitro in PARTIDOS:
         if resultado_real is not None:
@@ -885,11 +885,11 @@ def simular_temporada(rng=None,
         else:
             gh, ga = _jugar_partido(home, away, rng, **kwargs)
         _actualizar_tabla(tabla, home, away, gh, ga)
-
+ 
     tabla_final = _ordenar_tabla(tabla)
     top8 = tabla_final[:8]
     seed = {fila["equipo"]: fila["posicion"] for fila in top8}
-
+ 
     # -- Cuartos de Final: 1v8, 2v7, 3v6, 4v5 ---------------------------
     pares_cuartos = [
         (top8[0]["equipo"], top8[7]["equipo"]),
@@ -901,7 +901,7 @@ def simular_temporada(rng=None,
         _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng, **kwargs)
         for a, b in pares_cuartos
     ]
-
+ 
     # -- Semifinales: RECLASIFICACIÓN — mejor posicionado restante vs peor --
     avanzan_cuartos = [c["ganador"] for c in cuartos]
     avanzan_ordenados = sorted(avanzan_cuartos, key=lambda eq: seed[eq])
@@ -913,12 +913,12 @@ def simular_temporada(rng=None,
         _jugar_serie_ida_vuelta(a, b, seed[a], seed[b], rng, **kwargs)
         for a, b in pares_semis
     ]
-
+ 
     # -- Final -------------------------------------------------------
     finalistas = [s["ganador"] for s in semis]
     final = _jugar_serie_ida_vuelta(finalistas[0], finalistas[1],
                                      seed[finalistas[0]], seed[finalistas[1]], rng, **kwargs)
-
+ 
     return {
         "tabla_final": tabla_final,
         "liguilla": {
@@ -928,8 +928,8 @@ def simular_temporada(rng=None,
             "campeon": final["ganador"],
         },
     }
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # BONUS — simular_temporada_montecarlo()
 # No lo pediste explícitamente, pero es el paso natural siguiente: correr
@@ -946,7 +946,7 @@ def simular_temporada_montecarlo(n: int = 1000,
     conteo_liguilla = defaultdict(int)
     conteo_campeon = defaultdict(int)
     suma_posicion = defaultdict(int)
-
+ 
     for _ in range(n):
         resultado = simular_temporada(rng, peso_elo=peso_elo,
                                        peso_altitud=peso_altitud,
@@ -956,15 +956,15 @@ def simular_temporada_montecarlo(n: int = 1000,
         for fila in resultado["tabla_final"]:
             suma_posicion[fila["equipo"]] += fila["posicion"]
         conteo_campeon[resultado["liguilla"]["campeon"]] += 1
-
+ 
     return {
         "prob_liguilla": {eq: round(conteo_liguilla[eq] / n * 100, 1) for eq in EQUIPOS},
         "prob_campeon": {eq: round(conteo_campeon.get(eq, 0) / n * 100, 1) for eq in EQUIPOS},
         "posicion_promedio": {eq: round(suma_posicion[eq] / n, 1) for eq in EQUIPOS},
     }
-
-
-
+ 
+ 
+ 
 # -------------------------------------------------------------------------
 # simular_partido() — Monte Carlo de UN partido, 10,000,000 simulaciones
 # por defecto (igual que el Mundial), usando calcular_lambdas().
@@ -973,10 +973,10 @@ from collections import Counter
 from liga_mx_predictor_skeleton import (
     CORNERS_EQUIPO, CORNERS_DEFAULT, CORNERS_EQUIPO_CONTRA, CORNERS_DEFAULT_CONTRA,
 )
-
+ 
 PROMEDIO_LIGA_AMARILLAS = 4.3
 PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.15 (placeholder sin datos)
-
+ 
 # -------------------------------------------------------------------------
 # ROJAS REALES POR ÁRBITRO — derivado automáticamente, no hardcodeado.
 # Sofascore no publica una tabla agregada de "promedio de rojas por
@@ -996,8 +996,8 @@ PROMEDIO_LIGA_ROJAS = 0.41   # real: 7 rojas / 17 partidos con dato — antes 0.
 # como fallback (igual que ya hacía la versión placeholder).
 # -------------------------------------------------------------------------
 PJ_MINIMO_ROJAS_ARBITRO = 8
-
-
+ 
+ 
 def _rojas_reales_por_arbitro() -> dict:
     """
     Calcula (rojas_totales, partidos_dirigidos) REAL por árbitro,
@@ -1019,8 +1019,8 @@ def _rojas_reales_por_arbitro() -> dict:
         conteo[arbitro][0] += datos["ro"]
         conteo[arbitro][1] += 1
     return conteo
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # PROMEDIO DE AMARILLAS POR ÁRBITRO — DINÁMICO, mismo problema que
 # PROMEDIO_LIGA_AMARILLAS pero a nivel individual: los promedios en
@@ -1037,8 +1037,8 @@ def _rojas_reales_por_arbitro() -> dict:
 # _factor_tarjetas_equipo()) en vez de un corte binario todo-o-nada.
 # -------------------------------------------------------------------------
 PJ_PARA_ARBITRO_TOPE_COMPLETO = 8  # a partir de aquí, 100% peso al dato real del Apertura
-
-
+ 
+ 
 def _amarillas_reales_por_arbitro() -> dict:
     """
     Calcula (amarillas_totales, partidos_dirigidos) REAL por árbitro en
@@ -1057,8 +1057,8 @@ def _amarillas_reales_por_arbitro() -> dict:
         conteo[arbitro][0] += datos["am"]
         conteo[arbitro][1] += 1
     return conteo
-
-
+ 
+ 
 def _prom_historico_arbitro(arbitro: str) -> tuple:
     """
     Prior histórico de amarillas/partido para un árbitro, mezclando
@@ -1066,14 +1066,14 @@ def _prom_historico_arbitro(arbitro: str) -> tuple:
     ARBITROS_LIGA_MX_TRANSFERMARKT (temporada 25/26 completa,
     consultada 31/ago/2026) — decisión explícita del usuario: promediar
     ambas fuentes en vez de que una reemplace a la otra.
-
+ 
     Devuelve (promedio_amarillas, promedio_rojas_o_None). El promedio de
     rojas SOLO viene de Transfermarkt — ARBITROS_LIGA_MX nunca tuvo ese
     dato — así que es None si el árbitro no está en esa tabla.
     """
     prom_sofascore, _n = ARBITROS_LIGA_MX.get(arbitro, (None, 0))
     datos_transfermarkt = ARBITROS_LIGA_MX_TRANSFERMARKT.get(arbitro)
-
+ 
     if prom_sofascore is not None and datos_transfermarkt is not None:
         prom_am_tm, _pj_tm, prom_ro_tm = datos_transfermarkt
         return (prom_sofascore + prom_am_tm) / 2, prom_ro_tm
@@ -1083,8 +1083,8 @@ def _prom_historico_arbitro(arbitro: str) -> tuple:
     if prom_sofascore is not None:
         return prom_sofascore, None
     return ARBITRO_DEFAULT[0], None
-
-
+ 
+ 
 def _promedio_arbitro_dinamico(arbitro: str) -> float:
     """
     Promedio de amarillas esperado para ESTE árbitro específico,
@@ -1099,13 +1099,13 @@ def _promedio_arbitro_dinamico(arbitro: str) -> float:
     datos_apertura = _amarillas_reales_por_arbitro().get(arbitro)
     if not datos_apertura or datos_apertura[1] == 0:
         return prom_historico
-
+ 
     amarillas_totales, pj = datos_apertura
     promedio_real = amarillas_totales / pj
     peso_real = min(pj / PJ_PARA_ARBITRO_TOPE_COMPLETO, 1.0)
     return (1 - peso_real) * prom_historico + peso_real * promedio_real
-
-
+ 
+ 
 def _promedio_rojas_arbitro_dinamico(arbitro: str) -> float:
     """
     Promedio de ROJAS TOTALES (segunda amarilla + roja directa,
@@ -1115,14 +1115,14 @@ def _promedio_rojas_arbitro_dinamico(arbitro: str) -> float:
     el modelo solo tenía un placeholder proporcional) con el promedio
     REAL en el Apertura 2026 EN VIVO (_rojas_reales_por_arbitro()), con
     el mismo shrinkage progresivo que amarillas.
-
+ 
     Devuelve None si no hay NINGÚN dato de rojas para este árbitro (ni
     Transfermarkt ni Apertura en vivo) — el llamador debe caer al
     placeholder proporcional en ese caso, igual que antes.
     """
     _prom_am_hist, prom_rojas_hist = _prom_historico_arbitro(arbitro)
     datos_apertura = _rojas_reales_por_arbitro().get(arbitro)
-
+ 
     if prom_rojas_hist is None and not datos_apertura:
         return None
     if prom_rojas_hist is None:
@@ -1130,14 +1130,14 @@ def _promedio_rojas_arbitro_dinamico(arbitro: str) -> float:
         return rojas_totales / pj if pj > 0 else None
     if not datos_apertura or datos_apertura[1] == 0:
         return prom_rojas_hist
-
+ 
     rojas_totales, pj = datos_apertura
     promedio_real = rojas_totales / pj
     peso_real = min(pj / PJ_PARA_ARBITRO_TOPE_COMPLETO, 1.0)
     return (1 - peso_real) * prom_rojas_hist + peso_real * promedio_real
-
-
-
+ 
+ 
+ 
 def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.0) -> tuple:
     """Devuelve (amarillas_esperadas, rojas_esperadas) para el partido,
     combinando el promedio del árbitro (70%) con el estilo disciplinario
@@ -1157,11 +1157,11 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
         prom_amarillas = ARBITRO_DEFAULT[0]
         desviacion = (prom_amarillas - promedio_liga_amarillas) * peso_arbitro
         amarillas_esp_arbitro = promedio_liga_amarillas + desviacion * 0.3
-
+ 
     factor_equipos = (_factor_tarjetas_equipo(home_team) + _factor_tarjetas_equipo(away_team)) / 2
     amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
     amarillas_esp = max(amarillas_esp, 1.5)
-
+ 
     # Rojas — usa el promedio dinámico por árbitro (ver
     # _promedio_rojas_arbitro_dinamico(): mezcla ARBITROS_LIGA_MX_
     # TRANSFERMARKT con el Apertura 2026 EN VIVO) si hay CUALQUIER dato
@@ -1174,8 +1174,8 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
     else:
         rojas_esp = PROMEDIO_LIGA_ROJAS * (amarillas_esp / promedio_liga_amarillas)
     return amarillas_esp, rojas_esp
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # simular_partido_baseline() — MODELO DE REFERENCIA para comparar contra
 # el modelo real. Poisson puro con LIGA_PROMEDIO_GOLES para ambos
@@ -1194,16 +1194,16 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
 # millones de veces ni depender de una librería externa nueva.
 # -------------------------------------------------------------------------
 import math as _math
-
+ 
 MAX_GOLES_BASELINE = 10  # techo de seguridad para la suma exacta — P(>10 goles) es despreciable
-
-
+ 
+ 
 def _poisson_pmf(k: int, lam: float) -> float:
     """P(X=k) para X ~ Poisson(lam), calculado con la librería estándar
     (math.exp, math.factorial) — sin depender de scipy."""
     return _math.exp(-lam) * (lam ** k) / _math.factorial(k)
-
-
+ 
+ 
 def simular_partido_baseline(home_team: str, away_team: str) -> dict:
     """
     Versión "tonta" de simular_partido(): mismos dos lambda para cualquier
@@ -1212,7 +1212,7 @@ def simular_partido_baseline(home_team: str, away_team: str) -> dict:
     comparación (ver liga_mx_supabase.comparar_modelo_vs_baseline()):
     si el modelo real no supera claramente a esto, la complejidad
     adicional no se está traduciendo en mejores predicciones.
-
+ 
     Devuelve solo prob_home/prob_draw/prob_away (lo que hace falta para
     comparar Brier Score contra las predicciones ya guardadas en
     predicciones_ligamx) — no calcula tarjetas, córners ni otros
@@ -1221,7 +1221,7 @@ def simular_partido_baseline(home_team: str, away_team: str) -> dict:
     """
     lam_h = LIGA_PROMEDIO_GOLES * 1.12
     lam_a = LIGA_PROMEDIO_GOLES
-
+ 
     prob_home = prob_draw = prob_away = 0.0
     for gh in range(MAX_GOLES_BASELINE + 1):
         p_gh = _poisson_pmf(gh, lam_h)
@@ -1234,15 +1234,15 @@ def simular_partido_baseline(home_team: str, away_team: str) -> dict:
                 prob_draw += p_conjunta
             else:
                 prob_away += p_conjunta
-
+ 
     total = prob_home + prob_draw + prob_away  # <1.0 por el techo MAX_GOLES_BASELINE, se renormaliza
     return {
         "prob_home": round(prob_home / total * 100, 2),
         "prob_draw": round(prob_draw / total * 100, 2),
         "prob_away": round(prob_away / total * 100, 2),
     }
-
-
+ 
+ 
 def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
                      peso_elo: float = 1.0, peso_altitud: float = 1.0,
                      peso_arbitro: float = 1.0, factor_clima: float = 1.0,
@@ -1253,7 +1253,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     probabilidades por mercado: 1X2, doble oportunidad, total de goles,
     ambos marcan, tarjetas totales (amarilla=1pt, roja=2pts, convención
     de casas de apuestas) y córners.
-
+ 
     sesgo_por_equipo: opcional, se pasa tal cual a calcular_lambdas()
     (ver ahí el detalle) — normalmente la salida de
     liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
@@ -1264,10 +1264,10 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
                                      peso_elo=peso_elo, peso_altitud=peso_altitud,
                                      peso_arbitro=peso_arbitro, factor_clima=factor_clima,
                                      sesgo_por_equipo=sesgo_por_equipo)
-
+ 
     goles_h = rng.poisson(lam_h, n).astype(np.int32)
     goles_a = rng.poisson(lam_a, n).astype(np.int32)
-
+ 
     # -- Corrección Dixon-Coles: pondera los 4 marcadores bajos ---------
     # En vez de re-muestrear (carísimo con n=10M), se le da a cada
     # simulación un peso tau(x,y) — 1.0 para casi todas, y el factor de
@@ -1285,18 +1285,18 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     pesos_dc[m_01] = max(1 + lam_h * RHO_DIXON_COLES, 1e-6)
     pesos_dc[m_11] = max(1 - RHO_DIXON_COLES, 1e-6)
     del m_00, m_10, m_01, m_11
-
+ 
     prob_home = float(np.average(goles_h > goles_a, weights=pesos_dc) * 100)
     prob_draw = float(np.average(goles_h == goles_a, weights=pesos_dc) * 100)
     prob_away = float(np.average(goles_h < goles_a, weights=pesos_dc) * 100)
-
+ 
     goles_totales = goles_h + goles_a
     prob_over05 = float(np.average(goles_totales > 0, weights=pesos_dc) * 100)
     prob_over15 = float(np.average(goles_totales > 1, weights=pesos_dc) * 100)
     prob_over25 = float(np.average(goles_totales > 2, weights=pesos_dc) * 100)
     prob_over35 = float(np.average(goles_totales > 3, weights=pesos_dc) * 100)
     prob_btts = float(np.average((goles_h > 0) & (goles_a > 0), weights=pesos_dc) * 100)
-
+ 
     # top5 ponderado por Dixon-Coles, vectorizado (nada de loops en Python
     # sobre potencialmente 10M filas): se codifica cada marcador (gh,ga)
     # como un entero único y se suman los pesos con bincount.
@@ -1308,7 +1308,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     top5 = [((int(idx // 21), int(idx % 21)), round(float(pesos_por_clave[idx]), 0))
             for idx in top5_idx if pesos_por_clave[idx] > 0]
     del goles_h_clip, goles_a_clip, claves, pesos_por_clave, top5_idx
-
+ 
     # -- Hándicap Asiático — probabilidad de cobertura por margen ------
     # -1.0: cubre con diferencia >=2, empuja (reembolso) con diferencia
     # exacta de 1. -2.0: cubre con diferencia >=3, empuja con diferencia
@@ -1322,7 +1322,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     prob_hcap_away_m10 = float(np.average(diff <= -2, weights=pesos_dc) * 100)
     prob_hcap_away_m20 = float(np.average(diff <= -3, weights=pesos_dc) * 100)
     del diff
-
+ 
     # -- Córners: varias líneas, igual que el Mundial ------------------
     # Córners: ataque x defensa (mismo criterio que los goles) en vez de
     # solo sumar los córners "a favor" de cada equipo — ahora sí se
@@ -1342,7 +1342,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     prob_corners_over95 = float(np.mean(corners_sim > 9) * 100)
     prob_corners_over105 = float(np.mean(corners_sim > 10) * 100)
     prob_corners_over115 = float(np.mean(corners_sim > 11) * 100)
-
+ 
     # -- Tarjetas: convención de casas de apuestas -> roja = 2 amarillas --
     amarillas_esp, rojas_esp = _tarjetas_esperadas(home_team, away_team, peso_arbitro)
     amarillas_sim = rng.poisson(amarillas_esp, n).astype(np.int32)
@@ -1353,9 +1353,9 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
     prob_tarj_over35 = float(np.mean(tarjetas_totales_sim > 3) * 100)
     prob_tarj_over45 = float(np.mean(tarjetas_totales_sim > 4) * 100)
     prob_tarj_over55 = float(np.mean(tarjetas_totales_sim > 5) * 100)
-
+ 
     del goles_totales, corners_sim, amarillas_sim, rojas_sim, tarjetas_totales_sim
-
+ 
     return {
         "prob_home": prob_home, "prob_draw": prob_draw, "prob_away": prob_away,
         "goles_home": float(np.average(goles_h, weights=pesos_dc)), "goles_away": float(np.average(goles_a, weights=pesos_dc)),
@@ -1383,8 +1383,8 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
         "arbitro": _buscar_arbitro(home_team, away_team) or "Sin asignar",
         "n_sims": n,
     }
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # UMBRAL DINÁMICO POR CONFIANZA DE MUESTRA — el modelo exige más certeza
 # cuando tiene poca evidencia real del torneo actual (jornada 1-2,
@@ -1415,7 +1415,7 @@ def simular_partido(home_team: str, away_team: str, n: int = 10_000_000,
 UMBRAL_MAX_RECOMENDACION = 85.0
 UMBRAL_MIN_RECOMENDACION = 80.0
 PJ_PARA_UMBRAL_MIN = 10  # mismo valor que PARTIDOS_PARA_TOPE_COMPLETO
-
+ 
 # UMBRAL_SONDA_MERCADO_SUSPENDIDO — decisión explícita del usuario (ver
 # analizar_apuestas(), bloque "SONDA"): un mercado suspendido por
 # liga_mx_supabase.calcular_mercados_suspendidos() sigue pudiendo
@@ -1423,8 +1423,8 @@ PJ_PARA_UMBRAL_MIN = 10  # mismo valor que PARTIDOS_PARA_TOPE_COMPLETO
 # UMBRAL_MAX_RECOMENDACION) — genera evidencia fresca de bajo riesgo sin
 # reabrir el mercado al volumen normal.
 UMBRAL_SONDA_MERCADO_SUSPENDIDO = 92.0
-
-
+ 
+ 
 def _umbral_dinamico(home_team: str, away_team: str) -> float:
     """
     Umbral de confianza requerido para que una apuesta se recomiende,
@@ -1437,11 +1437,11 @@ def _umbral_dinamico(home_team: str, away_team: str) -> float:
     pj_home = forma.get(home_team, (0, 0, 0))[2]
     pj_away = forma.get(away_team, (0, 0, 0))[2]
     pj_promedio = (pj_home + pj_away) / 2.0
-
+ 
     fraccion = min(pj_promedio / PJ_PARA_UMBRAL_MIN, 1.0)
     return UMBRAL_MAX_RECOMENDACION - fraccion * (UMBRAL_MAX_RECOMENDACION - UMBRAL_MIN_RECOMENDACION)
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # analizar_apuestas() — umbral dinámico (ver _umbral_dinamico()) y SIN
 # deduplicar por categoría: se muestran TODAS las líneas que cumplen el
@@ -1457,11 +1457,11 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     modelo: Resultado (1X2), Doble Oportunidad, Empate Sin Apuesta (Draw
     No Bet), Hándicap Asiático, Total de Goles, Ambos Marcan, Tarjetas y
     Córners.
-
+ 
     IMPORTANTE — sin deduplicar por categoría: se devuelven TODAS las
     líneas que cumplen el umbral, no solo una por categoría, para no
     ocultar señales fuertes que sí tienen la confianza requerida.
-
+ 
     Nota sobre Hándicap Europeo: en este modelo la probabilidad de
     "cubrir" un hándicap Europeo -1/-2 (ganar por 2+/3+) es el MISMO
     número que Hándicap Asiático -1.0/-2.0 (misma condición: diferencia de
@@ -1469,18 +1469,18 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     exacto (Asiático reembolsa, Europeo pierde), no en la confianza de la
     simulación. Por eso solo se expone Hándicap Asiático para no duplicar
     la misma señal dos veces en "apuestas sugeridas".
-
+ 
     NO incluye goles por mitades ni resultado al descanso (HT/FT): el
     modelo simula el partido completo con una sola lambda de Poisson por
     equipo, no reparte los goles entre primer/segundo tiempo, así que no
     hay datos reales de qué tan probable es cada marcador al descanso.
-
+ 
     mercados_suspendidos: set con nombres de mercado (ej. {"Total Goles"})
     que se excluyen del resultado aunque hayan cumplido el umbral — viene
     de liga_mx_supabase.calcular_mercados_suspendidos(), la
     retroalimentación automática que apaga temporalmente un mercado si su
     acierto real viene rindiendo muy por debajo de lo que promete.
-
+ 
     cuotas: opcional, dict de cuotas reales para ESTE partido (formato
     {"home": float, "draw": float, "away": float, "casa": str} — ver
     liga_mx_cuotas.obtener_cuotas_jornada()). Si se pasa, se calcula
@@ -1492,7 +1492,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     mercados siguen funcionando exactamente igual que sin este parámetro.
     Si se omite (None, default), el comportamiento es idéntico al de
     antes de agregar value betting — retrocompatible.
-
+ 
     DECISIÓN DE DISEÑO explícita: el value bet de 1X2 SOLO se calcula
     sobre selecciones que YA superaron UMBRAL_RECOMENDACION (80-90%
     dinámico) — no se expone un mercado aparte de "underdogs con valor"
@@ -1507,7 +1507,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     """
     apuestas = []
     UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
-
+ 
     # FIX #3 (de 3 — "todo lo que ayude"): castigo extra de umbral para
     # los 4 mercados con brecha de calibración confirmada por el panel
     # de Auto-calibración (confianza del modelo sistemáticamente +15 a
@@ -1530,7 +1530,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         "Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta", "Tarjetas",
     }
     UMBRAL_RECOMENDACION_ESTRICTO = min(UMBRAL_RECOMENDACION + CASTIGO_MERCADOS_SOBRECONFIADOS, 97.0)
-
+ 
     def ap(mercado, seleccion, confianza, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
         umbral_real = UMBRAL_RECOMENDACION_ESTRICTO if mercado in MERCADOS_SOBRECONFIADOS else UMBRAL_RECOMENDACION
         entrada = {
@@ -1561,9 +1561,9 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
             entrada["value_bet"]["casa"] = check["casa"]
             entrada["value_bet"]["point_real"] = check["point_real"]
         apuestas.append(entrada)
-
+ 
     pa, pd_, pb = r["prob_home"], r["prob_draw"], r["prob_away"]
-
+ 
     # 1. Resultado (1X2) — único mercado con value betting (ver docstring)
     cuota_home = cuotas.get("home") if cuotas else None
     cuota_away = cuotas.get("away") if cuotas else None
@@ -1571,7 +1571,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
     if pb >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
-
+ 
     # 2. Doble Oportunidad (1X / X2)
     conf_1x = min(pa + pd_, 99)
     conf_x2 = min(pb + pd_, 99)
@@ -1579,7 +1579,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
     if conf_x2 >= UMBRAL_RECOMENDACION_ESTRICTO and pb < UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
-
+ 
     # 3. Empate Sin Apuesta (Draw No Bet) — probabilidad de ganar,
     # excluyendo del cálculo el caso "empate" (que reembolsa, no pierde).
     if (pa + pb) > 0:
@@ -1591,7 +1591,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         if conf_dnb_away >= UMBRAL_RECOMENDACION_ESTRICTO:
             ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away,
                f"{pb:.1f}% vs {pa:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
-
+ 
     # 4. Hándicap Asiático — el favorito debe ganar por 2+ (-1.0) o 3+ (-2.0)
     if r["prob_hcap_home_m10"] >= UMBRAL_RECOMENDACION:
         ap("Hándicap Asiático", f"✅ {home_team} -1.0 (gana por 2+)", r["prob_hcap_home_m10"],
@@ -1605,7 +1605,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     if r["prob_hcap_away_m20"] >= UMBRAL_RECOMENDACION:
         ap("Hándicap Asiático", f"✅ {away_team} -2.0 (gana por 3+)", r["prob_hcap_away_m20"],
            "Empuje (reembolso) si gana por exactamente 2")
-
+ 
     # 5. Total de Goles (Over/Under) — decisión explícita del usuario:
     # Over 0.5 NUNCA se recomienda (confirmado con datos reales que
     # ninguna casa de apuestas ofrece esa línea para Liga MX — es
@@ -1627,13 +1627,13 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones")
     if (100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones")
-
+ 
     # 6. Ambos Marcan (BTTS)
     if r["prob_btts"] >= UMBRAL_RECOMENDACION:
         ap("Ambos Marcan", "✅ Sí — ambos anotan", r["prob_btts"], f"{r['prob_btts']:.1f}% de simulaciones")
     if (100 - r["prob_btts"]) >= UMBRAL_RECOMENDACION:
         ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
-
+ 
     # 7. Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
     if r["prob_tarj_over25"] >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
@@ -1645,7 +1645,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
     if (100 - r["prob_tarj_over45"]) >= UMBRAL_RECOMENDACION_ESTRICTO:
         ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-
+ 
     # 8. Córners
     if r["prob_corners_over85"] >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
@@ -1657,7 +1657,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Córners", "✅ Over 11.5 córners (12+)", r["prob_corners_over115"], f"{r['corners_esp']:.1f} esperados")
     if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
-
+ 
     # Una sola línea por RUBRO/categoría (Resultado, Doble Oportunidad,
     # Total Goles, Ambos Marcan, Hándicap, Tarjetas, Córners) — evita
     # mostrar "Over 0.5" y "Over 1.5" a la vez dentro de Total Goles,
@@ -1688,7 +1688,7 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
             cat = merc
         if cat not in mejor_por_categoria or a["confianza"] > mejor_por_categoria[cat]["confianza"]:
             mejor_por_categoria[cat] = a
-
+ 
     filtradas = sorted(mejor_por_categoria.values(), key=lambda x: x["confianza"], reverse=True)
     if mercados_suspendidos:
         # SONDA — decisión explícita del usuario: en vez de bloquear un
@@ -1709,8 +1709,8 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
             if a["mercado"] not in mercados_suspendidos or a["confianza"] >= UMBRAL_SONDA_MERCADO_SUSPENDIDO
         ]
     return filtradas
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # armar_parlay() — mismo criterio que el Mundial: solo apuestas ALTA,
 # máximo una por categoría (Resultado/Doble Oportunidad, Goles, Tarjetas,
@@ -1721,7 +1721,7 @@ def armar_parlay(sugerencias: list) -> dict:
     Arma un parlay con las apuestas de nivel ALTA, máximo UNA por rubro
     real (no por nombre de mercado) — evita mezclar dos selecciones que
     predicen lo mismo de fondo con distinta redacción.
-
+ 
     MERCADOS_MISMO_RESULTADO agrupa Resultado (1X2), Doble Oportunidad,
     Empate Sin Apuesta y Hándicap Asiático porque los 4 son, en el
     fondo, la MISMA apuesta de base (¿quién gana el partido, y con qué
@@ -1734,11 +1734,11 @@ def armar_parlay(sugerencias: list) -> dict:
     Over 2.5").
     """
     MERCADOS_MISMO_RESULTADO = {"Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta", "Hándicap Asiático"}
-
+ 
     altas = [a for a in sugerencias if a["nivel"] == "ALTA"]
     if len(altas) < 2:
         return None
-
+ 
     seleccionadas = []
     mercados_usados = set()
     tiene_resultado = False
@@ -1752,21 +1752,21 @@ def armar_parlay(sugerencias: list) -> dict:
         if merc not in mercados_usados:
             seleccionadas.append(a)
             mercados_usados.add(merc)
-
+ 
     if len(seleccionadas) < 2:
         return None
-
+ 
     prob_combinada = 1.0
     for a in seleccionadas:
         prob_combinada *= a["confianza"] / 100
-
+ 
     return {
         "selecciones": seleccionadas,
         "texto": " + ".join(a["seleccion"].replace("✅ ", "") for a in seleccionadas),
         "prob_combinada": round(prob_combinada * 100, 1),
     }
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # armar_super_parlay_jornada() — el "Super Parlay" de jornada completa,
 # estilo PlayDoit: combina TODOS los partidos de la jornada en un solo
@@ -1782,17 +1782,17 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
     partidos_con_apuestas: lista de dicts con al menos {"local": str,
     "visitante": str, "apuestas": list} — mismo formato que trae
     resultado_jornada["partidos"] de simular_jornada_completa().
-
+ 
     Por cada partido: si armar_parlay(apuestas_del_partido) devuelve un
     mini-parlay (2+ patas ALTA que no se duplican entre sí), se usan
     TODAS esas patas; si no (0 o 1 pata ALTA en ese partido), se usa
     solo su mejor pata individual si existe. Partidos sin ninguna
     apuesta ALTA simplemente no aportan nada al Super Parlay — no se
     inventa una pata débil solo por completar la jornada.
-
+ 
     Devuelve None si el resultado tendría menos de 2 patas en total
     (un "Super Parlay" de una sola pata no tiene sentido como concepto).
-
+ 
     Devuelve:
         {
           "patas": [{"local":..., "visitante":..., "mercado":...,
@@ -1804,13 +1804,13 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
     """
     patas = []
     partidos_con_pata = 0
-
+ 
     for p in partidos_con_apuestas:
         apuestas_partido = p.get("apuestas", [])
         altas = [a for a in apuestas_partido if a.get("nivel") == "ALTA"]
         if not altas:
             continue
-
+ 
         mini_parlay = armar_parlay(apuestas_partido)
         if mini_parlay:
             seleccion_partido = mini_parlay["selecciones"]
@@ -1818,7 +1818,7 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
             # Solo 1 (o 0) apuesta ALTA en este partido — no hay parlay
             # propio que armar, pero sí se puede usar esa única pata.
             seleccion_partido = [max(altas, key=lambda a: a["confianza"])]
-
+ 
         for a in seleccion_partido:
             patas.append({
                 "local": p["local"], "visitante": p["visitante"],
@@ -1826,27 +1826,27 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
                 "confianza": a["confianza"],
             })
         partidos_con_pata += 1
-
+ 
     if len(patas) < 2:
         return None
-
+ 
     prob_combinada = 1.0
     for pata in patas:
         prob_combinada *= pata["confianza"] / 100
-
+ 
     texto = " + ".join(
         f'{pata["local"]} vs {pata["visitante"]}: {pata["seleccion"].replace("✅ ", "")}'
         for pata in patas
     )
-
+ 
     return {
         "patas": patas,
         "texto": texto,
         "prob_combinada": round(prob_combinada * 100, 2),
         "n_partidos": partidos_con_pata,
     }
-
-
+ 
+ 
 # -------------------------------------------------------------------------
 # detectar_jornada_actual() + simular_jornada_completa() — soporte para
 # el botón "Simular Jornada" de la interfaz: detecta automáticamente cuál
@@ -1861,7 +1861,7 @@ def detectar_jornada_actual() -> int:
     esté más cerca de "ahora" (en valor absoluto, antes o después) —
     la jornada "más próxima según la fecha de sus juegos", no la que
     tiene el partido pendiente aislado más próximo.
-
+ 
     Por qué mediana y no promedio ni "próximo partido cronológico"
     (versión anterior de esta función): un solo partido reprogramado
     muy lejos (ej. 3 de los 4 pendientes de una jornada movidos a
@@ -1872,7 +1872,7 @@ def detectar_jornada_actual() -> int:
     3 de 4 partidos en noviembre, la mediana cae en noviembre también,
     y la jornada deja de "bloquear" el avance a la siguiente aunque le
     quede un partido suelto por jugarse antes.
-
+ 
     Ejemplo real que motivó este diseño: Jornada 7 con 3 partidos
     reprogramados a 14/11 y solo Pumas-León jugándose el 10/09 — con el
     criterio anterior (mínimo cronológico), Jornada 7 seguía "actual"
@@ -1881,13 +1881,13 @@ def detectar_jornada_actual() -> int:
     antes de que Pumas-León arrancara. Con la mediana, Jornada 7 pasa a
     tener mediana en noviembre y Jornada 8 gana por estar más cerca de
     "ahora".
-
+ 
     Partidos sin horario en HORARIOS_PARTIDO se ignoran para el cálculo
     de mediana de su jornada (no se puede ubicar en el tiempo algo sin
     fecha). Si NINGÚN partido pendiente de ninguna jornada tiene
     horario cargado, cae al criterio más simple: la primera jornada
     numérica con partidos pendientes.
-
+ 
     Si todos los partidos ya tienen resultado (temporada terminada),
     devuelve None.
     """
@@ -1903,7 +1903,7 @@ def detectar_jornada_actual() -> int:
         except ValueError:
             continue
         pendientes_por_jornada[jornada].append(fecha)
-
+ 
     if not pendientes_por_jornada:
         # Ningún partido pendiente tiene horario cargado — fallback al
         # criterio más simple posible en vez de no poder decidir nada.
@@ -1912,23 +1912,23 @@ def detectar_jornada_actual() -> int:
             if resultado is None
         })
         return jornadas_pendientes[0] if jornadas_pendientes else None
-
+ 
     ahora = datetime.now()
     medianas = {}
     for jornada, fechas in pendientes_por_jornada.items():
         fechas.sort()
         n = len(fechas)
         medianas[jornada] = fechas[n // 2] if n % 2 == 1 else fechas[n // 2 - 1]
-
+ 
     return min(medianas.keys(), key=lambda j: abs((medianas[j] - ahora).total_seconds()))
-
-
+ 
+ 
 def partidos_de_jornada(jornada: int) -> list:
     """Devuelve las tuplas de PARTIDOS que pertenecen a esa jornada,
     en el mismo orden en que aparecen en PARTIDOS."""
     return [p for p in PARTIDOS if p[2] == jornada]
-
-
+ 
+ 
 def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
                               peso_elo: float = 1.0, peso_altitud: float = 1.0,
                               peso_arbitro: float = 1.0, factor_clima: float = 1.0,
@@ -1939,18 +1939,18 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     Corre simular_partido() + analizar_apuestas() para TODOS los
     partidos de una jornada (por defecto, la detectada automáticamente
     por detectar_jornada_actual() — la próxima jornada pendiente).
-
+ 
     n=2,000,000 por defecto (en vez de los 10M de simular_partido() para
     un solo partido) para que simular 9 partidos de un jalón sea ágil en
     la interfaz — sigue siendo una muestra grande, el error estándar de
     Monte Carlo con 2M sims es despreciable para fines de recomendación
     de apuestas (ver nota en simular_partido()).
-
+ 
     sesgo_por_equipo: opcional, se pasa tal cual a cada llamada de
     simular_partido() (ver calcular_lambdas() para el detalle) —
     normalmente la salida de
     liga_mx_supabase.calcular_sesgo_por_equipo(historial_predicciones).
-
+ 
     cuotas_por_partido: opcional, dict {(local, visit): {"cuotas": {...},
     "cuotas_totales": [...]}} — mismo formato que arma
     app._cuotas_jornada_cached() indexando la salida de
@@ -1959,13 +1959,13 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     cuotas=None y cuotas_totales=None para ese partido y sigue
     funcionando igual (sin value_bet, sin check de apostabilidad real
     en Total de Goles).
-
+ 
     NO guarda nada en Supabase — solo simula y arma el paquete de
     resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
     de liga_mx_supabase.py) se hace aparte, en app.py o en
     liga_mx_supabase.guardar_jornada_completa(), para no acoplar este
     módulo (que no sabe nada de Supabase) con la capa de persistencia.
-
+ 
     Devuelve:
         {
           "jornada": int,
@@ -1984,7 +1984,7 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
         jornada = detectar_jornada_actual()
     if jornada is None:
         return {"jornada": None, "partidos": []}
-
+ 
     cuotas_por_partido = cuotas_por_partido or {}
     resultados = []
     for local, visit, jorn, estadio, resultado_real, arbitro in partidos_de_jornada(jornada):
@@ -2007,22 +2007,22 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
             "apuestas": apuestas,
             "parlay": parlay,
         })
-
+ 
     return {"jornada": jornada, "partidos": resultados}
-
-
+ 
+ 
     print("-- calcular_lambdas() de ejemplo --")
     for h, a in [("Toluca", "Tijuana"), ("America", "Guadalajara"), ("Atlante", "Tigres")]:
         lh, la = calcular_lambdas(h, a)
         print(f"  {h} (lambda={lh:.2f})  vs  {a} (lambda={la:.2f})")
-
+ 
     print("\n-- simular_temporada() de ejemplo (1 corrida) --")
     resultado = simular_temporada()
     print("Top 8 (clasifican a Liguilla):")
     for fila in resultado["tabla_final"][:8]:
         print(f"  {fila['posicion']:>2}. {fila['equipo']:<20} PTS={fila['PTS']:<3} DG={fila['DG']:<4} GF={fila['GF']}")
     print("\nCampeón simulado:", resultado["liguilla"]["campeon"])
-
+ 
     print("\n-- simular_partido() de ejemplo (500k sims, para no tardar en la prueba) --")
     r = simular_partido("America", "Guadalajara", n=500_000)
     print(f"  América {r['prob_home']:.1f}% - Empate {r['prob_draw']:.1f}% - Guadalajara {r['prob_away']:.1f}%")
@@ -2031,3 +2031,5 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     print("  Apuestas sugeridas:", [(a["seleccion"], a["nivel"]) for a in sugs])
     parlay = armar_parlay(sugs)
     print("  Parlay:", parlay)
+ 
+Claude terminó la respuesta
