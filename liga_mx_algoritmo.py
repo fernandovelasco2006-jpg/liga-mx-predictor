@@ -1448,7 +1448,8 @@ def _umbral_dinamico(home_team: str, away_team: str) -> float:
 # umbral (ej. Over 0.5 + Over 1.5 + Over 2.5 a la vez, si las 3 pasan).
 # -------------------------------------------------------------------------
 def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendidos: frozenset = frozenset(),
-                       cuotas: dict = None, cuotas_totales: list = None) -> list:
+                       cuotas: dict = None, cuotas_totales: list = None,
+                       tablas_calibracion: dict = None) -> list:
     """
     Devuelve TODOS los mercados cuya probabilidad, según las simulaciones,
     llega o supera el umbral dinámico calculado por _umbral_dinamico()
@@ -1504,42 +1505,40 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     seguir apareciendo en "Apuestas sugeridas" si su confianza superó el
     umbral; el campo "value_bet" simplemente informa si, además de ser
     probable, también es un buen negocio contra la cuota real.
+
+    tablas_calibracion: opcional, salida de liga_mx_supabase.
+    calibrar_confianza_por_mercado() — dict {mercado: {"bins": [...],
+    "n_evaluadas": int}}. REEMPLAZA al antiguo castigo de umbral fijo
+    (CASTIGO_MERCADOS_SOBRECONFIADOS), que solo decidía SI mostrar una
+    apuesta sin corregir el número que el usuario ve. Con esto, cada
+    confianza cruda se traduce a su probabilidad calibrada (isotónica,
+    ajustada con el historial real de aciertos/fallos de ese mercado
+    específico) ANTES de compararla contra el umbral y antes de
+    guardarla — así el filtro de entrada y el número en pantalla usan
+    siempre el mismo valor, ya corregido. Si se omite (None, default)
+    o un mercado todavía no tiene evidencia suficiente, el
+    comportamiento es idéntico al de antes de calibrar — retro-
+    compatible, nunca falla ni inventa un número.
     """
     apuestas = []
     UMBRAL_RECOMENDACION = _umbral_dinamico(home_team, away_team)
+    tablas_calibracion = tablas_calibracion or {}
 
-    # FIX #3 (de 3 — "todo lo que ayude"): castigo extra de umbral para
-    # los 4 mercados con brecha de calibración confirmada por el panel
-    # de Auto-calibración (confianza del modelo sistemáticamente +15 a
-    # +24 pts por encima del acierto real): Resultado (1X2), Doble
-    # Oportunidad, Empate Sin Apuesta y Tarjetas. Total Goles, Córners,
-    # Ambos Marcan y Hándicap NO llevan este castigo porque su propia
-    # brecha es pequeña o nula (+4.7 y -0.3 pts respectivamente) — son
-    # mercados que dependen de la lambda SUMADA (ritmo de gol/tarjetas),
-    # no de la RAZÓN lambda_home/lambda_away que separa favorito vs
-    # underdog, que es justo donde viven el exceso de confianza y el
-    # exceso de amortiguación insuficiente (ver fixes #1 y #2 arriba).
-    # Este castigo es ADEMÁS de esos dos fixes, no un sustituto: aunque
-    # la razón esté mejor comprimida y el tope de forma tarde más en
-    # alcanzar su máximo, estos 4 mercados sigue pidiendo un margen
-    # mayor sobre el umbral dinámico antes de recomendar, hasta que el
-    # panel de calibración confirme que la brecha se cerró con datos
-    # reales de varias jornadas.
-    CASTIGO_MERCADOS_SOBRECONFIADOS = 6.0  # puntos porcentuales extra
-    MERCADOS_SOBRECONFIADOS = {
-        "Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta", "Tarjetas",
-    }
-    UMBRAL_RECOMENDACION_ESTRICTO = min(UMBRAL_RECOMENDACION + CASTIGO_MERCADOS_SOBRECONFIADOS, 97.0)
+    def _calibrar(mercado, confianza_cruda):
+        if not tablas_calibracion:
+            return confianza_cruda
+        return aplicar_calibracion(mercado, confianza_cruda, tablas_calibracion)
 
     def ap(mercado, seleccion, confianza, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
-        umbral_real = UMBRAL_RECOMENDACION_ESTRICTO if mercado in MERCADOS_SOBRECONFIADOS else UMBRAL_RECOMENDACION
         entrada = {
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
             "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el umbral
             "nota": nota,
-            "umbral_aplicado": round(umbral_real, 1),
+            "umbral_aplicado": round(UMBRAL_RECOMENDACION, 1),
         }
+        if mercado in tablas_calibracion:
+            entrada["calibrado"] = True
         if cuota_decimal is not None:
             entrada["value_bet"] = calcular_value_bet(confianza, cuota_decimal)
         if linea_totales is not None and cuotas_totales is not None:
@@ -2031,4 +2030,3 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     print("  Apuestas sugeridas:", [(a["seleccion"], a["nivel"]) for a in sugs])
     parlay = armar_parlay(sugs)
     print("  Parlay:", parlay)
-                               
