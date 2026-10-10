@@ -724,6 +724,177 @@ def calcular_stats_por_mercado(historial: list, minimo_evaluadas: int = 3) -> li
     return filas
 
 
+def _isotonic_fit(pares: list) -> list:
+    """
+    PAVA (Pool Adjacent Violators Algorithm) — ajusta una regresión
+    isotónica simple y sin dependencias externas (no requiere scikit-
+    learn, que puede no estar en requirements.txt del repo de Streamlit
+    Cloud). Implementación directa del algoritmo clásico: produce la
+    función monótona no-decreciente que mejor aproxima (mínimos
+    cuadrados) los puntos dados, respetando que confianza más alta
+    nunca puede mapear a probabilidad calibrada más baja.
+
+    pares: lista de (x, y) YA ordenada por x ascendente, donde x es la
+    confianza cruda promedio de un bin e y es el acierto real (0-100)
+    de ese mismo bin.
+
+    Devuelve una lista de (x, y_calibrada) del mismo largo que `pares`,
+    con y_calibrada ya monótona no-decreciente en x.
+    """
+    if not pares:
+        return []
+    # Cada "bloque" acumula (suma_y, peso, x_min, x_max) de los puntos
+    # que ya se fusionaron por violar la monotonía.
+    bloques = [[y, 1, x, x] for x, y in pares]
+    i = 0
+    while i < len(bloques) - 1:
+        if bloques[i][0] / bloques[i][1] > bloques[i + 1][0] / bloques[i + 1][1]:
+            suma_y = bloques[i][0] + bloques[i + 1][0]
+            peso = bloques[i][1] + bloques[i + 1][1]
+            x_min = bloques[i][2]
+            x_max = bloques[i + 1][3]
+            bloques[i:i + 2] = [[suma_y, peso, x_min, x_max]]
+            if i > 0:
+                i -= 1  # puede haber creado una nueva violación hacia atrás
+        else:
+            i += 1
+
+    salida = []
+    idx_par = 0
+    for suma_y, peso, x_min, x_max in bloques:
+        y_bloque = suma_y / peso
+        while idx_par < len(pares) and pares[idx_par][0] <= x_max:
+            salida.append((pares[idx_par][0], y_bloque))
+            idx_par += 1
+    return salida
+
+
+def calibrar_confianza_por_mercado(historial: list, minimo_evaluadas: int = 15,
+                                    ancho_bin: int = 10) -> dict:
+    """
+    RECALIBRACIÓN REAL (no un parche de umbral): para cada mercado con
+    evidencia suficiente, ajusta una curva isotónica que convierte
+    "confianza cruda del modelo" en "probabilidad real estimada", usando
+    el historial real de aciertos/fallos guardado en Supabase — el mismo
+    dato que ya alimenta calcular_stats_por_mercado().
+
+    Por qué isotónica y no una curva fija: el castigo de umbral fijo que
+    se usaba antes (CASTIGO_MERCADOS_SOBRECONFIADOS en
+    liga_mx_algoritmo.py) solo decide SI se muestra una apuesta — no
+    corrige el número que el usuario ve en pantalla, y aplica el mismo
+    castigo a todos los mercados sin importar qué tan grave sea su
+    brecha real (DNB con +24pts de brecha recibía el mismo ajuste que
+    Tarjetas con +6pts). La isotónica corrige el NÚMERO mismo, con
+    fuerza proporcional a la brecha observada en cada tramo de
+    confianza de cada mercado — y es monótona por construcción: nunca
+    puede pasar que una confianza cruda más alta termine dando una
+    probabilidad calibrada más baja que una confianza cruda menor.
+
+    minimo_evaluadas=15: un poco más estricto que el 8 que usa
+    calcular_mercados_suspendidos() — ahí con poca evidencia el peor
+    caso es que un mercado bueno se suspenda de más (se corrige solo en
+    cuanto hay más datos); aquí con poca evidencia el riesgo es
+    AJUSTAR mal el número que ve el usuario con un sesgo que en
+    realidad era ruido de muestra chica, así que pide más evidencia
+    antes de actuar.
+
+    Devuelve:
+        {
+          "Empate Sin Apuesta": {
+              "bins": [(piso, techo, prometido_prom, calibrado), ...],
+              "n_evaluadas": 23,
+          },
+          ...
+        }
+    Solo incluye mercados que alcanzaron minimo_evaluadas. El llamador
+    (ver aplicar_calibracion()) debe tratar la ausencia de un mercado
+    en este dict como "sin calibración disponible todavía" — se usa la
+    confianza cruda tal cual, nunca un error.
+    """
+    por_mercado = {}
+    for a in historial:
+        if a.get("acierto") is None:
+            continue  # solo evidencia YA evaluada, igual que calcular_stats_por_mercado()
+        merc = a.get("mercado", "Desconocido")
+        try:
+            conf = float(a.get("confianza", 0))
+        except (TypeError, ValueError):
+            continue
+        por_mercado.setdefault(merc, []).append((conf, 100.0 if a["acierto"] else 0.0))
+
+    resultado = {}
+    for merc, obs in por_mercado.items():
+        if len(obs) < minimo_evaluadas:
+            continue
+
+        # Agrupa en bins de confianza (mismo ancho que calcular_
+        # calibracion_por_bin) para suavizar el ruido punto-a-punto
+        # antes de ajustar la isotónica — igual que se haría con los
+        # puntos de calibración de cualquier modelo de probabilidad.
+        bins = {}
+        for conf, acierto in obs:
+            techo = min(int(conf // ancho_bin) * ancho_bin + ancho_bin, 100)
+            piso = techo - ancho_bin
+            clave = (piso, techo)
+            if clave not in bins:
+                bins[clave] = [0.0, 0.0, 0]  # suma_conf, suma_acierto, n
+            bins[clave][0] += conf
+            bins[clave][1] += acierto
+            bins[clave][2] += 1
+
+        if len(bins) < 2:
+            continue  # con un solo bin no hay nada que "ordenar" isotónicamente
+
+        puntos = []
+        for (piso, techo), (suma_conf, suma_acierto, n) in sorted(bins.items()):
+            puntos.append((suma_conf / n, suma_acierto / n))  # (x=confianza prom, y=accuracy real)
+
+        calibrados = _isotonic_fit(puntos)
+        resultado[merc] = {
+            "bins": [(round(x, 1), round(y, 1)) for x, y in calibrados],
+            "n_evaluadas": len(obs),
+        }
+
+    return resultado
+
+
+def aplicar_calibracion(mercado: str, confianza_cruda: float, tablas_calibracion: dict) -> float:
+    """
+    Traduce una confianza cruda de analizar_apuestas() a su probabilidad
+    calibrada, usando la tabla isotónica de calibrar_confianza_por_
+    mercado() para ese mercado específico.
+
+    Si el mercado no tiene tabla todavía (sin evidencia suficiente), o
+    la confianza cae fuera del rango de bins observados, se extrapola
+    con el valor del extremo más cercano (constante más allá de los
+    datos — una isotónica nunca extrapola con pendiente, solo mantiene
+    el último nivel conocido). Si no hay NINGÚN bin para ese mercado,
+    devuelve la confianza cruda sin tocar — nunca falla ni inventa un
+    número.
+    """
+    tabla = tablas_calibracion.get(mercado)
+    if not tabla or not tabla.get("bins"):
+        return confianza_cruda
+
+    bins = tabla["bins"]
+    if confianza_cruda <= bins[0][0]:
+        return bins[0][1]
+    if confianza_cruda >= bins[-1][0]:
+        return bins[-1][1]
+
+    # Interpolación lineal entre los dos puntos isotónicos más cercanos
+    # — la isotónica ya garantiza monotonía entre ellos, interpolar
+    # linealmente dentro de un tramo monótono preserva esa propiedad.
+    for (x0, y0), (x1, y1) in zip(bins, bins[1:]):
+        if x0 <= confianza_cruda <= x1:
+            if x1 == x0:
+                return y0
+            frac = (confianza_cruda - x0) / (x1 - x0)
+            return y0 + frac * (y1 - y0)
+
+    return confianza_cruda  # no debería llegar aquí, pero nunca fallar
+
+
 def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 8,
                                    piso_accuracy: float = 65.0, brecha_maxima: float = 15.0) -> set:
     """
