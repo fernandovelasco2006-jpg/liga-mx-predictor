@@ -150,8 +150,8 @@ PARTIDOS = [
     ('Leon', 'FC Juarez', 10, 'Estadio Nou Camp', (2, 1), 'Yonatan Peinado Aguirre'),
     ('Necaxa', 'America', 10, 'Estadio Victoria', (2, 4), 'Guillermo Pacheco Larios'),
     ('Queretaro', 'Atlante', 11, 'Estadio Corregidora', None, 'Joaquin Alberto Vizcarra Armenta'),
-    ('Puebla', 'Leon', 11, 'Estadio Cuauhtemoc', None, 'Jorge Abraham Camacho Peregrina'),
-    ('Tigres', 'Toluca', 11, 'Estadio Universitario', None, 'Daniel Quintero Huitron'),
+    ('Puebla', 'Leon', 11, 'Estadio Cuauhtemoc', (1, 1), 'Jorge Abraham Camacho Peregrina'),
+    ('Tigres', 'Toluca', 11, 'Estadio Universitario', (3, 2), 'Daniel Quintero Huitron'),
     ('FC Juarez', 'Tijuana', 11, 'Estadio Olimpico Benito Juarez', None, 'Jesus Rafael Lopez Valle'),
     ('Atlas', 'Guadalajara', 11, 'Estadio Jalisco', None, 'Marco Antonio Ortiz Nava'),
     ('America', 'Monterrey', 11, 'Estadio Banorte', None, 'Oscar Mejia Garcia'),
@@ -854,6 +854,8 @@ DATOS_REALES_LIGAMX = {
     "Pumas UNAM_Atletico San Luis": {"am": 3, "co": 13, "ro": 0}, # 1 PUM + 2 ASL | 11 PUM + 2 ASL
     "Leon_FC Juarez":              {"am": 4,  "co": 5,  "ro": 0},  # 2 LEO + 2 JUA | 1 LEO + 4 JUA
     "Necaxa_America":              {"am": 5,  "co": 8,  "ro": 0},  # 3 NEC + 2 AME | 3 NEC + 5 AME
+    "Puebla_Leon":                 {"am": 2,  "co": 12, "ro": 1},  # 1 PUE + 1 LEO | 6 PUE + 6 LEO | roja LEO
+    "Tigres_Toluca":               {"am": 5,  "co": 11, "ro": 0},  # 1 TIG + 4 TOL | 5 TIG + 6 TOL
 }
 
 # ─────────────────────────────────────────────────────────────────────────
