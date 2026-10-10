@@ -39,6 +39,18 @@ except ImportError:
         return {"apostable": False, "point_real": None, "ev_pct": None,
                 "prob_implicita_pct": None, "tiene_valor": False, "casa": None}
 
+# Import opcional — mismo patrón que calcular_value_bet() arriba.
+# aplicar_calibracion() traduce confianza cruda a probabilidad
+# calibrada por mercado (ver liga_mx_supabase.calibrar_confianza_
+# por_mercado()) usando el historial real de Supabase. Si el módulo no
+# está disponible, analizar_apuestas() sigue funcionando exactamente
+# igual que sin calibración — nunca rompe por esto.
+try:
+    from liga_mx_supabase import aplicar_calibracion
+except ImportError:
+    def aplicar_calibracion(mercado, confianza_cruda, tablas_calibracion):
+        return confianza_cruda
+
 # -------------------------------------------------------------------------
 # FUERZA DE ATAQUE Y DEFENSA POR EQUIPO — datos REALES del Clausura 2026
 # (fuente FotMob: "goals_per_match" / "goals_conceded_per_match" — el
@@ -1566,29 +1578,35 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     # 1. Resultado (1X2) — único mercado con value betting (ver docstring)
     cuota_home = cuotas.get("home") if cuotas else None
     cuota_away = cuotas.get("away") if cuotas else None
-    if pa >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
-    if pb >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
+    pa_cal = _calibrar("Resultado (1X2)", pa)
+    pb_cal = _calibrar("Resultado (1X2)", pb)
+    if pa_cal >= UMBRAL_RECOMENDACION:
+        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa_cal, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
+    if pb_cal >= UMBRAL_RECOMENDACION:
+        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb_cal, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
 
     # 2. Doble Oportunidad (1X / X2)
     conf_1x = min(pa + pd_, 99)
     conf_x2 = min(pb + pd_, 99)
-    if conf_1x >= UMBRAL_RECOMENDACION_ESTRICTO and pa < UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
-    if conf_x2 >= UMBRAL_RECOMENDACION_ESTRICTO and pb < UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
+    conf_1x_cal = _calibrar("Doble Oportunidad", conf_1x)
+    conf_x2_cal = _calibrar("Doble Oportunidad", conf_x2)
+    if conf_1x_cal >= UMBRAL_RECOMENDACION and pa_cal < UMBRAL_RECOMENDACION:
+        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x_cal, f"{pa:.1f}% + {pd_:.1f}%")
+    if conf_x2_cal >= UMBRAL_RECOMENDACION and pb_cal < UMBRAL_RECOMENDACION:
+        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2_cal, f"{pb:.1f}% + {pd_:.1f}%")
 
     # 3. Empate Sin Apuesta (Draw No Bet) — probabilidad de ganar,
     # excluyendo del cálculo el caso "empate" (que reembolsa, no pierde).
     if (pa + pb) > 0:
         conf_dnb_home = pa / (pa + pb) * 100
         conf_dnb_away = pb / (pa + pb) * 100
-        if conf_dnb_home >= UMBRAL_RECOMENDACION_ESTRICTO:
-            ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home,
+        conf_dnb_home_cal = _calibrar("Empate Sin Apuesta", conf_dnb_home)
+        conf_dnb_away_cal = _calibrar("Empate Sin Apuesta", conf_dnb_away)
+        if conf_dnb_home_cal >= UMBRAL_RECOMENDACION:
+            ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home_cal,
                f"{pa:.1f}% vs {pb:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
-        if conf_dnb_away >= UMBRAL_RECOMENDACION_ESTRICTO:
-            ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away,
+        if conf_dnb_away_cal >= UMBRAL_RECOMENDACION:
+            ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away_cal,
                f"{pb:.1f}% vs {pa:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
 
     # 4. Hándicap Asiático — el favorito debe ganar por 2+ (-1.0) o 3+ (-2.0)
@@ -1634,16 +1652,21 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
 
     # 7. Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
-    if r["prob_tarj_over25"] >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over35"] >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over45"] >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if r["prob_tarj_over55"] >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
-    if (100 - r["prob_tarj_over45"]) >= UMBRAL_RECOMENDACION_ESTRICTO:
-        ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    tarj_over25_cal = _calibrar("Tarjetas", r["prob_tarj_over25"])
+    tarj_over35_cal = _calibrar("Tarjetas", r["prob_tarj_over35"])
+    tarj_over45_cal = _calibrar("Tarjetas", r["prob_tarj_over45"])
+    tarj_over55_cal = _calibrar("Tarjetas", r["prob_tarj_over55"])
+    tarj_under45_cal = _calibrar("Tarjetas", 100 - r["prob_tarj_over45"])
+    if tarj_over25_cal >= UMBRAL_RECOMENDACION:
+        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", tarj_over25_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if tarj_over35_cal >= UMBRAL_RECOMENDACION:
+        ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", tarj_over35_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if tarj_over45_cal >= UMBRAL_RECOMENDACION:
+        ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", tarj_over45_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if tarj_over55_cal >= UMBRAL_RECOMENDACION:
+        ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", tarj_over55_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+    if tarj_under45_cal >= UMBRAL_RECOMENDACION:
+        ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", tarj_under45_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
 
     # 8. Córners
     if r["prob_corners_over85"] >= UMBRAL_RECOMENDACION:
@@ -1933,7 +1956,8 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
                               peso_arbitro: float = 1.0, factor_clima: float = 1.0,
                               mercados_suspendidos: frozenset = frozenset(),
                               sesgo_por_equipo: dict = None,
-                              cuotas_por_partido: dict = None) -> dict:
+                              cuotas_por_partido: dict = None,
+                              tablas_calibracion: dict = None) -> dict:
     """
     Corre simular_partido() + analizar_apuestas() para TODOS los
     partidos de una jornada (por defecto, la detectada automáticamente
@@ -1958,6 +1982,10 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
     cuotas=None y cuotas_totales=None para ese partido y sigue
     funcionando igual (sin value_bet, sin check de apostabilidad real
     en Total de Goles).
+
+    tablas_calibracion: opcional, se pasa tal cual a cada llamada de
+    analizar_apuestas() — normalmente la salida de liga_mx_supabase.
+    calibrar_confianza_por_mercado(historial_apuestas).
 
     NO guarda nada en Supabase — solo simula y arma el paquete de
     resultados. El guardado real (guardar_prediccion()/guardar_apuestas()
@@ -1997,7 +2025,8 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
         cuotas_partido = cuotas_por_partido.get((local, visit)) or {}
         apuestas = analizar_apuestas(local, visit, r, mercados_suspendidos=mercados_suspendidos,
                                       cuotas=cuotas_partido.get("cuotas"),
-                                      cuotas_totales=cuotas_partido.get("cuotas_totales"))
+                                      cuotas_totales=cuotas_partido.get("cuotas_totales"),
+                                      tablas_calibracion=tablas_calibracion)
         parlay = armar_parlay(apuestas)
         resultados.append({
             "local": local, "visitante": visit,
