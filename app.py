@@ -28,6 +28,7 @@ try:
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
         comparar_modelo_vs_baseline,
         calcular_sesgo_por_equipo, guardar_jornada_completa,
+        calibrar_confianza_por_mercado,
     )
     SUPABASE_MODULO_DISPONIBLE = True
 except ImportError:
@@ -58,9 +59,22 @@ except Exception:
     WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
 
 try:
+    from liga_mx_vision import extraer_apuesta_de_imagen
+    VISION_MODULO_DISPONIBLE = True
+except ImportError:
+    VISION_MODULO_DISPONIBLE = False
+
+try:
     ODDS_API_KEY = st.secrets.get("ODDS_API_KEY", None)
 except Exception:
     ODDS_API_KEY = os.environ.get("ODDS_API_KEY", None)
+
+try:
+    ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", None)
+except Exception:
+    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", None)
+
+VISION_DISPONIBLE = VISION_MODULO_DISPONIBLE and bool(ANTHROPIC_API_KEY)
 
 SUPABASE_DISPONIBLE = SUPABASE_MODULO_DISPONIBLE and SUPABASE_URL and SUPABASE_KEY
 
@@ -266,6 +280,23 @@ def _mercados_suspendidos_cached():
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# RECALIBRACIÓN DE CONFIANZA POR MERCADO — reemplaza al antiguo castigo
+# fijo de umbral (+6pts a 4 mercados). Ajusta, con el historial real de
+# aciertos/fallos de Supabase, una curva isotónica por mercado que
+# traduce "confianza cruda del modelo" en "probabilidad real estimada" —
+# ver liga_mx_supabase.calibrar_confianza_por_mercado(). Mismo TTL que
+# _mercados_suspendidos_cached() por el mismo motivo: esto cambia
+# conforme se evalúan apuestas jornada a jornada, no de un minuto a otro.
+# ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=900, show_spinner=False)
+def _tablas_calibracion_cached():
+    if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
+        return {}
+    historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
+    return calibrar_confianza_por_mercado(historial)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # CORRECCIÓN DE SESGO POR EQUIPO — retroalimentación real: compara,
 # equipo por equipo (separado por rol local/visita), los goles esperados
 # que el modelo guardó en predicciones_ligamx contra los que anotó de
@@ -374,7 +405,8 @@ if partidos_hoy_global:
             r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc)
             sugs_hoy = analizar_apuestas(local, visit, r_hoy, mercados_suspendidos=_mercados_suspendidos_cached(),
                                           cuotas=_cuota_partido(local, visit),
-                                          cuotas_totales=_cuotas_totales_partido(local, visit))
+                                          cuotas_totales=_cuotas_totales_partido(local, visit),
+                                          tablas_calibracion=_tablas_calibracion_cached())
             _registrar_apuestas_sesion(local, visit, jornada, sugs_hoy, r=r_hoy, resultado_real=None)
             sugs_alta_hoy = [s for s in sugs_hoy if s["nivel"] == "ALTA"]
             if not sugs_alta_hoy:
@@ -635,7 +667,8 @@ with tab_pred:
             st.markdown("<br>", unsafe_allow_html=True)
             sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
                                       cuotas=_cuota_partido(local, visit),
-                                      cuotas_totales=_cuotas_totales_partido(local, visit))
+                                      cuotas_totales=_cuotas_totales_partido(local, visit),
+                                      tablas_calibracion=_tablas_calibracion_cached())
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado_real)
             if sugs:
                 st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.3rem;'
@@ -682,6 +715,7 @@ with tab_pred:
                 mercados_suspendidos=_mercados_suspendidos_cached(),
                 sesgo_por_equipo=sesgo_actual,
                 cuotas_por_partido=_cuotas_jornada_cached(),
+                tablas_calibracion=_tablas_calibracion_cached(),
             )
             resumen_guardado = {"partidos_guardados": 0, "apuestas_guardadas": 0, "errores": []}
             if SUPABASE_DISPONIBLE:
@@ -865,7 +899,8 @@ with tab_apuestas:
             r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc_dia)
             sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
                                       cuotas=_cuota_partido(local, visit),
-                                      cuotas_totales=_cuotas_totales_partido(local, visit))  # ya vienen solo las que cumplen el umbral dinámico
+                                      cuotas_totales=_cuotas_totales_partido(local, visit),
+                                      tablas_calibracion=_tablas_calibracion_cached())  # ya vienen solo las que cumplen el umbral dinámico
             _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
             if not sugs:
                 st.caption("Sin señales de confianza ALTA para este partido.")
@@ -1275,12 +1310,93 @@ with tab_parlays:
                         f'<div class="metric-lbl">🔵 Parciales (revisar)</div></div>', unsafe_allow_html=True)
 
         with st.expander("➕ Registrar nueva apuesta real", expanded=False):
+            opciones_modo = ["Apuesta individual", "Parlay"]
+            if VISION_DISPONIBLE:
+                opciones_modo.append("📸 Desde foto")
             modo_registro = st.radio(
-                "¿Qué quieres registrar?", ["Apuesta individual", "Parlay"],
+                "¿Qué quieres registrar?", opciones_modo,
                 horizontal=True, key="modo_registro_apuesta_real",
             )
 
-            if modo_registro == "Apuesta individual":
+            if modo_registro == "📸 Desde foto":
+                st.caption(
+                    "Sube la captura de pantalla de tu boleto (PlayDoit, Caliente, etc.) — Claude va a leer "
+                    "la casa, el momio, el monto y las selecciones automáticamente. Revisa siempre los datos "
+                    "extraídos antes de guardar, especialmente si la imagen no es muy clara."
+                )
+                imagen_boleto = st.file_uploader("Captura del boleto", type=["png", "jpg", "jpeg"], key="upload_boleto")
+                if imagen_boleto is not None:
+                    if st.button("🔍 Extraer datos de la imagen", key="btn_extraer_imagen"):
+                        with st.spinner("Leyendo el boleto con Claude..."):
+                            resultado_extraccion = extraer_apuesta_de_imagen(
+                                ANTHROPIC_API_KEY, imagen_boleto.getvalue(),
+                                media_type=imagen_boleto.type or "image/png",
+                            )
+                        if resultado_extraccion["exito"]:
+                            st.session_state["datos_boleto_extraidos"] = resultado_extraccion["datos"]
+                            st.success("✅ Datos extraídos — revísalos abajo antes de guardar.")
+                        else:
+                            st.error(f"No se pudo leer el boleto: {resultado_extraccion['error']}")
+
+                if "datos_boleto_extraidos" in st.session_state:
+                    datos_ext = st.session_state["datos_boleto_extraidos"]
+                    with st.form("form_apuesta_real_foto"):
+                        col_f1, col_f2 = st.columns(2)
+                        with col_f1:
+                            casa_form_foto = st.text_input("Casa de apuestas", value=datos_ext.get("casa") or "PlayDoit")
+                            tipo_form_foto = st.selectbox(
+                                "Tipo", ["individual", "sgp", "parlay"],
+                                index=["individual", "sgp", "parlay"].index(datos_ext.get("tipo", "individual"))
+                                if datos_ext.get("tipo") in ["individual", "sgp", "parlay"] else 0,
+                            )
+                            momio_form_foto = st.number_input(
+                                "Momio (cuota decimal)", min_value=1.01,
+                                value=float(datos_ext.get("momio") or 1.50), step=0.01,
+                            )
+                        with col_f2:
+                            monto_form_foto = st.number_input(
+                                "Monto apostado (MXN)", min_value=1.0,
+                                value=float(datos_ext.get("monto_apostado") or 20.0), step=1.0,
+                            )
+                            id_boleto_form_foto = st.text_input("ID del boleto", value=datos_ext.get("id_boleto") or "")
+
+                        st.markdown("**Selecciones detectadas** (edítalas si Claude leyó algo mal):")
+                        selecciones_editables = []
+                        for i, sel in enumerate(datos_ext.get("selecciones", [])):
+                            st.caption(f"Selección {i + 1}")
+                            col_s1, col_s2 = st.columns(2)
+                            with col_s1:
+                                local_ed = st.text_input(f"Local {i}", value=sel.get("local") or "", key=f"local_foto_{i}")
+                                mercado_ed = st.text_input(f"Mercado {i}", value=sel.get("mercado") or "", key=f"mercado_foto_{i}")
+                            with col_s2:
+                                visitante_ed = st.text_input(f"Visitante {i}", value=sel.get("visitante") or "", key=f"visitante_foto_{i}")
+                                seleccion_ed = st.text_input(f"Selección {i}", value=sel.get("seleccion") or "", key=f"seleccion_foto_{i}")
+                            selecciones_editables.append({
+                                "local": local_ed, "visitante": visitante_ed,
+                                "mercado": mercado_ed, "seleccion": seleccion_ed,
+                                # "confianza" no viene de la imagen — si el partido ya se
+                                # simuló antes y coincide con el historial, se podría cruzar
+                                # más adelante; por ahora queda sin confianza (EV no calculable
+                                # para esta apuesta hasta que se complete a mano).
+                                "confianza": None,
+                            })
+
+                        if st.form_submit_button("Guardar apuesta desde foto"):
+                            if selecciones_editables:
+                                nuevo_id_foto = guardar_apuesta_real(
+                                    SUPABASE_URL, SUPABASE_KEY, casa_form_foto, hoy, tipo_form_foto,
+                                    selecciones_editables, momio_form_foto, monto_form_foto,
+                                    id_boleto_casa=id_boleto_form_foto or None,
+                                )
+                                if nuevo_id_foto:
+                                    st.success(f"✅ Apuesta registrada desde foto (id: {nuevo_id_foto})")
+                                    del st.session_state["datos_boleto_extraidos"]
+                                else:
+                                    st.error("No se pudo guardar — revisa la conexión a Supabase.")
+                            else:
+                                st.warning("No se detectó ninguna selección — verifica la imagen o agrégalas manualmente en otro modo.")
+
+            elif modo_registro == "Apuesta individual":
                 historial_ap_real = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
                 opciones_ap = {
                     f'{a.get("local","")} vs {a.get("visitante","")} · {a.get("mercado","")} → '
