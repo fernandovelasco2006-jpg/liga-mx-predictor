@@ -149,12 +149,12 @@ PARTIDOS = [
     ('Pumas UNAM', 'Atletico San Luis', 10, 'Estadio Olimpico Universitario', (2, 3), 'Victor Alfonso Caceres Hernandez'),
     ('Leon', 'FC Juarez', 10, 'Estadio Nou Camp', (2, 1), 'Yonatan Peinado Aguirre'),
     ('Necaxa', 'America', 10, 'Estadio Victoria', (2, 4), 'Guillermo Pacheco Larios'),
-    ('Queretaro', 'Atlante', 11, 'Estadio Corregidora', None, 'Joaquin Alberto Vizcarra Armenta'),
+    ('Queretaro', 'Atlante', 11, 'Estadio Corregidora', (2, 0), 'Joaquin Alberto Vizcarra Armenta'),
     ('Puebla', 'Leon', 11, 'Estadio Cuauhtemoc', (1, 1), 'Jorge Abraham Camacho Peregrina'),
     ('Tigres', 'Toluca', 11, 'Estadio Universitario', (3, 2), 'Daniel Quintero Huitron'),
-    ('FC Juarez', 'Tijuana', 11, 'Estadio Olimpico Benito Juarez', None, 'Jesus Rafael Lopez Valle'),
-    ('Atlas', 'Guadalajara', 11, 'Estadio Jalisco', None, 'Marco Antonio Ortiz Nava'),
-    ('America', 'Monterrey', 11, 'Estadio Banorte', None, 'Oscar Mejia Garcia'),
+    ('FC Juarez', 'Tijuana', 11, 'Estadio Olimpico Benito Juarez', (1, 1), 'Jesus Rafael Lopez Valle'),
+    ('Atlas', 'Guadalajara', 11, 'Estadio Jalisco', (1, 1), 'Marco Antonio Ortiz Nava'),
+    ('America', 'Monterrey', 11, 'Estadio Banorte', (1, 1), 'Oscar Mejia Garcia'),
     ('Pachuca', 'Necaxa', 11, 'Estadio Hidalgo', None, 'Maximiliano Quintero Hernandez'),
     ('Atletico San Luis', 'Santos Laguna', 11, 'Estadio Libertad Financiera', None, 'Fernando Hernandez Gomez'),
     ('Pumas UNAM', 'Cruz Azul', 11, 'Estadio Olimpico Universitario', None, 'Ismael Rosario Lopez Peñuelas'),
@@ -856,6 +856,10 @@ DATOS_REALES_LIGAMX = {
     "Necaxa_America":              {"am": 5,  "co": 8,  "ro": 0},  # 3 NEC + 2 AME | 3 NEC + 5 AME
     "Puebla_Leon":                 {"am": 2,  "co": 12, "ro": 1},  # 1 PUE + 1 LEO | 6 PUE + 6 LEO | roja LEO
     "Tigres_Toluca":               {"am": 5,  "co": 11, "ro": 0},  # 1 TIG + 4 TOL | 5 TIG + 6 TOL
+    "Queretaro_Atlante":           {"am": 4,  "co": 14, "ro": 0},  # 1 QRO + 3 ATL | 6 QRO + 8 ATL
+    "FC Juarez_Tijuana":           {"am": 9,  "co": 15, "ro": 1},  # 5 JUA + 4 TIJ | 9 JUA + 6 TIJ | roja JUA
+    "Atlas_Guadalajara":           {"am": 8,  "co": 14, "ro": 1},  # 3 ATS + 5 GDL | 7 ATS + 7 GDL | roja GDL
+    "America_Monterrey":           {"am": 2,  "co": 11, "ro": 1},  # 1 AME + 1 MTY | 6 AME + 5 MTY | roja AME
 }
 
 # ─────────────────────────────────────────────────────────────────────────
