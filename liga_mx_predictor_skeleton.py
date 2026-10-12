@@ -155,9 +155,9 @@ PARTIDOS = [
     ('FC Juarez', 'Tijuana', 11, 'Estadio Olimpico Benito Juarez', (1, 1), 'Jesus Rafael Lopez Valle'),
     ('Atlas', 'Guadalajara', 11, 'Estadio Jalisco', (1, 1), 'Marco Antonio Ortiz Nava'),
     ('America', 'Monterrey', 11, 'Estadio Banorte', (1, 1), 'Oscar Mejia Garcia'),
-    ('Pachuca', 'Necaxa', 11, 'Estadio Hidalgo', None, 'Maximiliano Quintero Hernandez'),
-    ('Atletico San Luis', 'Santos Laguna', 11, 'Estadio Libertad Financiera', None, 'Fernando Hernandez Gomez'),
-    ('Pumas UNAM', 'Cruz Azul', 11, 'Estadio Olimpico Universitario', None, 'Ismael Rosario Lopez Peñuelas'),
+    ('Pachuca', 'Necaxa', 11, 'Estadio Hidalgo', (3, 3), 'Maximiliano Quintero Hernandez'),
+    ('Atletico San Luis', 'Santos Laguna', 11, 'Estadio Libertad Financiera', (1, 2), 'Fernando Hernandez Gomez'),
+    ('Pumas UNAM', 'Cruz Azul', 11, 'Estadio Olimpico Universitario', (3, 3), 'Ismael Rosario Lopez Peñuelas'),
     ('Necaxa', 'Atlas', 12, 'Estadio Victoria', None, None),
     ('Tijuana', 'Puebla', 12, 'Estadio Caliente', None, None),
     ('Atlante', 'Pumas UNAM', 12, 'Estadio Banorte', None, None),
@@ -860,6 +860,9 @@ DATOS_REALES_LIGAMX = {
     "FC Juarez_Tijuana":           {"am": 9,  "co": 15, "ro": 1},  # 5 JUA + 4 TIJ | 9 JUA + 6 TIJ | roja JUA
     "Atlas_Guadalajara":           {"am": 8,  "co": 14, "ro": 1},  # 3 ATS + 5 GDL | 7 ATS + 7 GDL | roja GDL
     "America_Monterrey":           {"am": 2,  "co": 11, "ro": 1},  # 1 AME + 1 MTY | 6 AME + 5 MTY | roja AME
+    "Pachuca_Necaxa":              {"am": 8,  "co": 8,  "ro": 0},  # 4 PAC + 4 NEC | 5 PAC + 3 NEC
+    "Atletico San Luis_Santos Laguna": {"am": 1,  "co": 9,  "ro": 0},  # 0 ASL + 1 SAN | 6 ASL + 3 SAN
+    "Pumas UNAM_Cruz Azul":        {"am": 3,  "co": 10, "ro": 1},  # 2 PUM + 1 CAZ | 4 PUM + 6 CAZ | roja PUM
 }
 
 # ─────────────────────────────────────────────────────────────────────────
