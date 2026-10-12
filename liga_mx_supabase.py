@@ -1050,7 +1050,8 @@ def guardar_apuesta_real(url: str, key: str, casa: str, fecha: str, tipo: str,
 
 
 def actualizar_resultado_apuesta_real(url: str, key: str, apuesta_id: str, gano: bool,
-                                       momio: float, monto_apostado: float) -> bool:
+                                       momio: float, monto_apostado: float,
+                                       pago_total_casa: float = None) -> bool:
     """
     Marca una apuesta real como ganada o perdida, y calcula la ganancia
     neta: (monto*momio - monto) si ganó, -monto si perdió. Se llama
@@ -1060,7 +1061,14 @@ def actualizar_resultado_apuesta_real(url: str, key: str, apuesta_id: str, gano:
     """
     if not (url and key):
         return False
-    ganancia_neta = round(monto_apostado * (momio - 1), 2) if gano else round(-monto_apostado, 2)
+    if gano and pago_total_casa is not None:
+        # Boletos con una pata reembolsada (DNB empatado): la casa recalcula
+        # el momio sin esa pata, así que el pago real NO es monto*momio.
+        # pago_total_casa = lo que la casa muestra como "Ganancia Total"
+        # (incluye el stake), p. ej. $50.69 sobre $10 => ganancia neta 40.69.
+        ganancia_neta = round(pago_total_casa - monto_apostado, 2)
+    else:
+        ganancia_neta = round(monto_apostado * (momio - 1), 2) if gano else round(-monto_apostado, 2)
     try:
         resp = requests.patch(
             f"{url}/rest/v1/apuestas_reales_ligamx",
@@ -1426,14 +1434,12 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
       - 'reembolsado' si TODAS las patas evaluadas son reembolso (ver
         evaluar_acierto(): Empate Sin Apuesta con ese partido
         terminando en empate) — ninguna ganó ni perdió,
-      - 'parcial' si hay una MEZCLA: al menos una pata reembolsada y al
-        menos una ganada, pero ninguna perdida. Decisión explícita del
-        usuario: en vez de forzar este caso a "reembolsado" (que
-        escondía que sí hubo una pata ganadora real) o intentar simular
-        el recálculo de momio de una casa real (no verificable), se
-        expone como su propio estado — el usuario decide manualmente
-        cómo tratarlo para efectos de ROI real, con color propio (azul)
-        distinto de ganado/perdido/reembolsado en la interfaz.
+      - 'ganado' también si hay una MEZCLA: al menos una pata
+        reembolsada y el resto ganadas, ninguna perdida — es lo que hace
+        una casa real (PlayDoit anula la pata reembolsada y paga el
+        parlay como ganado, verificado con un boleto real). Antes se
+        marcaba 'parcial'; ahora ya no, porque aquí no hay dinero de por
+        medio (el pago real se ajusta en apuestas_reales_ligamx).
 
     Si falta el resultado de algún partido de la pata, o falta el dato
     real de tarjetas/córners para evaluar esa pata, se queda pendiente.
@@ -1492,7 +1498,13 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
         elif all(e is None for e in estados):
             nuevo_resultado = "reembolsado"
         elif any(e is True for e in estados) and any(e is None for e in estados):
-            nuevo_resultado = "parcial"
+            # Mezcla ganado + reembolso, ninguna perdida. Confirmado con un
+            # boleto real de PlayDoit (Super Parlay Jornada 11): la casa
+            # anula la pata reembolsada (cuota 1.00) y marca el parlay
+            # como GANADO. Este historial solo mide aciertos del modelo
+            # (no dinero), así que se marca igual: "ganado". El estado
+            # "parcial" ya no se genera aquí (filas viejas lo conservan).
+            nuevo_resultado = "ganado"
         else:
             continue  # caso no cubierto (no debería ocurrir) — se queda pendiente en vez de adivinar
 
