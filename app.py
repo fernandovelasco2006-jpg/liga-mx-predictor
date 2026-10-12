@@ -1541,16 +1541,23 @@ with tab_parlays:
                 if resultado_a in ("pendiente", "parcial"):
                     if resultado_a == "parcial":
                         st.caption(
-                            "🔵 Resultado mixto: al menos una selección se reembolsó (DNB empatado) y al "
-                            "menos una ganó — decide manualmente el monto real que pagó la casa para las "
-                            "patas restantes (Ganada, con el momio/monto ajustado que corresponda), o "
-                            "márcala Perdida/Reembolsada según cómo haya resuelto la casa el boleto."
+                            "🔵 Resultado mixto: una selección se reembolsó (DNB empatado) y el resto ganó. "
+                            "La casa anula esa pata y paga con un momio menor al original — escribe abajo la "
+                            "'Ganancia Total' que muestra el boleto (incluye tu apuesta) y presiona Ganada."
                         )
+                        pago_casa = st.number_input(
+                            "Pago total de la casa (MXN, incluye la apuesta)",
+                            min_value=0.0, value=float(a["monto_apostado"]), step=0.01,
+                            key=f"pago_{a['id']}",
+                        )
+                    else:
+                        pago_casa = None
                     col_r1, col_r2, col_r3, col_r4 = st.columns(4)
                     with col_r1:
                         if st.button("✅ Ganada", key=f"gano_{a['id']}"):
                             actualizar_resultado_apuesta_real(SUPABASE_URL, SUPABASE_KEY, a["id"], True,
-                                                               float(a["momio"]), float(a["monto_apostado"]))
+                                                               float(a["momio"]), float(a["monto_apostado"]),
+                                                               pago_total_casa=pago_casa)
                             st.rerun()
                     with col_r2:
                         if st.button("❌ Perdida", key=f"perdio_{a['id']}"):
