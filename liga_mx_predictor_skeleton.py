@@ -158,9 +158,9 @@ PARTIDOS = [
     ('Pachuca', 'Necaxa', 11, 'Estadio Hidalgo', (3, 3), 'Maximiliano Quintero Hernandez'),
     ('Atletico San Luis', 'Santos Laguna', 11, 'Estadio Libertad Financiera', (1, 2), 'Fernando Hernandez Gomez'),
     ('Pumas UNAM', 'Cruz Azul', 11, 'Estadio Olimpico Universitario', (3, 3), 'Ismael Rosario Lopez Peñuelas'),
-    ('Necaxa', 'Atlas', 12, 'Estadio Victoria', None, 'Victor Alfonso Caceres Hernandez'),
-    ('Tijuana', 'Puebla', 12, 'Estadio Caliente', None, 'Daniel Quintero Huitron'),
-    ('Atlante', 'Pumas UNAM', 12, 'Estadio Banorte', None, 'Luis Enrique Santander Aguirre'),
+    ('Necaxa', 'Atlas', 12, 'Estadio Victoria', (0, 2), 'Victor Alfonso Caceres Hernandez'),
+    ('Tijuana', 'Puebla', 12, 'Estadio Caliente', (0, 0), 'Daniel Quintero Huitron'),
+    ('Atlante', 'Pumas UNAM', 12, 'Estadio Banorte', (1, 2), 'Luis Enrique Santander Aguirre'),
     ('Guadalajara', 'Tigres', 12, 'Estadio Akron', None, 'Fernando Hernandez Gomez'),
     ('Santos Laguna', 'Queretaro', 12, 'Estadio TSM Corona', None, 'Mario Terrazas Chavez'),
     ('Leon', 'America', 12, 'Estadio Nou Camp', None, 'Ismael Rosario Lopez Peñuelas'),
@@ -318,7 +318,7 @@ HORARIOS_PARTIDO = {
     ('Atletico San Luis', 'Santos Laguna'): '2026-10-11 17:00',
     ('Pumas UNAM', 'Cruz Azul'): '2026-10-11 19:15',
     ('Necaxa', 'Atlas'): '2026-10-16 19:00',
-    ('Tijuana', 'Puebla'): '2026-10-16 20:05',
+    ('Tijuana', 'Puebla'): '2026-10-16 21:00',
     ('Atlante', 'Pumas UNAM'): '2026-10-16 21:00',
     ('Guadalajara', 'Tigres'): '2026-10-17 17:07',
     ('Santos Laguna', 'Queretaro'): '2026-10-17 17:00',
@@ -863,6 +863,9 @@ DATOS_REALES_LIGAMX = {
     "Pachuca_Necaxa":              {"am": 8,  "co": 8,  "ro": 0},  # 4 PAC + 4 NEC | 5 PAC + 3 NEC
     "Atletico San Luis_Santos Laguna": {"am": 1,  "co": 9,  "ro": 0},  # 0 ASL + 1 SAN | 6 ASL + 3 SAN
     "Pumas UNAM_Cruz Azul":        {"am": 3,  "co": 10, "ro": 1},  # 2 PUM + 1 CAZ | 4 PUM + 6 CAZ | roja PUM
+    "Tijuana_Puebla":              {"am": 4,  "co": 15, "ro": 0},  # 2 TIJ + 2 PUE | 12 TIJ + 3 PUE
+    "Necaxa_Atlas":                {"am": 2,  "co": 16, "ro": 1},  # 1 NEC + 1 ATS | 10 NEC + 6 ATS | roja ATS
+    "Atlante_Pumas UNAM":          {"am": 3,  "co": 10, "ro": 0},  # 2 ATL + 1 PUM | 10 ATL + 0 PUM
 }
 
 # ─────────────────────────────────────────────────────────────────────────
