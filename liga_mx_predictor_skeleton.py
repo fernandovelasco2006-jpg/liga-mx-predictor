@@ -161,11 +161,11 @@ PARTIDOS = [
     ('Necaxa', 'Atlas', 12, 'Estadio Victoria', (0, 2), 'Victor Alfonso Caceres Hernandez'),
     ('Tijuana', 'Puebla', 12, 'Estadio Caliente', (0, 0), 'Daniel Quintero Huitron'),
     ('Atlante', 'Pumas UNAM', 12, 'Estadio Banorte', (1, 2), 'Luis Enrique Santander Aguirre'),
-    ('Guadalajara', 'Tigres', 12, 'Estadio Akron', None, 'Fernando Hernandez Gomez'),
-    ('Santos Laguna', 'Queretaro', 12, 'Estadio TSM Corona', None, 'Mario Terrazas Chavez'),
-    ('Leon', 'America', 12, 'Estadio Nou Camp', None, 'Ismael Rosario Lopez Peñuelas'),
-    ('Toluca', 'Atletico San Luis', 12, 'Estadio Nemesio Diez', None, 'Marco Antonio Ortiz Nava'),
-    ('Cruz Azul', 'FC Juarez', 12, 'Estadio Banorte', None, 'Salvador Perez Villalobos'),
+    ('Guadalajara', 'Tigres', 12, 'Estadio Akron', (1, 1), 'Fernando Hernandez Gomez'),
+    ('Santos Laguna', 'Queretaro', 12, 'Estadio TSM Corona', (5, 0), 'Mario Terrazas Chavez'),
+    ('Leon', 'America', 12, 'Estadio Nou Camp', (3, 5), 'Ismael Rosario Lopez Peñuelas'),
+    ('Toluca', 'Atletico San Luis', 12, 'Estadio Nemesio Diez', (1, 1), 'Marco Antonio Ortiz Nava'),
+    ('Cruz Azul', 'FC Juarez', 12, 'Estadio Banorte', (5, 0), 'Salvador Perez Villalobos'),
     ('Monterrey', 'Pachuca', 12, 'Estadio BBVA', None, 'Cesar Arturo Ramos Palazuelos'),
     ('FC Juarez', 'Atlante', 13, 'Estadio Olimpico Benito Juarez', None, None),
     ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', None, None),
@@ -866,6 +866,11 @@ DATOS_REALES_LIGAMX = {
     "Tijuana_Puebla":              {"am": 4,  "co": 15, "ro": 0},  # 2 TIJ + 2 PUE | 12 TIJ + 3 PUE
     "Necaxa_Atlas":                {"am": 2,  "co": 16, "ro": 1},  # 1 NEC + 1 ATS | 10 NEC + 6 ATS | roja ATS
     "Atlante_Pumas UNAM":          {"am": 3,  "co": 10, "ro": 0},  # 2 ATL + 1 PUM | 10 ATL + 0 PUM
+    "Cruz Azul_FC Juarez":         {"am": 5,  "co": 10, "ro": 0},  # 1 CAZ + 4 JUA | 2 CAZ + 8 JUA
+    "Santos Laguna_Queretaro":     {"am": 4,  "co": 4,  "ro": 1},  # 2 SAN + 2 QRO | 3 SAN + 1 QRO | roja QRO
+    "Guadalajara_Tigres":          {"am": 2,  "co": 16, "ro": 1},  # 2 GDL + 0 TIG | 10 GDL + 6 TIG | roja TIG
+    "Toluca_Atletico San Luis":    {"am": 0,  "co": 17, "ro": 0},  # sin tarjetas listadas en Sofascore (por confirmar) | 15 TOL + 2 ASL
+    "Leon_America":                {"am": 8,  "co": 9,  "ro": 0},  # 4 LEO + 4 AME | 7 LEO + 2 AME
 }
 
 # ─────────────────────────────────────────────────────────────────────────
