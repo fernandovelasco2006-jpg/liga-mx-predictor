@@ -166,7 +166,7 @@ PARTIDOS = [
     ('Leon', 'America', 12, 'Estadio Nou Camp', (3, 5), 'Ismael Rosario Lopez Peñuelas'),
     ('Toluca', 'Atletico San Luis', 12, 'Estadio Nemesio Diez', (1, 1), 'Marco Antonio Ortiz Nava'),
     ('Cruz Azul', 'FC Juarez', 12, 'Estadio Banorte', (5, 0), 'Salvador Perez Villalobos'),
-    ('Monterrey', 'Pachuca', 12, 'Estadio BBVA', None, 'Cesar Arturo Ramos Palazuelos'),
+    ('Monterrey', 'Pachuca', 12, 'Estadio BBVA', (2, 1), 'Cesar Arturo Ramos Palazuelos'),
     ('FC Juarez', 'Atlante', 13, 'Estadio Olimpico Benito Juarez', None, None),
     ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', None, None),
     ('Tigres', 'Leon', 13, 'Estadio Universitario', None, None),
@@ -871,6 +871,7 @@ DATOS_REALES_LIGAMX = {
     "Guadalajara_Tigres":          {"am": 2,  "co": 16, "ro": 1},  # 2 GDL + 0 TIG | 10 GDL + 6 TIG | roja TIG
     "Toluca_Atletico San Luis":    {"am": 0,  "co": 17, "ro": 0},  # sin tarjetas listadas en Sofascore (por confirmar) | 15 TOL + 2 ASL
     "Leon_America":                {"am": 8,  "co": 9,  "ro": 0},  # 4 LEO + 4 AME | 7 LEO + 2 AME
+    "Monterrey_Pachuca":           {"am": 6,  "co": 11, "ro": 0},  # 3 MON + 3 PAC | 3 MON + 8 PAC (rojas: no mostradas en Sofascore)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
