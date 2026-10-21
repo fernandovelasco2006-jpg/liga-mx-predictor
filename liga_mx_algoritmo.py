@@ -826,13 +826,15 @@ def tabla_actual_real() -> list:
 
 def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: int, rng=None,
                              peso_elo: float = 1.0, peso_altitud: float = 1.0,
-                             peso_arbitro: float = 1.0) -> dict:
+                             peso_arbitro: float = 1.0, es_final: bool = False) -> dict:
     """
     Serie a ida y vuelta. El peor posicionado (seed más alto/número más
     grande) juega la IDA de local; el mejor posicionado juega la VUELTA
     de local (ventaja de local en el partido decisivo). Si el marcador
     global queda empatado, avanza el mejor posicionado de la fase
-    regular (regla vigente de Liga MX, sin penales).
+    regular (cuartos y semis: sin gol de visitante ni tiempos extra).
+    En la FINAL (es_final=True) el empate se define con tiempos extra y
+    penales: se modela como volado 50/50 (sin ventaja para el mejor sembrado).
     """
     if seed_A < seed_B:
         mejor, peor = equipo_A, equipo_B
@@ -851,7 +853,10 @@ def _jugar_serie_ida_vuelta(equipo_A: str, equipo_B: str, seed_A: int, seed_B: i
     elif goles_peor > goles_mejor:
         ganador = peor
     else:
-        ganador = mejor  # empate global -> avanza el mejor posicionado
+        if es_final:
+            ganador = mejor if rng.random() < 0.5 else peor  # extra time + penales
+        else:
+            ganador = mejor  # empate global -> avanza el mejor posicionado
 
     return {
         "equipo_A": equipo_A, "equipo_B": equipo_B,
@@ -929,7 +934,7 @@ def simular_temporada(rng=None,
     # -- Final -------------------------------------------------------
     finalistas = [s["ganador"] for s in semis]
     final = _jugar_serie_ida_vuelta(finalistas[0], finalistas[1],
-                                     seed[finalistas[0]], seed[finalistas[1]], rng, **kwargs)
+                                     seed[finalistas[0]], seed[finalistas[1]], rng, es_final=True, **kwargs)
 
     return {
         "tabla_final": tabla_final,
