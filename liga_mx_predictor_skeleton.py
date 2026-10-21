@@ -167,10 +167,10 @@ PARTIDOS = [
     ('Toluca', 'Atletico San Luis', 12, 'Estadio Nemesio Diez', (1, 1), 'Marco Antonio Ortiz Nava'),
     ('Cruz Azul', 'FC Juarez', 12, 'Estadio Banorte', (5, 0), 'Salvador Perez Villalobos'),
     ('Monterrey', 'Pachuca', 12, 'Estadio BBVA', (2, 1), 'Cesar Arturo Ramos Palazuelos'),
-    ('FC Juarez', 'Atlante', 13, 'Estadio Olimpico Benito Juarez', None, 'Katia Itzel Garcia Mendoza'),
-    ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', None, 'Adonai Escobedo Gonzalez'),
+    ('FC Juarez', 'Atlante', 13, 'Estadio Olimpico Benito Juarez', (0, 1), 'Katia Itzel Garcia Mendoza'),
+    ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', (2, 1), 'Adonai Escobedo Gonzalez'),
     ('Tigres', 'Leon', 13, 'Estadio Universitario', None, 'Marco Antonio Ortiz Nava'),
-    ('Guadalajara', 'Necaxa', 13, 'Estadio Akron', None, 'Vicente Jassiel Reynoso Arce'),
+    ('Guadalajara', 'Necaxa', 13, 'Estadio Akron', (1, 0), 'Vicente Jassiel Reynoso Arce'),
     ('Puebla', 'Monterrey', 13, 'Estadio Cuauhtemoc', None, 'Ismael Rosario Lopez Penuelas'),
     ('Atlas', 'America', 13, 'Estadio Jalisco', None, 'Cesar Arturo Ramos Palazuelos'),
     ('Toluca', 'Tijuana', 13, 'Estadio Nemesio Diez', None, 'Joaquin Alberto Vizcarra Armenta'),
@@ -329,7 +329,7 @@ HORARIOS_PARTIDO = {
     ('FC Juarez', 'Atlante'): '2026-10-20 19:00',
     ('Atletico San Luis', 'Queretaro'): '2026-10-20 19:00',
     ('Tigres', 'Leon'): '2026-10-20 21:10',
-    ('Guadalajara', 'Necaxa'): '2026-10-20 21:07',
+    ('Guadalajara', 'Necaxa'): '2026-10-20 18:07',
     ('Puebla', 'Monterrey'): '2026-10-21 19:00',
     ('Atlas', 'America'): '2026-10-21 19:00',
     ('Toluca', 'Tijuana'): '2026-10-21 19:00',
@@ -872,6 +872,9 @@ DATOS_REALES_LIGAMX = {
     "Toluca_Atletico San Luis":    {"am": 0,  "co": 17, "ro": 0},  # sin tarjetas listadas en Sofascore (por confirmar) | 15 TOL + 2 ASL
     "Leon_America":                {"am": 8,  "co": 9,  "ro": 0},  # 4 LEO + 4 AME | 7 LEO + 2 AME
     "Monterrey_Pachuca":           {"am": 6,  "co": 11, "ro": 0},  # 3 MON + 3 PAC | 3 MON + 8 PAC (rojas: no mostradas en Sofascore)
+    "Guadalajara_Necaxa":          {"am": 1,  "co": 14, "ro": 0},  # 0 GDL + 1 NEC | 9 GDL + 5 NEC
+    "FC Juarez_Atlante":           {"am": 6,  "co": 17, "ro": 0},  # 3 JUA + 3 ATL | 8 JUA + 9 ATL
+    "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 5 SLP + 2 QRO
 }
 
 # ─────────────────────────────────────────────────────────────────────────
