@@ -171,11 +171,11 @@ PARTIDOS = [
     ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', (2, 1), 'Adonai Escobedo Gonzalez'),
     ('Tigres', 'Leon', 13, 'Estadio Universitario', None, 'Marco Antonio Ortiz Nava'),
     ('Guadalajara', 'Necaxa', 13, 'Estadio Akron', (1, 0), 'Vicente Jassiel Reynoso Arce'),
-    ('Puebla', 'Monterrey', 13, 'Estadio Cuauhtemoc', None, 'Ismael Rosario Lopez Penuelas'),
-    ('Atlas', 'America', 13, 'Estadio Jalisco', None, 'Cesar Arturo Ramos Palazuelos'),
-    ('Toluca', 'Tijuana', 13, 'Estadio Nemesio Diez', None, 'Joaquin Alberto Vizcarra Armenta'),
-    ('Pachuca', 'Cruz Azul', 13, 'Estadio Hidalgo', None, 'Daniel Quintero Huitron'),
-    ('Santos Laguna', 'Pumas UNAM', 13, 'Estadio TSM Corona', None, 'Guillermo Pacheco Larios'),
+    ('Puebla', 'Monterrey', 13, 'Estadio Cuauhtemoc', (1, 4), 'Ismael Rosario Lopez Penuelas'),
+    ('Atlas', 'America', 13, 'Estadio Jalisco', (2, 5), 'Cesar Arturo Ramos Palazuelos'),
+    ('Toluca', 'Tijuana', 13, 'Estadio Nemesio Diez', (2, 2), 'Joaquin Alberto Vizcarra Armenta'),
+    ('Pachuca', 'Cruz Azul', 13, 'Estadio Hidalgo', (1, 2), 'Daniel Quintero Huitron'),
+    ('Santos Laguna', 'Pumas UNAM', 13, 'Estadio TSM Corona', (2, 0), 'Guillermo Pacheco Larios'),
     ('Necaxa', 'FC Juarez', 14, 'Estadio Victoria', None, None),
     ('Atlante', 'Atletico San Luis', 14, 'Estadio Banorte', None, None),
     ('Leon', 'Toluca', 14, 'Estadio Nou Camp', None, None),
@@ -875,6 +875,11 @@ DATOS_REALES_LIGAMX = {
     "Guadalajara_Necaxa":          {"am": 1,  "co": 14, "ro": 0},  # 0 GDL + 1 NEC | 9 GDL + 5 NEC
     "FC Juarez_Atlante":           {"am": 6,  "co": 17, "ro": 0},  # 3 JUA + 3 ATL | 8 JUA + 9 ATL
     "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 5 SLP + 2 QRO
+    "Pachuca_Cruz Azul":           {"am": 8,  "co": 8,  "ro": 0},  # 5 PAC + 3 CAZ | 0 PAC + 8 CAZ
+    "Puebla_Monterrey":            {"am": 2,  "co": 10, "ro": 0},  # 0 PUE + 2 MON | 2 PUE + 8 MON
+    "Atlas_America":               {"am": 3,  "co": 13, "ro": 0},  # 2 ATS + 1 AME | 9 ATS + 4 AME
+    "Toluca_Tijuana":              {"am": 0,  "co": 22, "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 17 TOL + 5 TIJ
+    "Santos Laguna_Pumas UNAM":    {"am": 5,  "co": 11, "ro": 1},  # 3 SAN + 2 PUM | 8 SAN + 3 PUM | roja: 1 PUM
 }
 
 # ─────────────────────────────────────────────────────────────────────────
