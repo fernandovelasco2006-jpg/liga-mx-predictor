@@ -169,7 +169,7 @@ PARTIDOS = [
     ('Monterrey', 'Pachuca', 12, 'Estadio BBVA', (2, 1), 'Cesar Arturo Ramos Palazuelos'),
     ('FC Juarez', 'Atlante', 13, 'Estadio Olimpico Benito Juarez', (0, 1), 'Katia Itzel Garcia Mendoza'),
     ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', (2, 1), 'Adonai Escobedo Gonzalez'),
-    ('Tigres', 'Leon', 13, 'Estadio Universitario', None, 'Marco Antonio Ortiz Nava'),
+    ('Tigres', 'Leon', 13, 'Estadio Universitario', (0, 2), 'Marco Antonio Ortiz Nava'),
     ('Guadalajara', 'Necaxa', 13, 'Estadio Akron', (1, 0), 'Vicente Jassiel Reynoso Arce'),
     ('Puebla', 'Monterrey', 13, 'Estadio Cuauhtemoc', (1, 4), 'Ismael Rosario Lopez Penuelas'),
     ('Atlas', 'America', 13, 'Estadio Jalisco', (2, 5), 'Cesar Arturo Ramos Palazuelos'),
@@ -875,6 +875,7 @@ DATOS_REALES_LIGAMX = {
     "Guadalajara_Necaxa":          {"am": 1,  "co": 14, "ro": 0},  # 0 GDL + 1 NEC | 9 GDL + 5 NEC
     "FC Juarez_Atlante":           {"am": 6,  "co": 17, "ro": 0},  # 3 JUA + 3 ATL | 8 JUA + 9 ATL
     "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 5 SLP + 2 QRO
+    "Tigres_Leon":                 {"am": 1,  "co": 20, "ro": 0},  # 0 TIG + 1 LEO | 16 TIG + 4 LEO (amarillas a DT no cuentan)
     "Pachuca_Cruz Azul":           {"am": 8,  "co": 8,  "ro": 0},  # 5 PAC + 3 CAZ | 0 PAC + 8 CAZ
     "Puebla_Monterrey":            {"am": 2,  "co": 10, "ro": 0},  # 0 PUE + 2 MON | 2 PUE + 8 MON
     "Atlas_America":               {"am": 3,  "co": 13, "ro": 0},  # 2 ATS + 1 AME | 9 ATS + 4 AME
