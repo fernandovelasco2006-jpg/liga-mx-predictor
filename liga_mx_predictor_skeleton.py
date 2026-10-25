@@ -180,7 +180,7 @@ PARTIDOS = [
     ('Atlante', 'Atletico San Luis', 14, 'Estadio Banorte', (0, 1), 'Ismael Rosario Lopez Peñuelas'),
     ('Leon', 'Toluca', 14, 'Estadio Nou Camp', (1, 1), 'Fernando Hernandez Gomez'),
     ('Monterrey', 'Guadalajara', 14, 'Estadio BBVA', (0, 1), 'Victor Alfonso Caceres Hernandez'),
-    ('Pumas UNAM', 'Tigres', 14, 'Estadio Olimpico Universitario', None, 'Jorge Abraham Camacho Peregrina'),
+    ('Pumas UNAM', 'Tigres', 14, 'Estadio Olimpico Universitario', (1, 1), 'Jorge Abraham Camacho Peregrina'),
     ('Atlas', 'Puebla', 14, 'Estadio Jalisco', None, 'Abraham De Jesus Quirarte Contreras'),
     ('America', 'Pachuca', 14, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
     ('Queretaro', 'Cruz Azul', 14, 'Estadio Corregidora', None, 'Cesar Arturo Ramos Palazuelos'),
@@ -886,6 +886,7 @@ DATOS_REALES_LIGAMX = {
     "Atlante_Atletico San Luis":   {"am": 4,  "co": 9,  "ro": 0},  # 3 ATL + 1 SLP | 7 ATL + 2 SLP | rojas no mostradas en Sofascore (0 sin confirmar)
     "Leon_Toluca":                 {"am": 6,  "co": 9,  "ro": 0},  # 3 LEO + 3 TOL | 3 LEO + 6 TOL | rojas no mostradas en Sofascore (0 sin confirmar)
     "Monterrey_Guadalajara":       {"am": 2,  "co": 11, "ro": 1},  # 2 MON + 0 GUA | 8 MON + 3 GUA | roja: 1 MON (Pineda, 90')
+    "Pumas UNAM_Tigres":           {"am": 6,  "co": 8,  "ro": 0},  # 3 PUM + 3 TIG | 6 PUM + 2 TIG | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
