@@ -171,15 +171,15 @@ PARTIDOS = [
     ('Atletico San Luis', 'Queretaro', 13, 'Estadio Libertad Financiera', (2, 1), 'Adonai Escobedo Gonzalez'),
     ('Tigres', 'Leon', 13, 'Estadio Universitario', (0, 2), 'Marco Antonio Ortiz Nava'),
     ('Guadalajara', 'Necaxa', 13, 'Estadio Akron', (1, 0), 'Vicente Jassiel Reynoso Arce'),
-    ('Puebla', 'Monterrey', 13, 'Estadio Cuauhtemoc', (1, 4), 'Ismael Rosario Lopez Penuelas'),
+    ('Puebla', 'Monterrey', 13, 'Estadio Cuauhtemoc', (1, 4), 'Ismael Rosario Lopez Peñuelas'),
     ('Atlas', 'America', 13, 'Estadio Jalisco', (2, 5), 'Cesar Arturo Ramos Palazuelos'),
     ('Toluca', 'Tijuana', 13, 'Estadio Nemesio Diez', (2, 2), 'Joaquin Alberto Vizcarra Armenta'),
     ('Pachuca', 'Cruz Azul', 13, 'Estadio Hidalgo', (1, 2), 'Daniel Quintero Huitron'),
     ('Santos Laguna', 'Pumas UNAM', 13, 'Estadio TSM Corona', (2, 0), 'Guillermo Pacheco Larios'),
-    ('Necaxa', 'FC Juarez', 14, 'Estadio Victoria', None, 'Martin Molina Astorga'),
-    ('Atlante', 'Atletico San Luis', 14, 'Estadio Banorte', None, 'Ivan Antonio Lopez Sanchez'),
-    ('Leon', 'Toluca', 14, 'Estadio Nou Camp', None, 'Fernando Hernandez Gomez'),
-    ('Monterrey', 'Guadalajara', 14, 'Estadio BBVA', None, 'Victor Alfonso Caceres Hernandez'),
+    ('Necaxa', 'FC Juarez', 14, 'Estadio Victoria', (1, 1), 'Martin Molina Astorga'),
+    ('Atlante', 'Atletico San Luis', 14, 'Estadio Banorte', (0, 1), 'Ismael Rosario Lopez Peñuelas'),
+    ('Leon', 'Toluca', 14, 'Estadio Nou Camp', (1, 1), 'Fernando Hernandez Gomez'),
+    ('Monterrey', 'Guadalajara', 14, 'Estadio BBVA', (0, 1), 'Victor Alfonso Caceres Hernandez'),
     ('Pumas UNAM', 'Tigres', 14, 'Estadio Olimpico Universitario', None, 'Jorge Abraham Camacho Peregrina'),
     ('Atlas', 'Puebla', 14, 'Estadio Jalisco', None, 'Abraham De Jesus Quirarte Contreras'),
     ('America', 'Pachuca', 14, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
@@ -881,6 +881,11 @@ DATOS_REALES_LIGAMX = {
     "Atlas_America":               {"am": 3,  "co": 13, "ro": 0},  # 2 ATS + 1 AME | 9 ATS + 4 AME
     "Toluca_Tijuana":              {"am": 0,  "co": 22, "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 17 TOL + 5 TIJ
     "Santos Laguna_Pumas UNAM":    {"am": 5,  "co": 11, "ro": 1},  # 3 SAN + 2 PUM | 8 SAN + 3 PUM | roja: 1 PUM
+    # Jornada 14 — 23-25 octubre 2026
+    "Necaxa_FC Juarez":            {"am": 4,  "co": 12, "ro": 0},  # 2 NEC + 2 JUA | 7 NEC + 5 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atlante_Atletico San Luis":   {"am": 4,  "co": 9,  "ro": 0},  # 3 ATL + 1 SLP | 7 ATL + 2 SLP | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Leon_Toluca":                 {"am": 6,  "co": 9,  "ro": 0},  # 3 LEO + 3 TOL | 3 LEO + 6 TOL | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Monterrey_Guadalajara":       {"am": 2,  "co": 11, "ro": 1},  # 2 MON + 0 GUA | 8 MON + 3 GUA | roja: 1 MON (Pineda, 90')
 }
 
 # ─────────────────────────────────────────────────────────────────────────
