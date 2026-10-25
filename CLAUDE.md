@@ -71,6 +71,8 @@ assert not at.exception, at.exception
 
 ## Estado de datos (actualizar aquí conforme avance la temporada)
 
-- Jornada 6: completa (9/9 partidos, resultados y tarjetas/córners cargados).
-- Jornada 7: calendario cargado, sin resultados ni árbitros asignados todavía.
+- Jornadas 1–13: completas (115 partidos con resultado y tarjetas/córners en `DATOS_REALES_LIGAMX`), salvo 2 de la Jornada 7.
+- Jornada 7: pendientes Queretaro vs Monterrey y America vs Tijuana (reprogramados); `detectar_jornada_actual()` ya no se atora en ella.
+- Jornadas 14–17: calendario cargado, sin resultados todavía. Jornada actual detectada: 14.
+- Análisis semanal automático: `.github/workflows/analisis_semanal.yml` corre `liga_mx_analisis_semanal.py` los lunes 12:00 UTC (también a mano desde Actions). Necesita en Secrets del repo `SUPABASE_URL_LIGAMX`, `SUPABASE_KEY_LIGAMX` y opcionalmente `WEATHER_API_KEY`, `BSD_API_KEY`.
 - `ODDS_API_KEY` y `SUPABASE_URL_LIGAMX`/`SUPABASE_KEY_LIGAMX` van en Secrets de Streamlit Cloud, nunca hardcodeados ni pegados en el chat/commits.

@@ -1104,7 +1104,7 @@ with tab_hist_ap:
                         df_brier = pd.DataFrame(brier_data["por_equipo"])
                         df_brier.insert(0, "", df_brier["equipo"].map(flag))
                         df_brier.columns = ["", "Equipo", "Brier promedio", "Partidos evaluados"]
-                        st.dataframe(df_brier, use_container_width=True, hide_index=True)
+                        st.dataframe(df_brier, width="stretch", hide_index=True)
 
                     calibracion = calcular_calibracion_por_bin(historial_predicciones)
                     if calibracion:
@@ -1112,7 +1112,7 @@ with tab_hist_ap:
                         st.caption("Brecha negativa = el modelo es prudente (dice menos de lo que en realidad acierta). Brecha positiva = el modelo es sobreconfiado (promete más de lo que cumple).")
                         df_calib = pd.DataFrame(calibracion)
                         df_calib.columns = ["Rango prometido", "Prometido promedio (%)", "Real (%)", "Brecha", "N observaciones"]
-                        st.dataframe(df_calib, use_container_width=True, hide_index=True)
+                        st.dataframe(df_calib, width="stretch", hide_index=True)
 
             if stats["evaluadas"]:
                 st.markdown("##### ✅ Apuestas evaluadas")
@@ -1600,7 +1600,7 @@ with tab_tabla:
         df_real.insert(1, "", df_real["equipo"].map(flag))
         df_real.columns = ["#", "", "Club", "PJ", "G", "E", "P", "GF", "GC", "DG", "Pts"]
         st.dataframe(
-            df_real, use_container_width=True, hide_index=True,
+            df_real, width="stretch", hide_index=True,
             column_config={"#": st.column_config.NumberColumn(width="small")},
         )
         st.caption(f"📅 {n_jugados} partido(s) jugado(s) hasta ahora · empatados comparten posición, igual que la tabla oficial")
@@ -1623,7 +1623,7 @@ with tab_tabla:
     df_tabla.insert(1, "", df_tabla["equipo"].map(flag))
     df_tabla.columns = ["#", "", "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Pts"]
     st.dataframe(
-        df_tabla, use_container_width=True, hide_index=True,
+        df_tabla, width="stretch", hide_index=True,
         column_config={"#": st.column_config.NumberColumn(width="small")},
     )
     st.caption("🟢 Los primeros 8 lugares clasifican a la Liguilla (en la proyección)")
@@ -1669,7 +1669,7 @@ with tab_tabla:
         ]).sort_values("Prob. Campeón (%)", ascending=False).reset_index(drop=True)
 
         st.dataframe(
-            df_mc, use_container_width=True, hide_index=True,
+            df_mc, width="stretch", hide_index=True,
             column_config={
                 "Prob. Liguilla (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
                 "Prob. Campeón (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),

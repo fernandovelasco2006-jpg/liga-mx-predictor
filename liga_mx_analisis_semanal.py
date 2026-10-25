@@ -39,7 +39,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 
 from liga_mx_predictor_skeleton import PARTIDOS, HORARIOS_PARTIDO
-from liga_mx_algoritmo import simular_partido, analizar_apuestas, armar_parlay
+from liga_mx_algoritmo import simular_partido, analizar_apuestas, armar_parlay, detectar_jornada_actual
 
 TZ_MX = timezone(timedelta(hours=-6))
 N_SIMS_PARTIDO = 10_000_000
@@ -262,8 +262,10 @@ def main():
         _log("Paso 1/2 — Actualizando aciertos de jornadas ya jugadas...")
         actualizar_aciertos_de_jornadas_pasadas(url, key)
 
-    # 2. Analiza la próxima jornada pendiente completa.
-    jornada = _proxima_jornada_pendiente()
+    # 2. Analiza la jornada actual — mismo criterio que app.py
+    # (detectar_jornada_actual(), por mediana de fechas), para que un
+    # partido reprogramado de una jornada vieja no la deje "atorada".
+    jornada = detectar_jornada_actual()
     if jornada is None:
         _log("No hay jornadas pendientes — temporada regular completa.")
         return
