@@ -184,7 +184,7 @@ PARTIDOS = [
     ('Atlas', 'Puebla', 14, 'Estadio Jalisco', None, 'Abraham De Jesus Quirarte Contreras'),
     ('America', 'Pachuca', 14, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
     ('Queretaro', 'Cruz Azul', 14, 'Estadio Corregidora', None, 'Cesar Arturo Ramos Palazuelos'),
-    ('Tijuana', 'Santos Laguna', 14, 'Estadio Caliente', None, 'Luis Enrique Santander Aguirre'),
+    ('Tijuana', 'Santos Laguna', 14, 'Estadio Caliente', (4, 1), 'Luis Enrique Santander Aguirre'),
     ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', None, None),
     ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', None, None),
     ('Puebla', 'Pumas UNAM', 15, 'Estadio Cuauhtemoc', None, None),
@@ -887,6 +887,7 @@ DATOS_REALES_LIGAMX = {
     "Leon_Toluca":                 {"am": 6,  "co": 9,  "ro": 0},  # 3 LEO + 3 TOL | 3 LEO + 6 TOL | rojas no mostradas en Sofascore (0 sin confirmar)
     "Monterrey_Guadalajara":       {"am": 2,  "co": 11, "ro": 1},  # 2 MON + 0 GUA | 8 MON + 3 GUA | roja: 1 MON (Pineda, 90')
     "Pumas UNAM_Tigres":           {"am": 6,  "co": 8,  "ro": 0},  # 3 PUM + 3 TIG | 6 PUM + 2 TIG | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Tijuana_Santos Laguna":       {"am": 6,  "co": 7,  "ro": 0},  # 2 TIJ + 4 SAN | 3 TIJ + 4 SAN | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
