@@ -181,9 +181,9 @@ PARTIDOS = [
     ('Leon', 'Toluca', 14, 'Estadio Nou Camp', (1, 1), 'Fernando Hernandez Gomez'),
     ('Monterrey', 'Guadalajara', 14, 'Estadio BBVA', (0, 1), 'Victor Alfonso Caceres Hernandez'),
     ('Pumas UNAM', 'Tigres', 14, 'Estadio Olimpico Universitario', (1, 1), 'Jorge Abraham Camacho Peregrina'),
-    ('Atlas', 'Puebla', 14, 'Estadio Jalisco', None, 'Abraham De Jesus Quirarte Contreras'),
-    ('America', 'Pachuca', 14, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
-    ('Queretaro', 'Cruz Azul', 14, 'Estadio Corregidora', None, 'Cesar Arturo Ramos Palazuelos'),
+    ('Atlas', 'Puebla', 14, 'Estadio Jalisco', (4, 3), 'Abraham De Jesus Quirarte Contreras'),
+    ('America', 'Pachuca', 14, 'Estadio Banorte', (1, 2), 'Maximiliano Quintero Hernandez'),
+    ('Queretaro', 'Cruz Azul', 14, 'Estadio Corregidora', (1, 3), 'Cesar Arturo Ramos Palazuelos'),
     ('Tijuana', 'Santos Laguna', 14, 'Estadio Caliente', (4, 1), 'Luis Enrique Santander Aguirre'),
     ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', None, None),
     ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', None, None),
@@ -888,6 +888,9 @@ DATOS_REALES_LIGAMX = {
     "Monterrey_Guadalajara":       {"am": 2,  "co": 11, "ro": 1},  # 2 MON + 0 GUA | 8 MON + 3 GUA | roja: 1 MON (Pineda, 90')
     "Pumas UNAM_Tigres":           {"am": 6,  "co": 8,  "ro": 0},  # 3 PUM + 3 TIG | 6 PUM + 2 TIG | rojas no mostradas en Sofascore (0 sin confirmar)
     "Tijuana_Santos Laguna":       {"am": 6,  "co": 7,  "ro": 0},  # 2 TIJ + 4 SAN | 3 TIJ + 4 SAN | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atlas_Puebla":                {"am": 3,  "co": 10, "ro": 1},  # 0 ATS + 3 PUE | 7 ATS + 3 PUE | roja: 1 PUE
+    "America_Pachuca":             {"am": 4,  "co": 11, "ro": 0},  # 2 AME + 2 PAC | 6 AME + 5 PAC | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Queretaro_Cruz Azul":         {"am": 2,  "co": 14, "ro": 0},  # 1 QRO + 1 CAZ | 8 QRO + 6 CAZ | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
