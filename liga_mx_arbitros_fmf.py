@@ -371,7 +371,13 @@ def main() -> int:
     todos = []
     for j in jornadas:
         print(f"Jornada {j}: {URL_DESIGNACION.format(jornada=j)}")
-        textos = leer_pagina(j, args.debug_dir)
+        try:
+            textos = leer_pagina(j, args.debug_dir)
+        except Exception as e:
+            # Una jornada que la FMF todavía no publica responde vacío
+            # (net::ERR_EMPTY_RESPONSE, visto con la J15 el 28/oct/2026).
+            print(f"  la página no cargó, seguramente aún no está publicada: {e}".splitlines()[0])
+            continue
         arbitros = extraer_arbitros(j, textos)
         total = len(partidos_de_jornada(j))
         print(f"  {len(arbitros)}/{total} partidos con árbitro en la página")
