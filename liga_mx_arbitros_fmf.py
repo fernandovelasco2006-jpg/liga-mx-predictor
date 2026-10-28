@@ -81,6 +81,7 @@ _REGEX_EQUIPO = [(eq, re.compile(p)) for eq, p in PALABRAS_EQUIPO]
 # aparece después de una de ellas ya no es el central.
 _ETIQUETAS_OTROS = re.compile(r"asistente|cuarto|4to|var\b|avar|observador|asesor")
 _ETIQUETA_CENTRAL = re.compile(r"central|arbitro\b")
+_ETIQUETA_CENTRAL_DESPUES = re.compile(r"^arbitro\s+cen?tr?al$")
 _NO_ES_NOMBRE = re.compile(
     r"estadio|arena|jornada|designaci|liga|apertura|clausura|fecha|hora|"
     r"comision|arbitr|local|visit|partido|sede|\d"
@@ -144,12 +145,19 @@ def _formatear_nombre(token: str) -> str:
 def arbitro_central_en_bloque(bloque: str, conocidos: dict):
     """
     Del texto de un partido (fila de tabla o tarjeta), saca el árbitro
-    central. Se parte en celdas/líneas; el central es el primer nombre de
-    persona antes de cualquier etiqueta de asistente/cuarto/VAR (la FMF
-    lista al central primero). Si hay una etiqueta "Central", se toma el
-    nombre que la sigue. Devuelve (nombre, es_conocido) o (None, False).
+    central. Se parte en celdas/líneas. Si un nombre va seguido de la
+    etiqueta "Árbitro Central" (formato actual de la FMF), es ése. Si no, el
+    primer nombre de persona antes de cualquier etiqueta de asistente/
+    cuarto/VAR, o el que sigue a una etiqueta "Central". Devuelve (nombre, es_conocido) o (None, False).
     """
     tokens = [t.strip() for t in re.split(r"[\t\n|]+", bloque) if t.strip()]
+    # Formato real de la FMF (J14, oct/2026): cada nombre va seguido de su
+    # etiqueta ("Nombre" / "Árbitro Cental" / "Nombre" / "Asistente Uno"...),
+    # con la errata "Cental" incluida. El central es el nombre justo antes
+    # de esa etiqueta.
+    for i, tok in enumerate(tokens[1:], start=1):
+        if _ETIQUETA_CENTRAL_DESPUES.match(_normalizar(tok)) and _parece_nombre(tokens[i - 1]):
+            return _resolver_nombre(tokens[i - 1], conocidos)
     candidatos = []
     tras_central = False
     for tok in tokens:
