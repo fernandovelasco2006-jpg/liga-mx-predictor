@@ -10,8 +10,9 @@ endpoint JSON público, por eso el parseo es por texto: para cada partido
 de la jornada en PARTIDOS se busca el bloque más chico de la página que
 mencione a los dos equipos, y dentro de él el árbitro central.
 
-Solo llena árbitros que hoy están en None (nunca pisa uno ya cargado,
-salvo --forzar). Un árbitro que no esté en ARBITROS_LIGA_MX se agrega con
+La FMF manda (decisión de fer, 28/oct/2026): llena los árbitros en None
+y también reemplaza uno ya cargado si la designación dice otro (se
+anota en el log; --no-reemplazar para solo avisar). Un árbitro que no esté en ARBITROS_LIGA_MX se agrega con
 el placeholder (4.5, 0.15) = ARBITRO_DEFAULT y un comentario de debut,
 igual que cuando se carga a mano (ver CLAUDE.md).
 
@@ -311,7 +312,7 @@ def extraer_arbitros(jornada: int, textos: list) -> dict:
     return resultado
 
 
-def aplicar_al_skeleton(jornada: int, arbitros: dict, forzar: bool = False) -> list:
+def aplicar_al_skeleton(jornada: int, arbitros: dict, reemplazar: bool = True) -> list:
     """Escribe los árbitros en PARTIDOS (y altas nuevas en ARBITROS_LIGA_MX). Devuelve los cambios."""
     codigo = SKELETON.read_text(encoding="utf-8")
     cambios = []
@@ -326,15 +327,15 @@ def aplicar_al_skeleton(jornada: int, arbitros: dict, forzar: bool = False) -> l
             print(f"  ! no encontré la tupla de {local} vs {visita} en PARTIDOS")
             continue
         actual = m.group(2)
-        if actual != "None" and not forzar:
-            if actual.strip("'") != nombre:
-                print(f"  ! {local} vs {visita}: ya tenía {actual}, la FMF dice {nombre} (no se cambia)")
-            continue
         if actual.strip("'") == nombre:
             continue
+        if actual != "None" and not reemplazar:
+            print(f"  ! {local} vs {visita}: ya tenía {actual}, la FMF dice {nombre} (no se cambia)")
+            continue
         codigo = codigo[: m.start()] + m.group(1) + f"'{nombre}'" + m.group(3) + codigo[m.end():]
-        cambios.append(f"{local} vs {visita}: {nombre}")
-        if not conocido and nombre not in ARBITROS_LIGA_MX and nombre not in nuevos:
+        antes = "" if actual == "None" else f" (antes {actual.strip(chr(39))})"
+        cambios.append(f"{local} vs {visita}: {nombre}{antes}")
+        if not conocido and nombre not in ARBITROS_LIGA_MX and nombre not in [n for n, *_ in nuevos]:
             nuevos.append((nombre, local, visita))
 
     for nombre, local, visita in nuevos:
@@ -358,7 +359,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--jornada", type=int, action="append", help="jornada a cargar (repetible)")
     ap.add_argument("--dry-run", action="store_true", help="no escribe el skeleton")
-    ap.add_argument("--forzar", action="store_true", help="reemplaza árbitros ya cargados")
+    ap.add_argument("--no-reemplazar", action="store_true", help="no pisa árbitros ya cargados, solo avisa")
     ap.add_argument("--debug-dir", help="carpeta para guardar el texto renderizado")
     args = ap.parse_args()
 
@@ -378,7 +379,7 @@ def main() -> int:
             print(f"  {l} vs {v}: {n}{'' if conocido else '  (NUEVO)'}")
         if args.dry_run or not arbitros:
             continue
-        todos += [f"J{j} {c}" for c in aplicar_al_skeleton(j, arbitros, args.forzar)]
+        todos += [f"J{j} {c}" for c in aplicar_al_skeleton(j, arbitros, not args.no_reemplazar)]
 
     if todos:
         print("Cambios:\n  " + "\n  ".join(todos))
