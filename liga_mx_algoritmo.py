@@ -1940,10 +1940,22 @@ def detectar_jornada_actual() -> int:
         })
         return jornadas_pendientes[0] if jornadas_pendientes else None
 
+    # Una jornada con pendientes es "rezagada" si una jornada posterior ya
+    # tiene resultados: la liga ya siguió y lo que le queda son partidos
+    # reprogramados. Las rezagadas no cuentan como "actual" mientras haya
+    # otra jornada pendiente. Ejemplo real: Jornada 7 con America-Tijuana
+    # (28/10) y Queretaro-Monterrey (14/11) le ganaba a la Jornada 15
+    # (30/10-1/11) completa. Los rezagados se siguen pudiendo elegir a
+    # mano en el selector de jornada.
+    jornadas_con_resultados = {p[2] for p in PARTIDOS if p[4] is not None}
+    ultima_con_resultados = max(jornadas_con_resultados, default=0)
+    regulares = [j for j in pendientes_por_jornada if j >= ultima_con_resultados]
+    candidatas = regulares or list(pendientes_por_jornada.keys())
+
     ahora = datetime.now()
     medianas = {}
-    for jornada, fechas in pendientes_por_jornada.items():
-        fechas.sort()
+    for jornada in candidatas:
+        fechas = sorted(pendientes_por_jornada[jornada])
         n = len(fechas)
         medianas[jornada] = fechas[n // 2] if n % 2 == 1 else fechas[n // 2 - 1]
 

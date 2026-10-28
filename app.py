@@ -551,6 +551,8 @@ with tab_pred:
             idx_default = len(jornadas) - 1
         jornada_sel = st.selectbox("Jornada", jornadas, index=idx_default, key=f"jornada_pred_{filtro_estado}")
         partidos_j = [p for p in partidos_filtrados if p[2] == jornada_sel]
+        # Ordenados por fecha para que el partido más próximo salga primero.
+        partidos_j.sort(key=lambda p: HORARIOS_PARTIDO.get((p[0], p[1]), "9999"))
         opciones = {f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}": i for i, p in enumerate(partidos_j)}
         lbl_sel = st.selectbox("Partido", list(opciones.keys()), key=f"partido_pred_{filtro_estado}_{jornada_sel}")
         idx_sel = opciones[lbl_sel]
