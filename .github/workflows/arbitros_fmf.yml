@@ -27,9 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Corre el código de la rama desde la que se lanzó (main en las
+      # corridas programadas); desde otra rama sirve para probar el parseo.
       - uses: actions/checkout@v4
-        with:
-          ref: main
 
       - uses: actions/setup-python@v5
         with:
@@ -51,6 +51,7 @@ jobs:
         run: python -c "import ast; ast.parse(open('liga_mx_predictor_skeleton.py').read())"
 
       - name: Subir a main
+        if: github.ref == 'refs/heads/main'
         run: |
           if git diff --quiet -- liga_mx_predictor_skeleton.py; then
             echo "Sin árbitros nuevos."
