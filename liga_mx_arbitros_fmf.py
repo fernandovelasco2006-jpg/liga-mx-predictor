@@ -43,6 +43,10 @@ SKELETON = Path(__file__).with_name("liga_mx_predictor_skeleton.py")
 URL_DESIGNACION = (
     "https://arbitraje.fmf.mx/designacion-arbitral_2026-2027_liga-mx_apertura_jornada-{jornada}"
 )
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+)
 
 # Palabras clave (ya sin acentos y en minúsculas) con las que la FMF nombra
 # a cada club. Confirmado contra la noticia de designaciones de la J11
@@ -205,28 +209,51 @@ def leer_pagina(jornada: int, debug_dir=None) -> list:
 
     url = URL_DESIGNACION.format(jornada=jornada)
     respuestas_json = []
+    respuestas_xhr = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(locale="es-MX")
+        # User agent de Chrome normal: el de headless ("HeadlessChrome")
+        # lo bloquean algunos sitios.
+        page = browser.new_page(locale="es-MX", user_agent=USER_AGENT)
 
         def _guardar(resp):
-            if "json" in (resp.headers.get("content-type") or ""):
+            tipo = resp.headers.get("content-type") or ""
+            if resp.request.resource_type in ("xhr", "fetch"):
+                respuestas_xhr.append(f"{resp.status} {tipo} {resp.url}")
+            if "json" in tipo:
                 try:
                     respuestas_json.append({"url": resp.url, "body": resp.json()})
                 except Exception:
                     pass
 
         page.on("response", _guardar)
-        page.goto(url, wait_until="networkidle", timeout=90_000)
-        page.wait_for_timeout(3_000)
+        resp = page.goto(url, wait_until="networkidle", timeout=90_000)
+        # La tabla puede llegar después del networkidle: se espera hasta 30 s
+        # a que el texto mencione al menos un club.
+        try:
+            page.wait_for_function(
+                "() => /Toluca|Pachuca|Necaxa|Cruz Azul|Puebla/i.test(document.body.innerText)",
+                timeout=30_000,
+            )
+        except Exception:
+            pass
         textos = page.evaluate(
             "() => Array.from(document.body.querySelectorAll('*'))"
             ".map(e => e.innerText || '').filter(t => t.trim())"
         )
         if debug_dir:
+            cuerpo = page.inner_text("body")
+            print(f"  HTTP {resp.status if resp else '?'} · {page.url} · título: {page.title()!r}")
+            print(f"  {len(respuestas_xhr)} respuestas XHR/fetch:")
+            for r in respuestas_xhr[:30]:
+                print(f"    {r}")
+            print("  --- texto de la página (primeros 3000 caracteres) ---")
+            print("  " + cuerpo[:3000].replace("\n", "\n  "))
+            print("  --- fin ---")
             d = Path(debug_dir)
             d.mkdir(parents=True, exist_ok=True)
-            (d / f"jornada_{jornada}.txt").write_text(page.inner_text("body"), encoding="utf-8")
+            (d / f"jornada_{jornada}.txt").write_text(cuerpo, encoding="utf-8")
+            (d / f"jornada_{jornada}.html").write_text(page.content(), encoding="utf-8")
             (d / f"jornada_{jornada}.json").write_text(
                 json.dumps(respuestas_json, ensure_ascii=False, indent=1, default=str),
                 encoding="utf-8",
