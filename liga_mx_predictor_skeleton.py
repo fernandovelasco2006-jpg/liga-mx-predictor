@@ -118,7 +118,7 @@ PARTIDOS = [
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
     ('Tigres', 'Necaxa', 7, 'Estadio Universitario', (1, 1), 'Karen Hernandez Andrade'),
-    ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Maximiliano Quintero Hernandez'),
+    ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Fernando Hernandez Gomez'),  # designación FMF (antes Quintero Hernandez)
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
     ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', (3, 1), None),
     ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', (1, 0), None),
