@@ -1,0 +1,71 @@
+name: Árbitros FMF
+
+# Corre liga_mx_arbitros_fmf.py: lee las designaciones de la Comisión de
+# Árbitros FMF (arbitraje.fmf.mx) y carga el árbitro central de cada
+# partido de la siguiente jornada en PARTIDOS. Son datos de partidos, así
+# que el cambio se sube directo a main (sin PR) para que Streamlit Cloud
+# se actualice en cuanto la FMF publica. Si la jornada todavía no está
+# publicada, no hace nada.
+on:
+  schedule:
+    - cron: "0 14,20 * * 1-5"  # lun–vie 8:00 y 14:00 hora del centro de México
+  workflow_dispatch:
+    inputs:
+      jornada:
+        description: "Jornada a cargar (vacío = las siguientes sin árbitro)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arbitros-fmf
+  cancel-in-progress: false
+
+jobs:
+  arbitros:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt playwright==1.64.1
+          python -m playwright install --with-deps chromium
+
+      - name: Leer designaciones y actualizar el skeleton
+        run: |
+          ARGS="--debug-dir fmf_debug"
+          if [ -n "${{ inputs.jornada }}" ]; then ARGS="$ARGS --jornada ${{ inputs.jornada }}"; fi
+          python liga_mx_arbitros_fmf.py $ARGS
+
+      - name: Validar sintaxis
+        run: python -c "import ast; ast.parse(open('liga_mx_predictor_skeleton.py').read())"
+
+      - name: Subir a main
+        run: |
+          if git diff --quiet -- liga_mx_predictor_skeleton.py; then
+            echo "Sin árbitros nuevos."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add liga_mx_predictor_skeleton.py
+          git commit -m "Árbitros centrales desde designaciones FMF"
+          git push origin HEAD:main
+
+      - name: Guardar texto de la página (para revisar el parseo)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmf-debug
+          path: fmf_debug/
+          if-no-files-found: ignore
