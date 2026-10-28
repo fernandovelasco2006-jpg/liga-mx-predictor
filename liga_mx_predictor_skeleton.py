@@ -177,7 +177,7 @@ PARTIDOS = [
     ('Pachuca', 'Cruz Azul', 13, 'Estadio Hidalgo', (1, 2), 'Daniel Quintero Huitron'),
     ('Santos Laguna', 'Pumas UNAM', 13, 'Estadio TSM Corona', (2, 0), 'Guillermo Pacheco Larios'),
     ('Necaxa', 'FC Juarez', 14, 'Estadio Victoria', (1, 1), 'Martin Molina Astorga'),
-    ('Atlante', 'Atletico San Luis', 14, 'Estadio Banorte', (0, 1), 'Ismael Rosario Lopez Peñuelas'),
+    ('Atlante', 'Atletico San Luis', 14, 'Estadio Banorte', (0, 1), 'Ivan Antonio Lopez Sanchez'),  # designación FMF (antes Lopez Peñuelas)
     ('Leon', 'Toluca', 14, 'Estadio Nou Camp', (1, 1), 'Fernando Hernandez Gomez'),
     ('Monterrey', 'Guadalajara', 14, 'Estadio BBVA', (0, 1), 'Victor Alfonso Caceres Hernandez'),
     ('Pumas UNAM', 'Tigres', 14, 'Estadio Olimpico Universitario', (1, 1), 'Jorge Abraham Camacho Peregrina'),
