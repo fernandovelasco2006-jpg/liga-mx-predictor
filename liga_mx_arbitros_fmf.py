@@ -10,8 +10,9 @@ endpoint JSON público, por eso el parseo es por texto: para cada partido
 de la jornada en PARTIDOS se busca el bloque más chico de la página que
 mencione a los dos equipos, y dentro de él el árbitro central.
 
-Solo llena árbitros que hoy están en None (nunca pisa uno ya cargado,
-salvo --forzar). Un árbitro que no esté en ARBITROS_LIGA_MX se agrega con
+La FMF manda (decisión de fer, 28/oct/2026): llena los árbitros en None
+y también reemplaza uno ya cargado si la designación dice otro (se
+anota en el log; --no-reemplazar para solo avisar). Un árbitro que no esté en ARBITROS_LIGA_MX se agrega con
 el placeholder (4.5, 0.15) = ARBITRO_DEFAULT y un comentario de debut,
 igual que cuando se carga a mano (ver CLAUDE.md).
 
@@ -42,6 +43,10 @@ from liga_mx_predictor_skeleton import (
 SKELETON = Path(__file__).with_name("liga_mx_predictor_skeleton.py")
 URL_DESIGNACION = (
     "https://arbitraje.fmf.mx/designacion-arbitral_2026-2027_liga-mx_apertura_jornada-{jornada}"
+)
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 )
 
 # Palabras clave (ya sin acentos y en minúsculas) con las que la FMF nombra
@@ -77,6 +82,7 @@ _REGEX_EQUIPO = [(eq, re.compile(p)) for eq, p in PALABRAS_EQUIPO]
 # aparece después de una de ellas ya no es el central.
 _ETIQUETAS_OTROS = re.compile(r"asistente|cuarto|4to|var\b|avar|observador|asesor")
 _ETIQUETA_CENTRAL = re.compile(r"central|arbitro\b")
+_ETIQUETA_CENTRAL_DESPUES = re.compile(r"^arbitro\s+cen?tr?al$")
 _NO_ES_NOMBRE = re.compile(
     r"estadio|arena|jornada|designaci|liga|apertura|clausura|fecha|hora|"
     r"comision|arbitr|local|visit|partido|sede|\d"
@@ -140,12 +146,19 @@ def _formatear_nombre(token: str) -> str:
 def arbitro_central_en_bloque(bloque: str, conocidos: dict):
     """
     Del texto de un partido (fila de tabla o tarjeta), saca el árbitro
-    central. Se parte en celdas/líneas; el central es el primer nombre de
-    persona antes de cualquier etiqueta de asistente/cuarto/VAR (la FMF
-    lista al central primero). Si hay una etiqueta "Central", se toma el
-    nombre que la sigue. Devuelve (nombre, es_conocido) o (None, False).
+    central. Se parte en celdas/líneas. Si un nombre va seguido de la
+    etiqueta "Árbitro Central" (formato actual de la FMF), es ése. Si no, el
+    primer nombre de persona antes de cualquier etiqueta de asistente/
+    cuarto/VAR, o el que sigue a una etiqueta "Central". Devuelve (nombre, es_conocido) o (None, False).
     """
     tokens = [t.strip() for t in re.split(r"[\t\n|]+", bloque) if t.strip()]
+    # Formato real de la FMF (J14, oct/2026): cada nombre va seguido de su
+    # etiqueta ("Nombre" / "Árbitro Cental" / "Nombre" / "Asistente Uno"...),
+    # con la errata "Cental" incluida. El central es el nombre justo antes
+    # de esa etiqueta.
+    for i, tok in enumerate(tokens[1:], start=1):
+        if _ETIQUETA_CENTRAL_DESPUES.match(_normalizar(tok)) and _parece_nombre(tokens[i - 1]):
+            return _resolver_nombre(tokens[i - 1], conocidos)
     candidatos = []
     tras_central = False
     for tok in tokens:
@@ -205,28 +218,51 @@ def leer_pagina(jornada: int, debug_dir=None) -> list:
 
     url = URL_DESIGNACION.format(jornada=jornada)
     respuestas_json = []
+    respuestas_xhr = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(locale="es-MX")
+        # User agent de Chrome normal: el de headless ("HeadlessChrome")
+        # lo bloquean algunos sitios.
+        page = browser.new_page(locale="es-MX", user_agent=USER_AGENT)
 
         def _guardar(resp):
-            if "json" in (resp.headers.get("content-type") or ""):
+            tipo = resp.headers.get("content-type") or ""
+            if resp.request.resource_type in ("xhr", "fetch"):
+                respuestas_xhr.append(f"{resp.status} {tipo} {resp.url}")
+            if "json" in tipo:
                 try:
                     respuestas_json.append({"url": resp.url, "body": resp.json()})
                 except Exception:
                     pass
 
         page.on("response", _guardar)
-        page.goto(url, wait_until="networkidle", timeout=90_000)
-        page.wait_for_timeout(3_000)
+        resp = page.goto(url, wait_until="networkidle", timeout=90_000)
+        # La tabla puede llegar después del networkidle: se espera hasta 30 s
+        # a que el texto mencione al menos un club.
+        try:
+            page.wait_for_function(
+                "() => /Toluca|Pachuca|Necaxa|Cruz Azul|Puebla/i.test(document.body.innerText)",
+                timeout=30_000,
+            )
+        except Exception:
+            pass
         textos = page.evaluate(
             "() => Array.from(document.body.querySelectorAll('*'))"
             ".map(e => e.innerText || '').filter(t => t.trim())"
         )
         if debug_dir:
+            cuerpo = page.inner_text("body")
+            print(f"  HTTP {resp.status if resp else '?'} · {page.url} · título: {page.title()!r}")
+            print(f"  {len(respuestas_xhr)} respuestas XHR/fetch:")
+            for r in respuestas_xhr[:30]:
+                print(f"    {r}")
+            print("  --- texto de la página (primeros 3000 caracteres) ---")
+            print("  " + cuerpo[:3000].replace("\n", "\n  "))
+            print("  --- fin ---")
             d = Path(debug_dir)
             d.mkdir(parents=True, exist_ok=True)
-            (d / f"jornada_{jornada}.txt").write_text(page.inner_text("body"), encoding="utf-8")
+            (d / f"jornada_{jornada}.txt").write_text(cuerpo, encoding="utf-8")
+            (d / f"jornada_{jornada}.html").write_text(page.content(), encoding="utf-8")
             (d / f"jornada_{jornada}.json").write_text(
                 json.dumps(respuestas_json, ensure_ascii=False, indent=1, default=str),
                 encoding="utf-8",
@@ -276,7 +312,7 @@ def extraer_arbitros(jornada: int, textos: list) -> dict:
     return resultado
 
 
-def aplicar_al_skeleton(jornada: int, arbitros: dict, forzar: bool = False) -> list:
+def aplicar_al_skeleton(jornada: int, arbitros: dict, reemplazar: bool = True) -> list:
     """Escribe los árbitros en PARTIDOS (y altas nuevas en ARBITROS_LIGA_MX). Devuelve los cambios."""
     codigo = SKELETON.read_text(encoding="utf-8")
     cambios = []
@@ -291,15 +327,15 @@ def aplicar_al_skeleton(jornada: int, arbitros: dict, forzar: bool = False) -> l
             print(f"  ! no encontré la tupla de {local} vs {visita} en PARTIDOS")
             continue
         actual = m.group(2)
-        if actual != "None" and not forzar:
-            if actual.strip("'") != nombre:
-                print(f"  ! {local} vs {visita}: ya tenía {actual}, la FMF dice {nombre} (no se cambia)")
-            continue
         if actual.strip("'") == nombre:
             continue
+        if actual != "None" and not reemplazar:
+            print(f"  ! {local} vs {visita}: ya tenía {actual}, la FMF dice {nombre} (no se cambia)")
+            continue
         codigo = codigo[: m.start()] + m.group(1) + f"'{nombre}'" + m.group(3) + codigo[m.end():]
-        cambios.append(f"{local} vs {visita}: {nombre}")
-        if not conocido and nombre not in ARBITROS_LIGA_MX and nombre not in nuevos:
+        antes = "" if actual == "None" else f" (antes {actual.strip(chr(39))})"
+        cambios.append(f"{local} vs {visita}: {nombre}{antes}")
+        if not conocido and nombre not in ARBITROS_LIGA_MX and nombre not in [n for n, *_ in nuevos]:
             nuevos.append((nombre, local, visita))
 
     for nombre, local, visita in nuevos:
@@ -323,7 +359,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--jornada", type=int, action="append", help="jornada a cargar (repetible)")
     ap.add_argument("--dry-run", action="store_true", help="no escribe el skeleton")
-    ap.add_argument("--forzar", action="store_true", help="reemplaza árbitros ya cargados")
+    ap.add_argument("--no-reemplazar", action="store_true", help="no pisa árbitros ya cargados, solo avisa")
     ap.add_argument("--debug-dir", help="carpeta para guardar el texto renderizado")
     args = ap.parse_args()
 
@@ -343,7 +379,7 @@ def main() -> int:
             print(f"  {l} vs {v}: {n}{'' if conocido else '  (NUEVO)'}")
         if args.dry_run or not arbitros:
             continue
-        todos += [f"J{j} {c}" for c in aplicar_al_skeleton(j, arbitros, args.forzar)]
+        todos += [f"J{j} {c}" for c in aplicar_al_skeleton(j, arbitros, not args.no_reemplazar)]
 
     if todos:
         print("Cambios:\n  " + "\n  ".join(todos))
