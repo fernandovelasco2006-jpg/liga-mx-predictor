@@ -71,8 +71,8 @@ assert not at.exception, at.exception
 
 ## Estado de datos (actualizar aquí conforme avance la temporada)
 
-- Jornadas 1–14: completas (124 partidos con resultado y tarjetas/córners en `DATOS_REALES_LIGAMX`), salvo 2 de la Jornada 7.
-- Jornada 7: pendientes Queretaro vs Monterrey y America vs Tijuana (reprogramados al 28/10 y 14/11). `detectar_jornada_actual()` ignora jornadas rezagadas (con pendientes pero con una jornada posterior que ya tiene resultados), así que la J7 no le gana a la jornada en curso; se elige a mano en el selector.
+- Jornadas 1–14: completas (125 partidos con resultado y tarjetas/córners en `DATOS_REALES_LIGAMX`), salvo 1 de la Jornada 7.
+- Jornada 7: America vs Tijuana ya jugado (28/10, 1-1). Pendiente Queretaro vs Monterrey (reprogramado al 14/11). `detectar_jornada_actual()` ignora jornadas rezagadas (con pendientes pero con una jornada posterior que ya tiene resultados), así que la J7 no le gana a la jornada en curso; se elige a mano en el selector.
 - Jornadas 15–17: calendario cargado, sin resultados todavía.
 - Análisis de jornada automático: `liga_mx_analisis_semanal.py` simula (10M por partido) y guarda las apuestas ALTA de una jornada **una sola vez, en cuanto todos sus partidos por jugarse tienen árbitro central** (rezagadas, partido por partido; si la FMF cambia un árbitro, ese partido se vuelve a simular). Antes marca aciertos/fallos/nulas de lo ya jugado y usa la retroalimentación del historial (mercados suspendidos, calibración isotónica, sesgo por equipo), igual que la app. Lo corren `arbitros_fmf.yml` (job `analisis`, tras cada revisión de la FMF) y `analisis_semanal.yml` (lunes 12:00 UTC, cada push a main que toque el skeleton, y a mano con `jornada`/`forzar`). Necesita en Secrets del repo `SUPABASE_URL_LIGAMX`, `SUPABASE_KEY_LIGAMX` y opcionalmente `WEATHER_API_KEY`, `BSD_API_KEY`, `ODDS_API_KEY`; sin Supabase no simula (salvo `--forzar`).
 - `ODDS_API_KEY` y `SUPABASE_URL_LIGAMX`/`SUPABASE_KEY_LIGAMX` van en Secrets de Streamlit Cloud, nunca hardcodeados ni pegados en el chat/commits.

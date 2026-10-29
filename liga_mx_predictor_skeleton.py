@@ -118,7 +118,7 @@ PARTIDOS = [
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
     ('Tigres', 'Necaxa', 7, 'Estadio Universitario', (1, 1), 'Karen Hernandez Andrade'),
-    ('America', 'Tijuana', 7, 'Estadio Banorte', None, 'Fernando Hernandez Gomez'),  # designación FMF (antes Quintero Hernandez)
+    ('America', 'Tijuana', 7, 'Estadio Banorte', (1, 1), 'Fernando Hernandez Gomez'),  # designación FMF (antes Quintero Hernandez); jugado el 28/oct
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
     ('Pumas UNAM', 'Leon', 7, 'Estadio Olimpico Universitario', (3, 1), None),
     ('Cruz Azul', 'Santos Laguna', 7, 'Estadio Banorte', (1, 0), None),
@@ -819,6 +819,7 @@ DATOS_REALES_LIGAMX = {
     "Atlas_Atlante":              {"am": 5,  "co": 4,  "ro": 0},  # 2 ATL + 3 ATE | 3 ATL + 1 ATE
     "Tigres_Necaxa":               {"am": 5,  "co": 9,  "ro": 0},  # 3 TIG + 2 NEC | 6 TIG + 3 NEC
     "Cruz Azul_Santos Laguna":     {"am": 1,  "co": 14, "ro": 0},  # 0 CAZ + 1 SAN | 9 CAZ + 5 SAN
+    "America_Tijuana":             {"am": 6,  "co": 11, "ro": 1},  # 2 AME + 4 TIJ | 9 AME + 2 TIJ | roja: 1 TIJ (Alejandro Gomez, 93') — reprogramado, jugado 28/oct
 
     # Jornada 8 — resultados y estadísticas confirmados (fuente: Sofascore)
     "Necaxa_Puebla":               {"am": 4,  "co": 13, "ro": 1},  # 1 NEC + 3 PUE | 8 NEC + 5 PUE | 1 NEC + 0 PUE roja
