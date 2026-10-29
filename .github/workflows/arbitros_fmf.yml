@@ -5,7 +5,9 @@ name: Árbitros FMF
 # partido de la siguiente jornada en PARTIDOS. Son datos de partidos, así
 # que el cambio se sube directo a main (sin PR) para que Streamlit Cloud
 # se actualice en cuanto la FMF publica. Si la jornada todavía no está
-# publicada, no hace nada.
+# publicada, no hace nada. Al final corre el análisis de jornada: si ya
+# están todos los árbitros centrales, simula y guarda las apuestas
+# recomendadas (ver liga_mx_analisis_semanal.py).
 on:
   schedule:
     - cron: "0 14,20 * * 1-5"  # lun–vie 8:00 y 14:00 hora del centro de México
@@ -70,3 +72,35 @@ jobs:
           name: fmf-debug
           path: fmf_debug/
           if-no-files-found: ignore
+
+  # Va aparte para leer main ya con los árbitros recién subidos. Corre
+  # aunque no haya árbitros nuevos: si se cargaron a mano, aquí también se
+  # detecta; si la jornada ya se guardó con esos árbitros, no repite nada.
+  analisis:
+    needs: arbitros
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: analisis-ligamx
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Simular y guardar apuestas de la jornada con árbitros completos
+        env:
+          SUPABASE_URL_LIGAMX: ${{ secrets.SUPABASE_URL_LIGAMX }}
+          SUPABASE_KEY_LIGAMX: ${{ secrets.SUPABASE_KEY_LIGAMX }}
+          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python liga_mx_analisis_semanal.py

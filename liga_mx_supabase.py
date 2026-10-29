@@ -125,9 +125,9 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
             datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}", {})
             acierto = evaluar_acierto(s, local, visit, gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
-            if acierto is None and s["mercado"] == "Empate Sin Apuesta" and gh == ga:
-                # Reembolso permanente (partido ya jugado, terminó en
-                # empate) — se marca "nulo" explícito para que
+            if acierto is None and es_apuesta_nula(s, local, visit, gh, ga):
+                # Reembolso permanente (partido ya jugado: empate en DNB
+                # o empuje en hándicap) — se marca "nulo" explícito para que
                 # calcular_stats_apuestas() lo excluya del accuracy sin
                 # dejarlo pendiente para siempre (ver misma lógica en
                 # actualizar_aciertos_pendientes()).
@@ -165,13 +165,14 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
                 # registradas" aunque los datos siguieran ahí correctos —
                 # bug detectado en producción.
                 guardadas += 1
-                if chk.json()[0].get("acierto") is None and acierto is not None:
+                if chk.json()[0].get("acierto") is None and (acierto is not None or es_nulo):
                     requests.patch(
                         f"{url}/rest/v1/apuestas_historial_ligamx",
                         headers=_headers(key, prefer=""),
                         params={"id": f"eq.{payload['id']}"},
                         json={"resultado_real": payload["resultado_real"],
-                              "goles_local": gh, "goles_visitante": ga, "acierto": acierto},
+                              "goles_local": gh, "goles_visitante": ga, "acierto": acierto,
+                              "nulo": es_nulo},
                         timeout=5,
                     )
         except Exception:
@@ -279,20 +280,64 @@ def evaluar_acierto(apuesta: dict, local: str, visit: str, gh: int, ga: int,
     return None
 
 
+def es_apuesta_nula(apuesta: dict, local: str, visit: str, gh: int, ga: int) -> bool:
+    """
+    True si la apuesta, con el partido YA jugado (gh, ga), se reembolsa:
+    Empate Sin Apuesta con empate, o Hándicap Asiático -1.0/-2.0 que
+    queda en empuje exacto (gana por 1 / por 2). Es un resultado
+    permanente, distinto del None de evaluar_acierto() por falta de dato
+    real de tarjetas/córners, que sí se resuelve más adelante.
+    """
+    mercado = apuesta["mercado"]
+    sel = apuesta["seleccion"].replace("✅ ", "")
+    if mercado == "Empate Sin Apuesta":
+        return gh == ga
+    if mercado == "Hándicap Asiático":
+        empuje = 1 if "-1.0" in sel else 2 if "-2.0" in sel else None
+        if empuje is None:
+            return False
+        if local in sel:
+            return gh - ga == empuje
+        if visit in sel:
+            return ga - gh == empuje
+    return False
+
+
+def _cargar_tabla_completa(url: str, key: str, tabla: str, pagina: int = 1000) -> list:
+    """
+    Trae TODAS las filas de una tabla, más recientes primero, paginando
+    de `pagina` en `pagina`. Antes se pedía un solo bloque con limit=500:
+    con ~4 apuestas ALTA por partido y 9 partidos por jornada, el
+    historial pasa de 500 filas a media temporada y lo más viejo dejaba
+    de contar para la calibración y los mercados suspendidos sin aviso.
+    Si una página falla, devuelve lo que ya se trajo.
+    """
+    filas = []
+    while True:
+        try:
+            resp = requests.get(
+                f"{url}/rest/v1/{tabla}",
+                headers=_headers(key, prefer=""),
+                params={"select": "*", "order": "guardada_en.desc,id.asc",
+                        "limit": pagina, "offset": len(filas)},
+                timeout=10,
+            )
+        except Exception:
+            break
+        if resp.status_code != 200:
+            break
+        bloque = resp.json()
+        filas += bloque
+        if len(bloque) < pagina:
+            break
+    return filas
+
+
 def cargar_historial_apuestas(url: str, key: str) -> list:
     """Trae todo el historial de apuestas guardadas."""
     if not (url and key):
         return []
-    try:
-        resp = requests.get(
-            f"{url}/rest/v1/apuestas_historial_ligamx",
-            headers=_headers(key, prefer=""),
-            params={"select": "*", "order": "guardada_en.desc", "limit": 500},
-            timeout=10,
-        )
-        return resp.json() if resp.status_code == 200 else []
-    except Exception:
-        return []
+    return _cargar_tabla_completa(url, key, "apuestas_historial_ligamx")
 
 
 def cargar_historial_predicciones(url: str, key: str) -> list:
@@ -307,16 +352,7 @@ def cargar_historial_predicciones(url: str, key: str) -> list:
     """
     if not (url and key):
         return []
-    try:
-        resp = requests.get(
-            f"{url}/rest/v1/predicciones_ligamx",
-            headers=_headers(key, prefer=""),
-            params={"select": "*", "order": "guardada_en.desc", "limit": 500},
-            timeout=10,
-        )
-        return resp.json() if resp.status_code == 200 else []
-    except Exception:
-        return []
+    return _cargar_tabla_completa(url, key, "predicciones_ligamx")
 
 
 def calcular_brier_score(historial_predicciones: list) -> dict:
@@ -695,7 +731,7 @@ def calcular_stats_por_mercado(historial: list, minimo_evaluadas: int = 3) -> li
     filas = []
     for merc, apuestas_merc in por_mercado.items():
         evaluadas = [a for a in apuestas_merc if a.get("acierto") is not None]
-        pendientes = [a for a in apuestas_merc if a.get("acierto") is None]
+        pendientes = [a for a in apuestas_merc if a.get("acierto") is None and not a.get("nulo")]
         if len(evaluadas) < minimo_evaluadas:
             continue
         aciertos = [a for a in evaluadas if a["acierto"]]
@@ -1368,7 +1404,8 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
         resp = requests.get(
             f"{url}/rest/v1/apuestas_historial_ligamx",
             headers=_headers(key, prefer=""),
-            params={"select": "*", "acierto": "is.null", "limit": 500},
+            params={"select": "*", "acierto": "is.null", "or": "(nulo.is.null,nulo.is.false)",
+                    "limit": 500},
             timeout=10,
         )
         pendientes_ap = resp.json() if resp.status_code == 200 else []
@@ -1385,8 +1422,9 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
         acierto = evaluar_acierto(ap, ap.get("local"), ap.get("visitante"), gh, ga,
                                    am_reales=datos.get("am"), co_reales=datos.get("co"))
         if acierto is None:
-            if ap.get("mercado") == "Empate Sin Apuesta" and gh == ga:
-                # El partido YA se jugó y terminó en empate — esto es un
+            if es_apuesta_nula(ap, ap.get("local"), ap.get("visitante"), gh, ga):
+                # El partido YA se jugó y terminó en empate (DNB) o en
+                # empuje exacto (hándicap asiático) — esto es un
                 # reembolso PERMANENTE (nunca va a "desbloquearse" como
                 # sí pasaría con Tarjetas/Córners sin dato todavía). Se
                 # marca explícitamente como "nulo" en vez de dejarlo con
