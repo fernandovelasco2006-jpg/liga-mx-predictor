@@ -1,12 +1,34 @@
 name: Análisis semanal Liga MX
 
-# Corre liga_mx_analisis_semanal.py: actualiza aciertos de la jornada
-# pasada y guarda en Supabase predicciones, apuestas y parlay de la
-# jornada actual.
+# Corre liga_mx_analisis_semanal.py: marca aciertos/fallos/nulas de los
+# partidos ya jugados y, en cuanto una jornada tiene todos sus árbitros
+# centrales, simula cada partido (10M iteraciones) y guarda en Supabase
+# predicciones, apuestas recomendadas y parlay. Si la jornada ya se guardó
+# con esos mismos árbitros, no la repite.
+#
+# Además del lunes, corre cada vez que se sube a main un cambio del
+# skeleton (resultados o árbitros cargados a mano). Los commits del bot de
+# árbitros FMF no disparan este evento (GitHub no encadena pushes hechos
+# con GITHUB_TOKEN), por eso arbitros_fmf.yml llama al análisis al final.
 on:
   schedule:
     - cron: "0 12 * * 1"  # lunes 12:00 UTC (6:00 hora del centro de México)
+  push:
+    branches: [main]
+    paths: [liga_mx_predictor_skeleton.py]
   workflow_dispatch:
+    inputs:
+      jornada:
+        description: "Jornada a analizar (vacío = las que ya tengan árbitros)"
+        required: false
+      forzar:
+        description: "Simular aunque falten árbitros o ya esté guardada"
+        type: boolean
+        default: false
+
+concurrency:
+  group: analisis-ligamx
+  cancel-in-progress: false
 
 jobs:
   analisis:
@@ -23,10 +45,17 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Correr análisis semanal
+      - name: Correr análisis
         env:
           SUPABASE_URL_LIGAMX: ${{ secrets.SUPABASE_URL_LIGAMX }}
           SUPABASE_KEY_LIGAMX: ${{ secrets.SUPABASE_KEY_LIGAMX }}
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
           BSD_API_KEY: ${{ secrets.BSD_API_KEY }}
-        run: python liga_mx_analisis_semanal.py
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          JORNADA: ${{ inputs.jornada }}
+          FORZAR: ${{ inputs.forzar }}
+        run: |
+          ARGS=""
+          if [ -n "$JORNADA" ]; then ARGS="$ARGS --jornada $JORNADA"; fi
+          if [ "$FORZAR" = "true" ]; then ARGS="$ARGS --forzar"; fi
+          python liga_mx_analisis_semanal.py $ARGS
