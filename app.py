@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from liga_mx_predictor_skeleton import (
     EQUIPOS, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO, ARBITROS_LIGA_MX,
-    ARBITRO_DEFAULT, CORNERS_EQUIPO,
+    ARBITRO_DEFAULT, CORNERS_EQUIPO, DATOS_REALES_LIGAMX,
 )
 from liga_mx_algoritmo import (
     calcular_lambdas, simular_temporada, simular_temporada_montecarlo,
@@ -137,6 +137,21 @@ h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 .stButton > button { background: linear-gradient(135deg,#006341,#e5007d) !important; font-size:1rem !important; color:white !important; border:none !important; border-radius:8px !important; font-family:'Bebas Neue', sans-serif !important; letter-spacing:2px !important; padding:0.6rem 2rem !important; width:100% !important; }
 .stButton > button:hover { filter: brightness(1.15); }
 .stSelectbox > div > div { background:#0f1e15 !important; border:1px solid #1f4a2e !important; color:#e8f0ea !important; border-radius:8px !important; }
+.resumen-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:0.75rem; margin-bottom:0.8rem; }
+/* Celular: menos margen, portada más chica, resumen en 2x2 y números menos gigantes */
+@media (max-width: 640px) {
+  .block-container { padding: 3.5rem 0.75rem 3rem; }
+  .hero { padding: 0.7rem 1rem; }
+  .hero-title { font-size: 1.5rem; letter-spacing: 2px; }
+  .hero-sub { font-size: 0.62rem; }
+  .hero::before { display: none; }
+  .disclaimer-banner { font-size: 0.62rem; padding: 0.3rem 0.6rem; }
+  .resumen-grid { grid-template-columns:repeat(2, 1fr); gap:0.5rem; }
+  .metric-box { padding: 0.6rem 0.4rem; }
+  .metric-val { font-size: 1.5rem; }
+  .prob-pct { font-size: 2.2rem; }
+  .result-box { padding: 1rem 0.6rem; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -452,12 +467,16 @@ _metricas_resumen = [
      f"Próximo: {_prox[1]} vs {_prox[2]} · {_fecha_corta(_prox[0])}" if _prox else "Próximo partido",
      "#e8f0ea"),
 ]
-_cols_resumen = st.columns(4)
-for _col, (_val, _lbl, _color) in zip(_cols_resumen, _metricas_resumen):
-    with _col:
-        st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:{_color}">{_val}</div>'
-                    f'<div class="metric-lbl">{_lbl}</div></div>', unsafe_allow_html=True)
-st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+# Grid HTML en vez de st.columns: en celular st.columns apila las 4
+# cajas una sobre otra y llenan la pantalla; el grid pasa a 2x2.
+st.markdown(
+    '<div class="resumen-grid">' + "".join(
+        f'<div class="metric-box"><div class="metric-val" style="color:{_color}">{_val}</div>'
+        f'<div class="metric-lbl">{_lbl}</div></div>'
+        for _val, _lbl, _color in _metricas_resumen
+    ) + '</div>',
+    unsafe_allow_html=True,
+)
 
 _mercados_susp = _mercados_suspendidos_cached()
 if _mercados_susp:
@@ -640,10 +659,18 @@ with tab_pred:
         partidos_j = [p for p in partidos_filtrados if p[2] == jornada_sel]
         # Ordenados por fecha para que el partido más próximo salga primero.
         partidos_j.sort(key=lambda p: HORARIOS_PARTIDO.get((p[0], p[1]), "9999"))
-        opciones = {f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}": i for i, p in enumerate(partidos_j)}
+        # Con fecha y hora para ubicar el partido sin abrirlo (ej. "sáb 1 nov · 19:00").
+        opciones = {}
+        for i, p in enumerate(partidos_j):
+            _cuando = _fecha_corta(HORARIOS_PARTIDO.get((p[0], p[1]), ""))
+            opciones[f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}" + (f"  ·  {_cuando}" if _cuando else "")] = i
         lbl_sel = st.selectbox("Partido", list(opciones.keys()), key=f"partido_pred_{filtro_estado}_{jornada_sel}")
         idx_sel = opciones[lbl_sel]
         local, visit, jornada, estadio, resultado_real, arbitro = partidos_j[idx_sel]
+        # El selector es angosto y corta la fecha del final; aquí se ve completa.
+        _cuando_sel = _fecha_corta(HORARIOS_PARTIDO.get((local, visit), ""))
+        if _cuando_sel:
+            st.caption(f"📅 {_cuando_sel}")
 
         st.markdown("---")
         st.caption(f"⚡ {N_SIMS_PARTIDO:,} simulaciones")
@@ -662,7 +689,7 @@ with tab_pred:
         if _jornada_detectada is None:
             st.caption("No hay jornadas pendientes — temporada terminada.")
         else:
-            st.caption(f"Jornada detectada: **Jornada {_jornada_detectada}** · 2,000,000 sims/partido")
+            st.caption(f"Jornada detectada: **Jornada {_jornada_detectada}** · {N_SIMS_PARTIDO:,} sims/partido")
             btn_jornada = st.button("⚽ Simular Jornada", key="btn_simular_jornada", type="primary")
 
     with col_der:
@@ -796,10 +823,13 @@ with tab_pred:
     # pero el resultado no cabe bien en 1/3.5 del ancho de pantalla).
     # ─────────────────────────────────────────────────────────────────
     if btn_jornada:
-        with st.spinner(f"Simulando Jornada {_jornada_detectada} completa..."):
+        with st.spinner(f"Simulando Jornada {_jornada_detectada} completa ({N_SIMS_PARTIDO:,} sims por partido, "
+                        f"puede tardar un par de minutos)..."):
             sesgo_actual = _sesgo_equipo_cached()
             resultado_jornada = simular_jornada_completa(
-                jornada=_jornada_detectada, n=2_000_000,
+                # Mismas sims que el partido individual y el análisis
+                # automático (antes 2M, y los % salían un poco distintos).
+                jornada=_jornada_detectada, n=N_SIMS_PARTIDO,
                 peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO,
                 mercados_suspendidos=_mercados_suspendidos_cached(),
                 sesgo_por_equipo=sesgo_actual,
@@ -943,24 +973,38 @@ with tab_pred:
 # ─────────────────────────────────────────────────────────────────────────
 with tab_res:
     st.markdown("#### Resultados registrados")
-    st.caption("Partidos ya disputados del Apertura 2026.")
+    st.caption("Partidos ya disputados del Apertura 2026, del más reciente al más viejo · 🟨 amarillas · 🚩 córners · 🟥 rojas (totales del partido).")
     jugados = [p for p in PARTIDOS if p[4] is not None]
     if not jugados:
         st.info("Aún no hay resultados registrados.")
     else:
-        for jn in sorted(set(p[2] for p in jugados)):
+        # De la jornada más reciente a la más vieja, y dentro de cada una
+        # del partido más reciente al más viejo.
+        for jn in sorted(set(p[2] for p in jugados), reverse=True):
             st.markdown(f"**Jornada {jn}**")
-            for local, visit, jornada, estadio, res, arb in jugados:
-                if jornada != jn:
-                    continue
+            partidos_jn = sorted(
+                (p for p in jugados if p[2] == jn),
+                key=lambda p: HORARIOS_PARTIDO.get((p[0], p[1]), ""), reverse=True,
+            )
+            for local, visit, jornada, estadio, res, arb in partidos_jn:
                 gh, ga = res
+                datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+                stats_txt = ""
+                if datos:
+                    # Algunos partidos solo traen córners (ej. Puebla_Guadalajara).
+                    if "am" in datos:
+                        stats_txt += f" · 🟨 {datos['am']}"
+                    if "co" in datos:
+                        stats_txt += f" · 🚩 {datos['co']}"
+                    if datos.get("ro"):
+                        stats_txt += f" · 🟥 {datos['ro']}"
                 color = "#0d1f16" if gh != ga else "#0d1827"
-                ganador = (f"→ Ganó **{local}**" if gh > ga else f"→ Ganó **{visit}**" if ga > gh else "→ **Empate**")
+                ganador = (f"→ Ganó <b>{local}</b>" if gh > ga else f"→ Ganó <b>{visit}</b>" if ga > gh else "→ <b>Empate</b>")
                 st.markdown(
                     f'<div style="background:{color};border-radius:8px;padding:0.5rem 1rem;margin-bottom:0.35rem;font-size:0.88rem">'
                     f'{flag(local)} {local} <b style="font-size:1.1rem;color:#4ade80;margin:0 0.4rem">{gh}–{ga}</b>'
                     f'{visit} {flag(visit)}<span style="color:#6b9b7d;font-size:0.72rem;margin-left:0.8rem">'
-                    f'📍 {estadio} · {ganador}</span></div>', unsafe_allow_html=True,
+                    f'📍 {estadio} · {ganador}{stats_txt}</span></div>', unsafe_allow_html=True,
                 )
 
 # ─────────────────────────────────────────────────────────────────────────
