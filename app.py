@@ -105,9 +105,9 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 .stApp { background: #0a1410; color: #e8f0ea; }
 .block-container { padding: 2rem 2rem 4rem; max-width: 1100px; }
-.hero { background: linear-gradient(135deg, #0d2818 0%, #1a2e1f 40%, #2a0d14 100%); border: 1px solid #1f4a2e; border-radius: 16px; padding: 2rem 2.5rem; margin-bottom: 2rem; position: relative; overflow: hidden; }
-.hero::before { content: "⚽"; position: absolute; right: 2rem; top: 50%; transform: translateY(-50%); font-size: 5rem; opacity: 0.07; }
-.hero-title { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; letter-spacing: 4px; color: #e5007d; margin: 0; line-height: 1; }
+.hero { background: linear-gradient(135deg, #0d2818 0%, #1a2e1f 40%, #2a0d14 100%); border: 1px solid #1f4a2e; border-radius: 12px; padding: 0.9rem 1.4rem; margin-bottom: 0.5rem; position: relative; overflow: hidden; }
+.hero::before { content: "⚽"; position: absolute; right: 1.5rem; top: 50%; transform: translateY(-50%); font-size: 3rem; opacity: 0.07; }
+.hero-title { font-family: 'Bebas Neue', sans-serif; font-size: 2rem; letter-spacing: 4px; color: #e5007d; margin: 0; line-height: 1; }
 .hero-sub { color: #8fbfa0; font-size: 0.8rem; margin-top: 0.4rem; letter-spacing: 1px; text-transform: uppercase; }
 .prob-bar { display:flex; height:12px; border-radius:6px; overflow:hidden; margin:0.75rem 0; }
 .bar-a { background:#006341; } .bar-draw { background:#4b5563; } .bar-b { background:#CE1126; }
@@ -133,25 +133,24 @@ h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 .no-apostable-badge { display:inline-block; background:#2a2018; border:1px solid #6b5a3a; color:#b8a67a; border-radius:6px; padding:1px 8px; font-size:0.58rem; letter-spacing:0.5px; margin-top:0.3rem; font-weight:500; }
 .bet-card-media { background:#12241a; border:1px solid #1f4a2e; }
 .parlay-card { background:linear-gradient(135deg,#1a1500,#2a2000); border:1px solid #e5007d; border-radius:10px; padding:0.8rem 1rem; margin-top:0.75rem; }
-.disclaimer-banner { background: linear-gradient(135deg, #2a1500, #3a1e00); border: 1px solid #5a3a00; border-radius: 10px; padding: 0.7rem 1.2rem; margin-bottom: 1rem; font-size: 0.75rem; color: #f0c040; line-height: 1.5; text-align: center; }
+.disclaimer-banner { background: linear-gradient(135deg, #2a1500, #3a1e00); border: 1px solid #5a3a00; border-radius: 8px; padding: 0.35rem 1rem; margin-bottom: 0.8rem; font-size: 0.68rem; color: #f0c040; line-height: 1.5; text-align: center; }
 .stButton > button { background: linear-gradient(135deg,#006341,#e5007d) !important; font-size:1rem !important; color:white !important; border:none !important; border-radius:8px !important; font-family:'Bebas Neue', sans-serif !important; letter-spacing:2px !important; padding:0.6rem 2rem !important; width:100% !important; }
 .stButton > button:hover { filter: brightness(1.15); }
 .stSelectbox > div > div { background:#0f1e15 !important; border:1px solid #1f4a2e !important; color:#e8f0ea !important; border-radius:8px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="disclaimer-banner">
-⚠️ <b>Aviso legal:</b> Proyecto independiente, sin fines de lucro, de carácter educativo/informativo.
-Las predicciones se generan por simulación estadística (Monte Carlo) y <b>no constituyen asesoría de apuestas ni garantía de resultados</b>.
-Apuesta responsablemente y solo en plataformas legales. Debes ser mayor de edad (18+).
-</div>
-""", unsafe_allow_html=True)
-
+# Portada y aviso legal compactos (antes ocupaban media pantalla) — el
+# resumen de métricas va justo debajo, ver más abajo junto a
+# _partidos_de_hoy().
 st.markdown("""
 <div class="hero">
   <div class="hero-title">LIGA MX · APERTURA 2026</div>
   <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · ELO + Altitud + Árbitro + Clima</div>
+</div>
+<div class="disclaimer-banner">
+⚠️ Proyecto educativo, sin fines de lucro · <b>no es asesoría de apuestas ni garantía de resultados</b> ·
+apuesta responsablemente, solo en plataformas legales y si eres mayor de edad (18+).
 </div>""", unsafe_allow_html=True)
 
 BANDERAS_EQUIPO = {
@@ -271,6 +270,15 @@ def _simular_partido_cached(local, visit, n, peso_elo, peso_altitud, peso_arbitr
 # real. Cacheado 15 min (más corto que las simulaciones: esto sí cambia
 # seguido conforme se van evaluando apuestas nuevas jornada a jornada).
 # ─────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def _simular_rapido_cached(local, visit, peso_elo, peso_altitud, peso_arbitro):
+    # 50k sims para el tab Historial (favorito vs resultado real de cada
+    # partido jugado). Antes se re-simulaban todos los partidos jugados en
+    # cada carga de la página; cacheado se hace una vez por hora.
+    return simular_partido(local, visit, n=50_000, peso_elo=peso_elo,
+                           peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def _mercados_suspendidos_cached():
     if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
@@ -383,13 +391,81 @@ def _partidos_de_hoy():
 
 hoy, partidos_hoy_global = _partidos_de_hoy()
 
+_DIAS_ES = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
+_MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _fecha_corta(horario: str) -> str:
+    """'2026-11-01 19:00' → 'sáb 1 nov · 19:00'. Cadena vacía si no hay horario."""
+    if not horario:
+        return ""
+    try:
+        dt = datetime.strptime(horario[:16], "%Y-%m-%d %H:%M")
+    except ValueError:
+        return horario
+    return f"{_DIAS_ES[dt.weekday()]} {dt.day} {_MESES_ES[dt.month - 1]} · {dt:%H:%M}"
+
+
+def _proximo_partido():
+    """Partido pendiente con horario más próximo a partir de ahora (hora del centro de México)."""
+    ahora = datetime.now(timezone(timedelta(hours=-6))).strftime("%Y-%m-%d %H:%M")
+    pendientes = [
+        (HORARIOS_PARTIDO[(p[0], p[1])], p[0], p[1]) for p in PARTIDOS
+        if p[4] is None and HORARIOS_PARTIDO.get((p[0], p[1]), "") >= ahora
+    ]
+    return min(pendientes) if pendientes else None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _resumen_supabase_cached():
+    """Acierto de las apuestas ALTA y ROI real para la franja de resumen. None si no hay datos."""
+    if not SUPABASE_DISPONIBLE:
+        return None, None
+    acierto, roi = None, None
+    try:
+        historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
+        historial = [h for h in historial if not str(h.get("local", "")).startswith("TBD")]
+        stats = calcular_stats_apuestas(historial)
+        if stats["aciertos"] + stats["fallos"] > 0:
+            acierto = (stats["accuracy"], stats["aciertos"] + stats["fallos"])
+    except Exception:
+        pass
+    try:
+        roi = calcular_roi_real(cargar_apuestas_reales(SUPABASE_URL, SUPABASE_KEY))["roi_pct"]
+    except Exception:
+        pass
+    return acierto, roi
+
+
+# ── Resumen rápido: lo primero que se ve al abrir la página ──────────
+_jornada_resumen = detectar_jornada_actual()
+_prox = _proximo_partido()
+_acierto_resumen, _roi_resumen = _resumen_supabase_cached()
+_metricas_resumen = [
+    (f"J{_jornada_resumen}" if _jornada_resumen else "—", "Jornada en curso", "#e5007d"),
+    (f"{_acierto_resumen[0]:.0f}%" if _acierto_resumen else "—",
+     f"Acierto apuestas ALTA ({_acierto_resumen[1]})" if _acierto_resumen else "Acierto apuestas ALTA",
+     "#4ade80"),
+    (f"{_roi_resumen:+.1f}%" if _roi_resumen is not None else "—", "ROI apuestas reales",
+     "#8fbfa0" if _roi_resumen is None else ("#4ade80" if _roi_resumen > 0 else "#f87171")),
+    (f"{flag(_prox[1])} vs {flag(_prox[2])}" if _prox else "—",
+     f"Próximo: {_prox[1]} vs {_prox[2]} · {_fecha_corta(_prox[0])}" if _prox else "Próximo partido",
+     "#e8f0ea"),
+]
+_cols_resumen = st.columns(4)
+for _col, (_val, _lbl, _color) in zip(_cols_resumen, _metricas_resumen):
+    with _col:
+        st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:{_color}">{_val}</div>'
+                    f'<div class="metric-lbl">{_lbl}</div></div>', unsafe_allow_html=True)
+st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+
 _mercados_susp = _mercados_suspendidos_cached()
 if _mercados_susp:
     st.markdown(
         f'<div class="model-note" style="border-left-color:#c0685a">⏸️ <b>Retroalimentación automática:</b> '
         f'{", ".join(sorted(_mercados_susp))} — suspendido{"s" if len(_mercados_susp) > 1 else ""} temporalmente '
         f'de las apuestas sugeridas por bajo acierto real. Se reactiva{"n" if len(_mercados_susp) > 1 else ""} solo '
-        f'en cuanto el acierto se recupere (ver detalle en 🎯 Historial de Apuestas → Auto-calibración).</div>',
+        f'en cuanto el acierto se recupere (ver detalle en 📈 Historial → 🎲 Apuestas sugeridas → Auto-calibración).</div>',
         unsafe_allow_html=True,
     )
 
@@ -505,10 +581,21 @@ if partidos_hoy_global:
                     pass
 
 
-tab_pred, tab_res, tab_apuestas, tab_hist, tab_hist_ap, tab_parlays, tab_tabla, tab_info = st.tabs([
-    "🎯 Predictor", "📊 Resultados reales", "🎰 Apuestas", "📈 Historial",
-    "🎲 Apuestas Hist.", "🎟️ Parlays", "🏆 Tabla / Temporada", "⚙️ Modelo",
+else:
+    st.caption(f"🎰 No hay partidos programados para hoy ({hoy}). Explora otras jornadas en el tab Predictor.")
+
+
+# El antiguo tab "🎰 Apuestas" repetía tal cual el panel de "Apuestas más
+# fuertes de hoy" de arriba, así que se quitó. Historial, Apuestas Hist. y
+# Parlays ahora son sub-pestañas de un solo tab "📈 Historial".
+tab_pred, tab_res, tab_historial, tab_tabla, tab_info = st.tabs([
+    "🎯 Predictor", "📊 Resultados reales", "📈 Historial",
+    "🏆 Tabla / Temporada", "⚙️ Modelo",
 ])
+with tab_historial:
+    tab_hist, tab_hist_ap, tab_parlays = st.tabs([
+        "📈 Predicciones", "🎲 Apuestas sugeridas", "🎟️ Parlays y apuestas reales",
+    ])
 
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Predictor
@@ -877,83 +964,6 @@ with tab_res:
                 )
 
 # ─────────────────────────────────────────────────────────────────────────
-# TAB — Apuestas (del día)
-# ─────────────────────────────────────────────────────────────────────────
-with tab_apuestas:
-    st.markdown("### 🎰 Apuestas más fuertes de hoy")
-    st.caption("Mismo cálculo que el panel de arriba de la página — aquí puedes verlo con más detalle.")
-
-    if not partidos_hoy_global:
-        st.info(f"No hay partidos programados para hoy ({hoy}). Explora otras jornadas en el tab Predictor.")
-    else:
-        for local, visit, jornada, estadio, resultado, arbitro in partidos_hoy_global:
-            horario = HORARIOS_PARTIDO.get((local, visit), "")
-            hora_str = horario[11:] if horario else ""
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:0.5rem;margin:1rem 0 0.5rem;'
-                f'padding-bottom:0.4rem;border-bottom:1px solid #1f4a2e">'
-                f'<span style="font-size:0.85rem;color:#e8f0ea;font-weight:600">'
-                f'{flag(local)} {local} vs {flag(visit)} {visit}</span>'
-                f'<span style="font-size:0.7rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
-                unsafe_allow_html=True,
-            )
-            _fc_dia, _ = _factor_clima_cached(local, visit)
-            r = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc_dia)
-            sugs = analizar_apuestas(local, visit, r, mercados_suspendidos=_mercados_suspendidos_cached(),
-                                      cuotas=_cuota_partido(local, visit),
-                                      cuotas_totales=_cuotas_totales_partido(local, visit),
-                                      tablas_calibracion=_tablas_calibracion_cached())  # ya vienen solo las que cumplen el umbral dinámico
-            _registrar_apuestas_sesion(local, visit, jornada, sugs, r=r, resultado_real=resultado)
-            if not sugs:
-                st.caption("Sin señales de confianza ALTA para este partido.")
-            else:
-                # Todas las que cumplan el umbral dinámico — en filas de hasta 3 columnas
-                for fila_inicio in range(0, len(sugs), 3):
-                    fila = sugs[fila_inicio:fila_inicio + 3]
-                    cols_ap = st.columns(3)
-                    for i_ap, ap in enumerate(fila):
-                        with cols_ap[i_ap]:
-                            st.markdown(
-                                f'<div class="bet-card bet-card-alta"><div style="font-size:0.55rem;color:#6b9b7d;'
-                                f'letter-spacing:2px;text-transform:uppercase">{ap["mercado"]}</div>'
-                                f'<div style="font-size:0.9rem;color:#e8f0ea;margin:0.2rem 0;font-weight:600">{ap["seleccion"]}</div>'
-                                f'<div style="font-size:0.65rem;color:#4ade80">{ap["confianza"]:.0f}% confianza</div>'
-                                f'{_badge_value_bet(ap)}{_badge_no_apostable(ap)}</div>',
-                                unsafe_allow_html=True,
-                            )
-                parlay = armar_parlay(sugs)
-                if parlay:
-                    st.markdown(
-                        f'<div class="parlay-card" style="padding:0.6rem 0.9rem"><span style="font-size:0.55rem;'
-                        f'color:#e5007d;letter-spacing:2px">💛 PARLAY</span>'
-                        f'<div style="font-size:0.78rem;color:#e5007d;margin:0.15rem 0">{parlay["texto"]}</div>'
-                        f'<div style="font-size:0.6rem;color:#8fbfa0">Prob. combinada: '
-                        f'<b style="color:#e5007d">{parlay["prob_combinada"]:.1f}%</b></div></div>',
-                        unsafe_allow_html=True,
-                    )
-                    if SUPABASE_DISPONIBLE:
-                        try:
-                            # Mismo id que en el panel de arriba de la
-                            # página (mismo partido, misma fecha) — si
-                            # ya se guardó ahí, esto actualiza en vez de
-                            # duplicar (ver guardar_parlay_diario()).
-                            selecciones_parlay_tab = [
-                                {"local": local, "visitante": visit, "jornada": jornada,
-                                 "mercado": a["mercado"], "seleccion": a["seleccion"].replace("✅ ", ""),
-                                 "confianza": a["confianza"]}
-                                for a in parlay["selecciones"]
-                            ]
-                            guardar_parlay_diario(
-                                SUPABASE_URL, SUPABASE_KEY, hoy,
-                                selecciones_parlay_tab, parlay["prob_combinada"],
-                                id_personalizado=f"parlay_partido_{local}_{visit}_{hoy}".replace(" ", "_"),
-                            )
-                        except Exception as e:
-                            st.session_state["ultimo_error_guardado"] = f"{type(e).__name__}: {e}"
-    st.markdown('<div style="font-size:0.65rem;color:#4a5568;padding-top:1rem;border-top:1px solid #1f4a2e;'
-                'margin-top:1rem">⚠️ Solo informativo · Apuesta responsablemente</div>', unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────────────────────────────────
 # TAB — Historial (predicciones vs resultados reales)
 # ─────────────────────────────────────────────────────────────────────────
 with tab_hist:
@@ -966,8 +976,7 @@ with tab_hist:
         filas = []
         for local, visit, jornada, estadio, res, arb in jugados:
             try:
-                r = simular_partido(local, visit, n=50_000, peso_elo=PESO_ELO,
-                                     peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
+                r = _simular_rapido_cached(local, visit, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO)
                 favorito = local if r["prob_home"] > r["prob_away"] else visit
                 gh, ga = res
                 ganador_real = local if gh > ga else (visit if ga > gh else "Empate")
@@ -1018,7 +1027,7 @@ with tab_hist_ap:
         )
         hist = st.session_state["historial_apuestas_sesion"]
         if not hist:
-            st.info("Todavía no has simulado ningún partido en esta sesión. Ve al tab Predictor o Apuestas.")
+            st.info("Todavía no has simulado ningún partido en esta sesión. Ve al tab Predictor.")
         else:
             for h in reversed(hist):
                 st.markdown(
@@ -1589,6 +1598,32 @@ with tab_parlays:
 # ─────────────────────────────────────────────────────────────────────────
 # TAB — Tabla / Temporada (posiciones actuales + simular todo el torneo)
 # ─────────────────────────────────────────────────────────────────────────
+def _racha_ultimos_5() -> dict:
+    """
+    Últimos 5 resultados de cada equipo como emojis (🟢 G · ⚪ E · 🔴 P),
+    del más viejo al más reciente. Ordena por HORARIOS_PARTIDO (fecha
+    real) para que los rezagados, como el Queretaro-Monterrey de la J7,
+    caigan donde de verdad se jugaron y no por número de jornada.
+    """
+    jugados = sorted(
+        (p for p in PARTIDOS if p[4] is not None),
+        key=lambda p: (HORARIOS_PARTIDO.get((p[0], p[1]), ""), p[2]),
+    )
+    racha = {eq: [] for eq in EQUIPOS}
+    for local, visit, jornada, estadio, (gh, ga), arbitro in jugados:
+        racha.setdefault(local, []).append("🟢" if gh > ga else "⚪" if gh == ga else "🔴")
+        racha.setdefault(visit, []).append("🟢" if ga > gh else "⚪" if gh == ga else "🔴")
+    return {eq: r[-5:] for eq, r in racha.items()}
+
+
+def _colorear_liguilla(df: pd.DataFrame):
+    """Fondo verde para las primeras 8 filas (zona de Liguilla). Se usa el orden de la fila, no '#', por los empates."""
+    def _fila(row):
+        estilo = "background-color: #12351f; color: #e8f0ea" if row.name < 8 else ""
+        return [estilo] * len(row)
+    return df.reset_index(drop=True).style.apply(_fila, axis=1)
+
+
 with tab_tabla:
     st.markdown("### 📊 Tabla actual — solo partidos ya jugados")
     st.caption("Debe coincidir exactamente con la tabla oficial de Liga MX/ESPN en todo momento.")
@@ -1601,11 +1636,14 @@ with tab_tabla:
         df_real = df_real[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
         df_real.insert(1, "", df_real["equipo"].map(flag))
         df_real.columns = ["#", "", "Club", "PJ", "G", "E", "P", "GF", "GC", "DG", "Pts"]
+        rachas = _racha_ultimos_5()
+        df_real["Últimos 5"] = df_real["Club"].map(lambda eq: "".join(rachas.get(eq, [])))
         st.dataframe(
-            df_real, width="stretch", hide_index=True,
+            _colorear_liguilla(df_real), width="stretch", hide_index=True,
             column_config={"#": st.column_config.NumberColumn(width="small")},
         )
         st.caption(f"📅 {n_jugados} partido(s) jugado(s) hasta ahora · empatados comparten posición, igual que la tabla oficial")
+        st.caption("🟩 Zona de Liguilla (top 8) · Últimos 5: 🟢 ganó · ⚪ empató · 🔴 perdió (el más reciente a la derecha)")
 
     st.markdown("---")
     st.markdown("### 🔮 Proyección de fin de temporada (simulada)")
@@ -1614,37 +1652,44 @@ with tab_tabla:
         "temporada — te da una idea de cómo podría terminar, pero no es la tabla oficial de hoy."
     )
 
-    if st.button("🔄 Recalcular proyección y Liguilla", key="btn_recalcular_tabla") or "resultado_temporada" not in st.session_state:
+    # Solo se simula al presionar el botón: Streamlit ejecuta todos los
+    # tabs en cada carga, así que antes la temporada completa se simulaba
+    # al abrir la página aunque nadie entrara a este tab.
+    if st.button("🔮 Simular proyección y Liguilla", key="btn_recalcular_tabla"):
         with st.spinner("Simulando la temporada completa..."):
             st.session_state["resultado_temporada"] = simular_temporada(
                 peso_elo=PESO_ELO, peso_altitud=PESO_ALTITUD, peso_arbitro=PESO_ARBITRO)
 
-    resultado_temp = st.session_state["resultado_temporada"]
-    df_tabla = pd.DataFrame(resultado_temp["tabla_final"])
-    df_tabla = df_tabla[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
-    df_tabla.insert(1, "", df_tabla["equipo"].map(flag))
-    df_tabla.columns = ["#", "", "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Pts"]
-    st.dataframe(
-        df_tabla, width="stretch", hide_index=True,
-        column_config={"#": st.column_config.NumberColumn(width="small")},
-    )
-    st.caption("🟢 Los primeros 8 lugares clasifican a la Liguilla (en la proyección)")
+    if "resultado_temporada" not in st.session_state:
+        st.info("Presiona el botón para simular cómo podría terminar la temporada y la Liguilla.")
+    else:
 
-    st.markdown("### 🏆 Liguilla simulada (con la tabla de arriba)")
-    liguilla = resultado_temp["liguilla"]
-    col_cf, col_sf, col_f = st.columns(3)
-    with col_cf:
-        st.markdown("**Cuartos de Final**")
-        for serie in liguilla["cuartos"]:
-            st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
-    with col_sf:
-        st.markdown("**Semifinales**")
-        for serie in liguilla["semis"]:
-            st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
-    with col_f:
-        st.markdown("**Final**")
-        st.markdown(f"- {liguilla['final']['marcador_global']}")
-        st.success(f"🏆 Campeón: {flag(liguilla['campeon'])} {liguilla['campeon']}")
+        resultado_temp = st.session_state["resultado_temporada"]
+        df_tabla = pd.DataFrame(resultado_temp["tabla_final"])
+        df_tabla = df_tabla[["posicion", "equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "PTS"]]
+        df_tabla.insert(1, "", df_tabla["equipo"].map(flag))
+        df_tabla.columns = ["#", "", "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Pts"]
+        st.dataframe(
+            _colorear_liguilla(df_tabla), width="stretch", hide_index=True,
+            column_config={"#": st.column_config.NumberColumn(width="small")},
+        )
+        st.caption("🟩 Los primeros 8 lugares clasifican a la Liguilla (en la proyección)")
+
+        st.markdown("### 🏆 Liguilla simulada (con la tabla de arriba)")
+        liguilla = resultado_temp["liguilla"]
+        col_cf, col_sf, col_f = st.columns(3)
+        with col_cf:
+            st.markdown("**Cuartos de Final**")
+            for serie in liguilla["cuartos"]:
+                st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
+        with col_sf:
+            st.markdown("**Semifinales**")
+            for serie in liguilla["semis"]:
+                st.markdown(f"- {serie['marcador_global']} → **{flag(serie['ganador'])} {serie['ganador']}**")
+        with col_f:
+            st.markdown("**Final**")
+            st.markdown(f"- {liguilla['final']['marcador_global']}")
+            st.success(f"🏆 Campeón: {flag(liguilla['campeon'])} {liguilla['campeon']}")
 
     st.markdown("---")
     st.markdown("### 🎲 Simular todo el torneo (Montecarlo)")
@@ -1729,8 +1774,8 @@ with tab_info:
                 )
             st.caption(
                 "Brier Score: 0 = predicciones perfectas · 0.667 = igual que tirar una moneda entre 3 "
-                "opciones. Detalle completo (por equipo, por rango de confianza) en 🎲 Apuestas Hist. "
-                "→ Auto-calibración por mercado."
+                "opciones. Detalle completo (por equipo, por rango de confianza) en 📈 Historial → "
+                "🎲 Apuestas sugeridas → Auto-calibración por mercado."
             )
 
             # ── Comparación contra un modelo baseline (Poisson puro,
