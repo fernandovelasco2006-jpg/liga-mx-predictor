@@ -236,7 +236,17 @@ def leer_pagina(jornada: int, debug_dir=None) -> list:
                     pass
 
         page.on("response", _guardar)
-        resp = page.goto(url, wait_until="networkidle", timeout=90_000)
+        # El servidor de la FMF a veces responde vacío (ERR_EMPTY_RESPONSE)
+        # aunque la jornada ya esté publicada: se reintenta antes de rendirse.
+        for intento in range(4):
+            try:
+                resp = page.goto(url, wait_until="networkidle", timeout=90_000)
+                break
+            except Exception as e:
+                if intento == 3:
+                    raise
+                print(f"  intento {intento + 1} falló ({str(e).splitlines()[0]}), reintentando…")
+                page.wait_for_timeout(10_000 * (intento + 1))
         # La tabla puede llegar después del networkidle: se espera hasta 30 s
         # a que el texto mencione al menos un club.
         try:
@@ -371,7 +381,14 @@ def main() -> int:
     todos = []
     for j in jornadas:
         print(f"Jornada {j}: {URL_DESIGNACION.format(jornada=j)}")
-        textos = leer_pagina(j, args.debug_dir)
+        try:
+            textos = leer_pagina(j, args.debug_dir)
+        except Exception as e:
+            # Una jornada que la FMF todavía no publica responde vacío
+            # (net::ERR_EMPTY_RESPONSE, visto con la J15 el 28/oct/2026), y a
+            # veces también una publicada; la siguiente corrida lo reintenta.
+            print(f"  la página no cargó (¿aún no publicada o FMF caída?): {e}".splitlines()[0])
+            continue
         arbitros = extraer_arbitros(j, textos)
         total = len(partidos_de_jornada(j))
         print(f"  {len(arbitros)}/{total} partidos con árbitro en la página")
