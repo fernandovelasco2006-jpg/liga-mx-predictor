@@ -185,7 +185,7 @@ PARTIDOS = [
     ('America', 'Pachuca', 14, 'Estadio Banorte', (1, 2), 'Maximiliano Quintero Hernandez'),
     ('Queretaro', 'Cruz Azul', 14, 'Estadio Corregidora', (1, 3), 'Cesar Arturo Ramos Palazuelos'),
     ('Tijuana', 'Santos Laguna', 14, 'Estadio Caliente', (4, 1), 'Luis Enrique Santander Aguirre'),
-    ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', None, 'Marco Antonio Ortiz Nava'),
+    ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', (3, 1), 'Marco Antonio Ortiz Nava'),
     ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', None, 'Katia Itzel Garcia Mendoza'),
     ('Puebla', 'Pumas UNAM', 15, 'Estadio Cuauhtemoc', None, 'Oscar Mejia Garcia'),
     ('Pachuca', 'Tigres', 15, 'Estadio Hidalgo', None, 'Victor Alfonso Caceres Hernandez'),
@@ -892,6 +892,8 @@ DATOS_REALES_LIGAMX = {
     "Atlas_Puebla":                {"am": 3,  "co": 10, "ro": 1},  # 0 ATS + 3 PUE | 7 ATS + 3 PUE | roja: 1 PUE
     "America_Pachuca":             {"am": 4,  "co": 11, "ro": 0},  # 2 AME + 2 PAC | 6 AME + 5 PAC | rojas no mostradas en Sofascore (0 sin confirmar)
     "Queretaro_Cruz Azul":         {"am": 2,  "co": 14, "ro": 0},  # 1 QRO + 1 CAZ | 8 QRO + 6 CAZ | rojas no mostradas en Sofascore (0 sin confirmar)
+    # Jornada 15 — 30 octubre 2026
+    "FC Juarez_Queretaro":         {"am": 3,  "co": 12, "ro": 0},  # 1 JUA + 2 QRO | 2 JUA + 10 QRO | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
