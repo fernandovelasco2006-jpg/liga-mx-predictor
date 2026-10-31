@@ -186,7 +186,7 @@ PARTIDOS = [
     ('Queretaro', 'Cruz Azul', 14, 'Estadio Corregidora', (1, 3), 'Cesar Arturo Ramos Palazuelos'),
     ('Tijuana', 'Santos Laguna', 14, 'Estadio Caliente', (4, 1), 'Luis Enrique Santander Aguirre'),
     ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', (3, 1), 'Marco Antonio Ortiz Nava'),
-    ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', None, 'Katia Itzel Garcia Mendoza'),
+    ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', (0, 1), 'Katia Itzel Garcia Mendoza'),
     ('Puebla', 'Pumas UNAM', 15, 'Estadio Cuauhtemoc', None, 'Oscar Mejia Garcia'),
     ('Pachuca', 'Tigres', 15, 'Estadio Hidalgo', None, 'Victor Alfonso Caceres Hernandez'),
     ('Monterrey', 'Tijuana', 15, 'Estadio BBVA', None, 'Jorge Abraham Camacho Peregrina'),
@@ -894,6 +894,7 @@ DATOS_REALES_LIGAMX = {
     "Queretaro_Cruz Azul":         {"am": 2,  "co": 14, "ro": 0},  # 1 QRO + 1 CAZ | 8 QRO + 6 CAZ | rojas no mostradas en Sofascore (0 sin confirmar)
     # Jornada 15 — 30 octubre 2026
     "FC Juarez_Queretaro":         {"am": 3,  "co": 12, "ro": 0},  # 1 JUA + 2 QRO | 2 JUA + 10 QRO | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atletico San Luis_Atlas":     {"am": 5,  "co": 11, "ro": 0},  # 1 SLP + 4 ATS | 7 SLP + 4 ATS | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
