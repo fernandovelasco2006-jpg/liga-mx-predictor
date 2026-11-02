@@ -187,7 +187,7 @@ PARTIDOS = [
     ('Tijuana', 'Santos Laguna', 14, 'Estadio Caliente', (4, 1), 'Luis Enrique Santander Aguirre'),
     ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', (3, 1), 'Marco Antonio Ortiz Nava'),
     ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', (0, 1), 'Katia Itzel Garcia Mendoza'),
-    ('Puebla', 'Pumas UNAM', 15, 'Estadio Cuauhtemoc', None, 'Oscar Mejia Garcia'),
+    ('Puebla', 'Pumas UNAM', 15, 'Estadio Cuauhtemoc', (1, 2), 'Oscar Mejia Garcia'),
     ('Pachuca', 'Tigres', 15, 'Estadio Hidalgo', (3, 0), 'Victor Alfonso Caceres Hernandez'),
     ('Monterrey', 'Tijuana', 15, 'Estadio BBVA', (3, 3), 'Jorge Abraham Camacho Peregrina'),
     ('Guadalajara', 'Atlante', 15, 'Estadio Akron', (4, 2), 'Adonai Escobedo Gonzalez'),
@@ -902,6 +902,7 @@ DATOS_REALES_LIGAMX = {
     "America_Toluca":              {"am": 6,  "co": 11, "ro": 2},  # 3 AME + 3 TOL | 6 AME + 5 TOL | rojas: 1 AME + 1 TOL
     "Santos Laguna_Necaxa":        {"am": 4,  "co": 18, "ro": 0},  # 1 SAN + 3 NEC | 12 SAN + 6 NEC | rojas no mostradas en Sofascore (0 sin confirmar)
     "Cruz Azul_Leon":              {"am": 9,  "co": 10, "ro": 0},  # 4 CAZ + 5 LEO | 4 CAZ + 6 LEO | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Puebla_Pumas UNAM":           {"am": 2,  "co": 10, "ro": 0},  # 0 PUE + 2 PUM | 7 PUE + 3 PUM | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
