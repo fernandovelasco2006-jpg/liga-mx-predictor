@@ -6,19 +6,97 @@ proyecto de Supabase separado, para no mezclar datos.
 """
 import requests
 from datetime import datetime, timezone, timedelta
-from liga_mx_predictor_skeleton import DATOS_REALES_LIGAMX
+from liga_mx_predictor_skeleton import DATOS_REALES_LIGAMX, HORARIOS_PARTIDO
 
 # Import opcional — liga_mx_algoritmo.py importa cosas del skeleton pero
 # no de este módulo, así que no hay dependencia circular real; se deja
 # como try/except de todas formas por si algún entorno de pruebas carga
 # liga_mx_supabase.py de forma aislada.
-try:
-    from liga_mx_algoritmo import simular_partido_baseline
-except ImportError:
-    def simular_partido_baseline(home_team, away_team):
+# Import diferido (dentro de la función, no al cargar el módulo): cuando
+# app.py importa liga_mx_algoritmo primero, este módulo se carga a media
+# importación de liga_mx_algoritmo y un import de nivel superior fallaba
+# en silencio, dejando el baseline en 33/33/33 en vez del Poisson puro.
+def simular_partido_baseline(home_team, away_team):
+    try:
+        from liga_mx_algoritmo import simular_partido_baseline as _baseline
+    except ImportError:
         return {"prob_home": 33.33, "prob_draw": 33.33, "prob_away": 33.34}
+    return _baseline(home_team, away_team)
+
+
+def _version_modelo():
+    """VERSION_MODELO de liga_mx_algoritmo (import diferido, mismo motivo)."""
+    try:
+        from liga_mx_algoritmo import VERSION_MODELO
+    except ImportError:
+        return None
+    return VERSION_MODELO
 
 TZ_MX = timezone(timedelta(hours=-6))
+
+# Columnas agregadas en nov/2026 (ver migracion_calibracion.sql). Si la
+# migración todavía no se corrió en Supabase, PostgREST rechaza la fila
+# completa por traer una columna desconocida; _enviar() reintenta sin
+# ellas para no perder el guardado.
+COLUMNAS_NUEVAS = ("version_modelo", "confianza_cruda")
+
+
+def _enviar(metodo: str, url: str, key: str, tabla: str, payload: dict, params: dict = None):
+    """POST/PATCH a una tabla; si falla por una de COLUMNAS_NUEVAS que
+    aún no existe, reintenta sin esas columnas."""
+    prefer = "return=minimal" if metodo == "post" else ""
+    resp = getattr(requests, metodo)(f"{url}/rest/v1/{tabla}", headers=_headers(key, prefer=prefer),
+                                     params=params, json=payload, timeout=5)
+    if resp.status_code >= 400 and any(c in (resp.text or "") for c in COLUMNAS_NUEVAS):
+        limpio = {k: v for k, v in payload.items() if k not in COLUMNAS_NUEVAS}
+        resp = getattr(requests, metodo)(f"{url}/rest/v1/{tabla}", headers=_headers(key, prefer=prefer),
+                                         params=params, json=limpio, timeout=5)
+    return resp
+
+
+def inicio_partido(local: str, visit: str):
+    """datetime de arranque según HORARIOS_PARTIDO (hora del centro de
+    México), o None si no hay horario cargado."""
+    horario = HORARIOS_PARTIDO.get((local, visit))
+    if not horario:
+        return None
+    try:
+        return datetime.strptime(horario, "%Y-%m-%d %H:%M").replace(tzinfo=TZ_MX)
+    except ValueError:
+        return None
+
+
+def partido_ya_empezo(local: str, visit: str, ahora: datetime = None) -> bool:
+    inicio = inicio_partido(local, visit)
+    return inicio is not None and inicio <= (ahora or datetime.now(TZ_MX))
+
+
+def es_fila_pre_partido(fila: dict) -> bool:
+    """
+    True si la fila (predicción o apuesta) se guardó ANTES de que
+    arrancara el partido. Hasta nov/2026 la app simulaba y guardaba
+    también los partidos ya jugados al abrirlos, con el propio resultado
+    ya metido en el modelo, y eso sobrescribía la predicción a ciegas.
+    Esas filas no sirven para medir ni para calibrar. Sin horario o sin
+    fecha de guardado no hay forma de saberlo y la fila se conserva.
+    """
+    inicio = inicio_partido(fila.get("local"), fila.get("visitante"))
+    guardada = fila.get("guardada_en")
+    if inicio is None or not guardada:
+        return True
+    try:
+        guardada_dt = datetime.strptime(str(guardada)[:16], "%Y-%m-%d %H:%M").replace(tzinfo=TZ_MX)
+    except ValueError:
+        return True
+    return guardada_dt < inicio
+
+
+def de_version_actual(filas: list) -> list:
+    """Solo las filas guardadas por el motor actual (VERSION_MODELO)."""
+    version = _version_modelo()
+    if not version:
+        return filas
+    return [f for f in filas if f.get("version_modelo") == version]
 
 
 def _headers(key: str, prefer: str = "return=minimal") -> dict:
@@ -63,7 +141,13 @@ def guardar_prediccion(url: str, key: str, local: str, visit: str, jornada: int,
     if not (url and key):
         return False
     ahora = datetime.now(TZ_MX)
-    gh, ga = resultado_real if resultado_real else (None, None)
+    if resultado_real is not None or partido_ya_empezo(local, visit, ahora):
+        # Partido ya empezado o jugado: el modelo ya pudo "ver" el
+        # resultado (Elo, motor y forma se recalculan con PARTIDOS), así
+        # que una predicción hecha ahora no es a ciegas. Los goles reales
+        # los llena actualizar_aciertos_pendientes().
+        return False
+    gh, ga = None, None
     favorito = local if r["prob_home"] > r["prob_away"] else visit
     prob_favorito = max(r["prob_home"], r["prob_away"])
 
@@ -84,23 +168,22 @@ def guardar_prediccion(url: str, key: str, local: str, visit: str, jornada: int,
         "lam_visitante": r["lam_away"],
         "resultado_real": f"{gh}-{ga}" if gh is not None else None,
         "goles_local": gh, "goles_visitante": ga,
+        "version_modelo": _version_modelo(),
     }
     try:
         chk = requests.get(
             f"{url}/rest/v1/predicciones_ligamx",
             headers=_headers(key, prefer=""),
-            params={"id": f"eq.{payload['id']}", "select": "id"},
+            params={"id": f"eq.{payload['id']}", "select": "id,goles_local"},
             timeout=5,
         )
         if chk.status_code == 200 and not chk.json():
-            requests.post(f"{url}/rest/v1/predicciones_ligamx", headers=_headers(key), json=payload, timeout=5)
+            _enviar("post", url, key, "predicciones_ligamx", payload)
         elif chk.status_code == 200 and chk.json():
-            requests.patch(
-                f"{url}/rest/v1/predicciones_ligamx",
-                headers=_headers(key, prefer=""),
-                params={"id": f"eq.{payload['id']}"},
-                json=payload, timeout=5,
-            )
+            if chk.json()[0].get("goles_local") is not None:
+                return False  # ya tiene resultado: nunca se reescribe
+            _enviar("patch", url, key, "predicciones_ligamx", payload,
+                    params={"id": f"eq.{payload['id']}"})
         return True
     except Exception:
         return False
@@ -113,7 +196,13 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
     if not (url and key):
         return 0
     ahora = datetime.now(TZ_MX)
-    gh, ga = resultado_real if resultado_real else (None, None)
+    if resultado_real is not None or partido_ya_empezo(local, visit, ahora):
+        # Mismo criterio que guardar_prediccion(): una apuesta generada
+        # con el partido ya empezado no es a ciegas y contaminaría la
+        # calibración. Los aciertos de las apuestas pre-partido los
+        # marca actualizar_aciertos_pendientes().
+        return 0
+    gh, ga = None, None
     guardadas = 0
 
     for i, s in enumerate(sugerencias):
@@ -140,6 +229,8 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
             "mercado": s["mercado"],
             "seleccion": s["seleccion"].replace("✅ ", ""),
             "confianza": round(s["confianza"], 1),
+            "confianza_cruda": round(s.get("confianza_cruda", s["confianza"]), 1),
+            "version_modelo": _version_modelo(),
             "resultado_real": f"{gh}-{ga}" if gh is not None else None,
             "goles_local": gh, "goles_visitante": ga,
             "acierto": acierto,
@@ -153,7 +244,7 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
                 timeout=5,
             )
             if chk.status_code == 200 and not chk.json():
-                requests.post(f"{url}/rest/v1/apuestas_historial_ligamx", headers=_headers(key), json=payload, timeout=5)
+                _enviar("post", url, key, "apuestas_historial_ligamx", payload)
                 guardadas += 1
             elif chk.status_code == 200 and chk.json():
                 # La fila YA existía (ej. se corrió "Simular Jornada" antes
@@ -333,14 +424,16 @@ def _cargar_tabla_completa(url: str, key: str, tabla: str, pagina: int = 1000) -
     return filas
 
 
-def cargar_historial_apuestas(url: str, key: str) -> list:
-    """Trae todo el historial de apuestas guardadas."""
+def cargar_historial_apuestas(url: str, key: str, solo_pre_partido: bool = True) -> list:
+    """Trae el historial de apuestas guardadas. Por default deja fuera
+    las generadas con el partido ya empezado (ver es_fila_pre_partido())."""
     if not (url and key):
         return []
-    return _cargar_tabla_completa(url, key, "apuestas_historial_ligamx")
+    filas = _cargar_tabla_completa(url, key, "apuestas_historial_ligamx")
+    return [f for f in filas if es_fila_pre_partido(f)] if solo_pre_partido else filas
 
 
-def cargar_historial_predicciones(url: str, key: str) -> list:
+def cargar_historial_predicciones(url: str, key: str, solo_pre_partido: bool = True) -> list:
     """
     Trae todo el historial de predicciones 1X2 guardadas (tabla
     predicciones_ligamx) — mismo patrón que cargar_historial_apuestas(),
@@ -352,7 +445,8 @@ def cargar_historial_predicciones(url: str, key: str) -> list:
     """
     if not (url and key):
         return []
-    return _cargar_tabla_completa(url, key, "predicciones_ligamx")
+    filas = _cargar_tabla_completa(url, key, "predicciones_ligamx")
+    return [f for f in filas if es_fila_pre_partido(f)] if solo_pre_partido else filas
 
 
 def calcular_brier_score(historial_predicciones: list) -> dict:
@@ -432,6 +526,37 @@ def calcular_brier_score(historial_predicciones: list) -> dict:
         "n_evaluadas": n_validas,
         "por_equipo": por_equipo,
     }
+
+
+def calcular_log_loss(historial_predicciones: list) -> dict:
+    """
+    Log-loss 1X2 (promedio de -ln de la probabilidad que el modelo le dio
+    al resultado que sí pasó) sobre las predicciones ya evaluadas. Castiga
+    mucho más que el Brier las predicciones muy seguras que fallan.
+    Referencia: 33/33/33 siempre da ln(3) ≈ 1.099; arriba de eso, el
+    modelo está peor que no saber nada.
+
+    Devuelve {"log_loss": float|None, "n_evaluadas": int,
+    "referencia_uniforme": 1.099}.
+    """
+    import math
+    suma, n = 0.0, 0
+    for p in historial_predicciones:
+        if p.get("goles_local") is None or p.get("goles_visitante") is None:
+            continue
+        try:
+            gh, ga = int(p["goles_local"]), int(p["goles_visitante"])
+            probs = (float(p["prob_local"]), float(p["prob_empate"]), float(p["prob_visitante"]))
+        except (TypeError, ValueError, KeyError):
+            continue
+        total = sum(probs)
+        if total <= 0:
+            continue
+        ocurrio = 0 if gh > ga else (1 if gh == ga else 2)
+        suma += -math.log(max(probs[ocurrio] / total, 1e-6))
+        n += 1
+    return {"log_loss": round(suma / n, 3) if n else None, "n_evaluadas": n,
+            "referencia_uniforme": round(math.log(3), 3)}
 
 
 def comparar_modelo_vs_baseline(historial_predicciones: list) -> dict:
@@ -621,7 +746,10 @@ def calcular_sesgo_por_equipo(historial_predicciones: list,
     local_stats = {}
     visita_stats = {}
 
-    for p in historial_predicciones:
+    # Solo predicciones del motor actual: el sesgo de otro motor no dice
+    # nada de este (y con el motor heredado, la localía triple hacía que
+    # todos los locales salieran "sobreestimados").
+    for p in de_version_actual(historial_predicciones):
         if p.get("goles_local") is None or p.get("goles_visitante") is None:
             continue
         try:
@@ -847,14 +975,17 @@ def calibrar_confianza_por_mercado(historial: list, minimo_evaluadas: int = 15,
     en este dict como "sin calibración disponible todavía" — se usa la
     confianza cruda tal cual, nunca un error.
     """
+    # Solo filas del motor actual y con confianza CRUDA guardada: la
+    # curva traduce "cruda -> real", así que ajustarla sobre números ya
+    # calibrados (como se hacía hasta nov/2026) la deformaba cada ciclo.
     por_mercado = {}
-    for a in historial:
+    for a in de_version_actual(historial):
         if a.get("acierto") is None:
             continue  # solo evidencia YA evaluada, igual que calcular_stats_por_mercado()
         merc = a.get("mercado", "Desconocido")
         try:
-            conf = float(a.get("confianza", 0))
-        except (TypeError, ValueError):
+            conf = float(a["confianza_cruda"])
+        except (TypeError, ValueError, KeyError):
             continue
         por_mercado.setdefault(merc, []).append((conf, 100.0 if a["acierto"] else 0.0))
 
@@ -900,9 +1031,10 @@ def aplicar_calibracion(mercado: str, confianza_cruda: float, tablas_calibracion
     calibrada, usando la tabla isotónica de calibrar_confianza_por_
     mercado() para ese mercado específico.
 
-    Si el mercado no tiene tabla todavía (sin evidencia suficiente), o
-    la confianza cae fuera del rango de bins observados, se extrapola
-    con el valor del extremo más cercano (constante más allá de los
+    Si el mercado no tiene tabla todavía (sin evidencia suficiente), se
+    devuelve la cruda. Por debajo del primer bin observado se devuelve
+    la menor entre la cruda y el nivel de ese bin; por arriba del último,
+    se extrapola con el valor del extremo (constante más allá de los
     datos — una isotónica nunca extrapola con pendiente, solo mantiene
     el último nivel conocido). Si no hay NINGÚN bin para ese mercado,
     devuelve la confianza cruda sin tocar — nunca falla ni inventa un
@@ -914,7 +1046,11 @@ def aplicar_calibracion(mercado: str, confianza_cruda: float, tablas_calibracion
 
     bins = tabla["bins"]
     if confianza_cruda <= bins[0][0]:
-        return bins[0][1]
+        # Por debajo del tramo observado no hay evidencia: nunca se SUBE
+        # la confianza (antes, una cruda de 18% caía al nivel del primer
+        # bin, p. ej. 82%, y se recomendaba). Solo se baja si el primer
+        # tramo ya acierta menos que la cruda.
+        return min(confianza_cruda, bins[0][1])
     if confianza_cruda >= bins[-1][0]:
         return bins[-1][1]
 

@@ -5,6 +5,8 @@ Sistema de predicción de partidos y recomendación de apuestas para Liga MX, us
 ## Arquitectura (6 módulos)
 
 - **`liga_mx_predictor_skeleton.py`** — datos base: `EQUIPOS`, `ELO`, `ALTITUD_EQUIPO`, `PARTIDOS` (calendario + resultados), `HORARIOS_PARTIDO`, `ARBITROS_LIGA_MX`, `TARJETAS_EQUIPO_LIGAMX`/`TARJETAS_EQUIPO_APERTURA`, `CORNERS_EQUIPO`, `DATOS_REALES_LIGAMX` (tarjetas/córners reales por partido jugado). Es la única fuente de verdad para resultados y calendario.
+- **`liga_mx_motor_poisson.py`** — motor de goles por defecto (`MOTOR_GOLES = "poisson_mle"` en `liga_mx_algoritmo.py`): Poisson/Dixon-Coles ajustado por máxima verosimilitud con shrinkage (ridge 5), Clausura 2026 como prior (peso 0.6) y decaimiento 0.05/jornada; localía y ρ salen de los datos. Reemplaza al cálculo heredado (FUERZA_* + EMA + split local/visita + ×1.12 + altitud), que se conserva con `motor="heredado"` solo para comparar.
+- **`liga_mx_walkforward.py`** — backtest a ciegas sobre el Apertura (cada jornada con solo las anteriores). Cualquier cambio al motor se mide aquí antes de subirlo (`python3 liga_mx_walkforward.py`); el análisis semanal lo publica en el resumen de Actions.
 - **`liga_mx_elo_update.py`** — recalibra Elo y Fuerza Ataque/Defensa jornada a jornada reproduciendo `PARTIDOS` desde cero (EMA, α=0.15). No se toca casi nunca.
 - **`liga_mx_algoritmo.py`** — el motor: `calcular_lambdas()`, `simular_partido()` (Monte Carlo, 10M sims), `analizar_apuestas()` (qué recomendar), `simular_jornada_completa()`, `armar_parlay()`. Aquí vive casi toda la lógica de negocio.
 - **`liga_mx_supabase.py`** — persistencia: guardar/cargar predicciones y apuestas, `calcular_sesgo_por_equipo()`, `calcular_brier_score()`, `calcular_calibracion_por_bin()`, `calcular_mercados_suspendidos()` (auto-retroalimentación).
@@ -64,6 +66,10 @@ assert not at.exception, at.exception
 ```
 
 ## Errores ya cometidos — no repetir
+
+- La app simulaba y guardaba partidos ya jugados al abrirlos (con el resultado ya dentro de Elo/motor), sobrescribiendo la predicción a ciegas. Ahora `guardar_prediccion()`/`guardar_apuestas()` no escriben si el partido ya empezó, y `cargar_historial_*()` descartan filas guardadas después del arranque. No quitar ese filtro.
+- La isotónica se ajusta sobre `confianza_cruda` y solo con filas de `VERSION_MODELO`; si se cambia el motor, subir `VERSION_MODELO` para que la calibración y el sesgo por equipo no aprendan de números de otro motor.
+- Importar `liga_mx_algoritmo` desde `liga_mx_supabase` a nivel de módulo falla en silencio (import circular); usar imports diferidos dentro de la función.
 
 - Subir una versión de `liga_mx_algoritmo.py` desfasada de `app.py`/`liga_mx_supabase.py` causó dos `TypeError` seguidos por parámetros faltantes (`cuotas_por_partido`, `sesgo_por_equipo`). Si se editan varios archivos relacionados, subir todos juntos en el mismo commit y verificar con `grep` que el parámetro nuevo esté presente antes de dar el cambio por terminado.
 - `MAPA_NOMBRES_ODDS_API` en `liga_mx_cuotas.py` originalmente solo cubría los 7 equipos con acento distinto, y `emparejar_equipo()` fallaba en silencio para los 11 equipos con nombre idéntico (Puebla, Toluca, etc.) porque no había un chequeo de "ya es igual, no traducir". Cualquier función de emparejamiento de nombres externos debe probarse contra la lista completa de 18 equipos, no solo los casos "raros".
