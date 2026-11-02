@@ -188,12 +188,12 @@ PARTIDOS = [
     ('FC Juarez', 'Queretaro', 15, 'Estadio Olimpico Benito Juarez', (3, 1), 'Marco Antonio Ortiz Nava'),
     ('Atletico San Luis', 'Atlas', 15, 'Estadio Libertad Financiera', (0, 1), 'Katia Itzel Garcia Mendoza'),
     ('Puebla', 'Pumas UNAM', 15, 'Estadio Cuauhtemoc', None, 'Oscar Mejia Garcia'),
-    ('Pachuca', 'Tigres', 15, 'Estadio Hidalgo', None, 'Victor Alfonso Caceres Hernandez'),
-    ('Monterrey', 'Tijuana', 15, 'Estadio BBVA', None, 'Jorge Abraham Camacho Peregrina'),
-    ('Guadalajara', 'Atlante', 15, 'Estadio Akron', None, 'Adonai Escobedo Gonzalez'),
-    ('America', 'Toluca', 15, 'Estadio Banorte', None, 'Luis Enrique Santander Aguirre'),
-    ('Santos Laguna', 'Necaxa', 15, 'Estadio TSM Corona', None, 'Daniel Quintero Huitron'),
-    ('Cruz Azul', 'Leon', 15, 'Estadio Banorte', None, 'Jesus Rafael Lopez Valle'),
+    ('Pachuca', 'Tigres', 15, 'Estadio Hidalgo', (3, 0), 'Victor Alfonso Caceres Hernandez'),
+    ('Monterrey', 'Tijuana', 15, 'Estadio BBVA', (3, 3), 'Jorge Abraham Camacho Peregrina'),
+    ('Guadalajara', 'Atlante', 15, 'Estadio Akron', (4, 2), 'Adonai Escobedo Gonzalez'),
+    ('America', 'Toluca', 15, 'Estadio Banorte', (2, 2), 'Luis Enrique Santander Aguirre'),
+    ('Santos Laguna', 'Necaxa', 15, 'Estadio TSM Corona', (1, 0), 'Daniel Quintero Huitron'),
+    ('Cruz Azul', 'Leon', 15, 'Estadio Banorte', (2, 1), 'Jesus Rafael Lopez Valle'),
     ('Necaxa', 'Tijuana', 16, 'Estadio Victoria', None, None),
     ('Atletico San Luis', 'FC Juarez', 16, 'Estadio Libertad Financiera', None, None),
     ('Atlante', 'Santos Laguna', 16, 'Estadio Banorte', None, None),
@@ -895,6 +895,13 @@ DATOS_REALES_LIGAMX = {
     # Jornada 15 — 30 octubre 2026
     "FC Juarez_Queretaro":         {"am": 3,  "co": 12, "ro": 0},  # 1 JUA + 2 QRO | 2 JUA + 10 QRO | rojas no mostradas en Sofascore (0 sin confirmar)
     "Atletico San Luis_Atlas":     {"am": 5,  "co": 11, "ro": 0},  # 1 SLP + 4 ATS | 7 SLP + 4 ATS | rojas no mostradas en Sofascore (0 sin confirmar)
+    # Jornada 15 — 31 octubre-1 noviembre 2026
+    "Pachuca_Tigres":              {"am": 3,  "co": 8,  "ro": 1},  # 2 PAC + 1 TIG | 4 PAC + 4 TIG | roja: 1 TIG
+    "Monterrey_Tijuana":           {"am": 5,  "co": 11, "ro": 0},  # 3 MON + 2 TIJ | 9 MON + 2 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Guadalajara_Atlante":         {"am": 1,  "co": 10, "ro": 0},  # 0 GUA + 1 ATL | 6 GUA + 4 ATL | rojas no mostradas en Sofascore (0 sin confirmar)
+    "America_Toluca":              {"am": 6,  "co": 11, "ro": 2},  # 3 AME + 3 TOL | 6 AME + 5 TOL | rojas: 1 AME + 1 TOL
+    "Santos Laguna_Necaxa":        {"am": 4,  "co": 18, "ro": 0},  # 1 SAN + 3 NEC | 12 SAN + 6 NEC | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Cruz Azul_Leon":              {"am": 9,  "co": 10, "ro": 0},  # 4 CAZ + 5 LEO | 4 CAZ + 6 LEO | rojas no mostradas en Sofascore (0 sin confirmar)
 }
 
 # ─────────────────────────────────────────────────────────────────────────
