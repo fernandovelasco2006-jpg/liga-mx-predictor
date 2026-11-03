@@ -219,6 +219,28 @@ FUERZA_ATAQUE = FUERZA_ATAQUE_ACTUALIZADA
 FUERZA_DEFENSA = FUERZA_DEFENSA_ACTUALIZADA
 
 # -------------------------------------------------------------------------
+# MOTOR DE GOLES — "poisson_mle" (default desde nov/2026) estima ataque,
+# defensa, localía y rho por máxima verosimilitud con shrinkage, a partir
+# del Clausura 2026 (como prior) y los resultados del Apertura en
+# PARTIDOS; ver liga_mx_motor_poisson.py para el porqué y la evidencia.
+# "heredado" es el cálculo anterior (FUERZA_* + EMA + split local/visita
+# + forma real + momentum Elo + ×1.12 + altitud), que se conserva para
+# comparar en el backtest (liga_mx_walkforward.py).
+#
+# VERSION_MODELO se guarda en cada predicción/apuesta de Supabase: la
+# isotónica y el sesgo por equipo solo aprenden de filas de la versión
+# actual, porque los números de otro motor no dicen nada de este.
+# -------------------------------------------------------------------------
+from liga_mx_motor_poisson import ajustar_desde_partidos, lambdas_motor
+
+MOTOR_GOLES = "poisson_mle"
+VERSION_MODELO = "poisson-mle-v1"
+PARAMS_MOTOR = ajustar_desde_partidos(PARTIDOS, EQUIPOS)
+RHO_DIXON_COLES_HEREDADO = RHO_DIXON_COLES
+if MOTOR_GOLES == "poisson_mle":
+    RHO_DIXON_COLES = PARAMS_MOTOR["rho"]
+
+# -------------------------------------------------------------------------
 # TARJETAS POR EQUIPO — Clausura 2026 (fuente FotMob, 17 PJ, ver arriba)
 # vs. Apertura 2026 EN VIVO (fuente ligamx.net, tabla oficial de
 # Tarjetas Amarillas/Rojas por Club).
@@ -479,6 +501,57 @@ def _promedio_liga_amarillas_dinamico() -> float:
     return (1 - peso_apertura) * PROMEDIO_LIGA_AMARILLAS_BASE + peso_apertura * promedio_apertura
 
 
+def _factores_de_partido(home_team: str, away_team: str, lam_home: float, lam_away: float,
+                          peso_arbitro: float = 1.0, factor_clima: float = 1.0) -> tuple:
+    """
+    Factores que afectan a los dos equipos por igual o dependen del
+    contexto del partido (árbitro, fatiga por Leagues Cup, clima). Los
+    usan los dos motores de goles de calcular_lambdas() (el ajustado
+    por máxima verosimilitud y el heredado), así que viven aparte.
+    """
+    # 3. Factor árbitro ---------------------------------------------
+    # Un árbitro que reparte muchas tarjetas normalmente corresponde a
+    # partidos más cortados/físicos -> baja un poco el ritmo ofensivo de
+    # ambos equipos (más faltas, menos fluidez, defensas más agresivas).
+    arbitro = _buscar_arbitro(home_team, away_team)
+    if arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT):
+        # Usa el promedio del árbitro ya mezclado entre ambas fuentes
+        # históricas (Sofascore + Transfermarkt) y con su Apertura 2026
+        # real (ver _promedio_arbitro_dinamico(), definida más abajo en
+        # este archivo junto con las demás funciones de tarjetas) — no
+        # la ficha histórica fija de una sola fuente.
+        prom_amarillas = _promedio_arbitro_dinamico(arbitro)
+    else:
+        prom_amarillas = ARBITRO_DEFAULT[0]
+    # Liga MX promedia ~3.6-4.3 amarillas/partido según el torneo — usa
+    # el promedio dinámico (mezcla Clausura + Apertura real, ver
+    # _promedio_liga_amarillas_dinamico()) en vez de un valor fijo.
+    promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
+    desviacion = prom_amarillas - promedio_liga_amarillas
+    # cada amarilla de más sobre el promedio recorta ~1.5% el ritmo ofensivo,
+    # escalado por peso_arbitro, con tope de +-10%*peso_arbitro (máx 30%)
+    tope = min(0.10 * peso_arbitro, 0.30)
+    factor_arbitro = 1.0 - max(min(desviacion * 0.015 * peso_arbitro, tope), -tope)
+    lam_home *= factor_arbitro
+    lam_away *= factor_arbitro
+
+    # 4. Factor fatiga (Leagues Cup) ----------------------------------
+    fecha_partido = _buscar_fecha_partido(home_team, away_team)
+    if _jugo_leagues_cup_reciente(home_team, fecha_partido):
+        lam_home *= FACTOR_FATIGA_LEAGUES_CUP
+    if _jugo_leagues_cup_reciente(away_team, fecha_partido):
+        lam_away *= FACTOR_FATIGA_LEAGUES_CUP
+
+    # 5. Clima — factor pequeño y simétrico (afecta al partido completo,
+    # no a un solo equipo). Viene precalculado de liga_mx_clima.factor_clima()
+    # y por defecto es 1.0 (sin ajuste) si no hay API key de clima
+    # configurada o no se pudo consultar.
+    lam_home *= factor_clima
+    lam_away *= factor_clima
+
+    return lam_home, lam_away
+
+
 def calcular_lambdas(home_team: str, away_team: str,
                       peso_elo: float = 1.0,
                       peso_altitud: float = 1.0,
@@ -486,7 +559,8 @@ def calcular_lambdas(home_team: str, away_team: str,
                       peso_forma_elo: float = 1.0,
                       factor_clima: float = 1.0,
                       peso_local_visita: float = 1.0,
-                      sesgo_por_equipo: dict = None) -> tuple:
+                      sesgo_por_equipo: dict = None,
+                      motor: str = None) -> tuple:
     """
     Calcula (lambda_home, lambda_away): la tasa esperada de goles para
     cada equipo, combinando:
@@ -535,9 +609,31 @@ def calcular_lambdas(home_team: str, away_team: str,
     antes para quien no le pase este dato (retrocompatible, sin romper
     ninguna llamada existente en simular_partido()/simular_temporada()).
 
+    motor: opcional, "poisson_mle" o "heredado". None (default) usa
+    MOTOR_GOLES. Con "poisson_mle", los pasos 1 a 1c, la localía ×1.12, la
+    amortiguación y la altitud se reemplazan por el modelo ajustado (que
+    ya estima localía y fuerza de cada equipo con los datos); peso_elo
+    escala las diferencias entre equipos, peso_altitud y
+    peso_local_visita no aplican, y siguen el sesgo por equipo, el
+    árbitro, la fatiga y el clima.
+
     Devuelve (lambda_home, lambda_away) listos para simular goles con
     una distribución de Poisson.
     """
+    if (motor or MOTOR_GOLES) == "poisson_mle":
+        lam_home, lam_away = lambdas_motor(PARAMS_MOTOR, home_team, away_team, peso_fuerza=peso_elo)
+        if sesgo_por_equipo:
+            sesgo_home = sesgo_por_equipo.get(home_team, {})
+            sesgo_away = sesgo_por_equipo.get(away_team, {})
+            if "factor_ataque_local" in sesgo_home:
+                lam_home *= sesgo_home["factor_ataque_local"]
+            if "factor_ataque_visita" in sesgo_away:
+                lam_away *= sesgo_away["factor_ataque_visita"]
+        lam_home, lam_away = _factores_de_partido(home_team, away_team, lam_home, lam_away,
+                                                  peso_arbitro=peso_arbitro, factor_clima=factor_clima)
+        return max(lam_home, 0.15), max(lam_away, 0.15)
+
+    # MOTOR HEREDADO ---------------------------------------------------
     # 1. Ataque / Defensa --------------------------------------------
     # peso_elo interpola entre "todos los equipos son iguales" (peso=0)
     # y "la calibración ELO completa" (peso=1); peso=2 duplica el efecto.
@@ -672,46 +768,8 @@ def calcular_lambdas(home_team: str, away_team: str,
             # ambos equipos están acostumbrados a la altura -> bonus reducido
             lam_home += bono * 0.3
 
-    # 3. Factor árbitro ---------------------------------------------
-    # Un árbitro que reparte muchas tarjetas normalmente corresponde a
-    # partidos más cortados/físicos -> baja un poco el ritmo ofensivo de
-    # ambos equipos (más faltas, menos fluidez, defensas más agresivas).
-    arbitro = _buscar_arbitro(home_team, away_team)
-    if arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT):
-        # Usa el promedio del árbitro ya mezclado entre ambas fuentes
-        # históricas (Sofascore + Transfermarkt) y con su Apertura 2026
-        # real (ver _promedio_arbitro_dinamico(), definida más abajo en
-        # este archivo junto con las demás funciones de tarjetas) — no
-        # la ficha histórica fija de una sola fuente.
-        prom_amarillas = _promedio_arbitro_dinamico(arbitro)
-    else:
-        prom_amarillas = ARBITRO_DEFAULT[0]
-    # Liga MX promedia ~3.6-4.3 amarillas/partido según el torneo — usa
-    # el promedio dinámico (mezcla Clausura + Apertura real, ver
-    # _promedio_liga_amarillas_dinamico()) en vez de un valor fijo.
-    promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
-    desviacion = prom_amarillas - promedio_liga_amarillas
-    # cada amarilla de más sobre el promedio recorta ~1.5% el ritmo ofensivo,
-    # escalado por peso_arbitro, con tope de +-10%*peso_arbitro (máx 30%)
-    tope = min(0.10 * peso_arbitro, 0.30)
-    factor_arbitro = 1.0 - max(min(desviacion * 0.015 * peso_arbitro, tope), -tope)
-    lam_home *= factor_arbitro
-    lam_away *= factor_arbitro
-
-    # 4. Factor fatiga (Leagues Cup) ----------------------------------
-    fecha_partido = _buscar_fecha_partido(home_team, away_team)
-    if _jugo_leagues_cup_reciente(home_team, fecha_partido):
-        lam_home *= FACTOR_FATIGA_LEAGUES_CUP
-    if _jugo_leagues_cup_reciente(away_team, fecha_partido):
-        lam_away *= FACTOR_FATIGA_LEAGUES_CUP
-
-    # 5. Clima — factor pequeño y simétrico (afecta al partido completo,
-    # no a un solo equipo). Viene precalculado de liga_mx_clima.factor_clima()
-    # y por defecto es 1.0 (sin ajuste) si no hay API key de clima
-    # configurada o no se pudo consultar.
-    lam_home *= factor_clima
-    lam_away *= factor_clima
-
+    lam_home, lam_away = _factores_de_partido(home_team, away_team, lam_home, lam_away,
+                                              peso_arbitro=peso_arbitro, factor_clima=factor_clima)
     return max(lam_home, 0.15), max(lam_away, 0.15)
 
 
@@ -740,7 +798,7 @@ def _jugar_partido(home_team: str, away_team: str, rng=None,
     for _ in range(200):
         goles_h = int(rng.poisson(lam_h))
         goles_a = int(rng.poisson(lam_a))
-        tau = _tau_dixon_coles(goles_h, goles_a, lam_h, lam_a)
+        tau = _tau_dixon_coles(goles_h, goles_a, lam_h, lam_a, rho=RHO_DIXON_COLES)
         if rng.random() < tau / m_bound:
             return goles_h, goles_a
     return goles_h, goles_a  # fallback de seguridad, en la práctica nunca se llega aquí
@@ -1546,10 +1604,19 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
             return confianza_cruda
         return aplicar_calibracion(mercado, confianza_cruda, tablas_calibracion)
 
-    def ap(mercado, seleccion, confianza, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
+    def ap(mercado, seleccion, confianza_cruda, nota, cuota_decimal=None, linea_totales=None, direccion_totales=None):
+        # Recibe la confianza CRUDA del modelo y la calibra aquí, para
+        # guardar las dos: la isotónica se ajusta sobre la cruda (si se
+        # ajustara sobre la ya calibrada, cada ciclo deformaría más la
+        # curva) y lo que se muestra y compara contra el umbral es la
+        # calibrada.
+        confianza = _calibrar(mercado, confianza_cruda)
+        if confianza < UMBRAL_RECOMENDACION:
+            return
         entrada = {
             "mercado": mercado, "seleccion": seleccion,
             "confianza": confianza,
+            "confianza_cruda": confianza_cruda,
             "nivel": "ALTA",   # todo lo que entra aquí ya cumplió el umbral
             "nota": nota,
             "umbral_aplicado": round(UMBRAL_RECOMENDACION, 1),
@@ -1586,9 +1653,9 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     pa_cal = _calibrar("Resultado (1X2)", pa)
     pb_cal = _calibrar("Resultado (1X2)", pb)
     if pa_cal >= UMBRAL_RECOMENDACION:
-        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa_cal, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
+        ap("Resultado (1X2)", f"✅ Gana {home_team}", pa, f"{pa:.1f}% de las simulaciones", cuota_decimal=cuota_home)
     if pb_cal >= UMBRAL_RECOMENDACION:
-        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb_cal, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
+        ap("Resultado (1X2)", f"✅ Gana {away_team}", pb, f"{pb:.1f}% de las simulaciones", cuota_decimal=cuota_away)
 
     # 2. Doble Oportunidad (1X / X2)
     conf_1x = min(pa + pd_, 99)
@@ -1596,9 +1663,9 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     conf_1x_cal = _calibrar("Doble Oportunidad", conf_1x)
     conf_x2_cal = _calibrar("Doble Oportunidad", conf_x2)
     if conf_1x_cal >= UMBRAL_RECOMENDACION and pa_cal < UMBRAL_RECOMENDACION:
-        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x_cal, f"{pa:.1f}% + {pd_:.1f}%")
+        ap("Doble Oportunidad", f"✅ {home_team} o Empate (1X)", conf_1x, f"{pa:.1f}% + {pd_:.1f}%")
     if conf_x2_cal >= UMBRAL_RECOMENDACION and pb_cal < UMBRAL_RECOMENDACION:
-        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2_cal, f"{pb:.1f}% + {pd_:.1f}%")
+        ap("Doble Oportunidad", f"✅ {away_team} o Empate (X2)", conf_x2, f"{pb:.1f}% + {pd_:.1f}%")
 
     # 3. Empate Sin Apuesta (Draw No Bet) — probabilidad de ganar,
     # excluyendo del cálculo el caso "empate" (que reembolsa, no pierde).
@@ -1608,23 +1675,23 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
         conf_dnb_home_cal = _calibrar("Empate Sin Apuesta", conf_dnb_home)
         conf_dnb_away_cal = _calibrar("Empate Sin Apuesta", conf_dnb_away)
         if conf_dnb_home_cal >= UMBRAL_RECOMENDACION:
-            ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home_cal,
+            ap("Empate Sin Apuesta", f"✅ Gana {home_team} (DNB)", conf_dnb_home,
                f"{pa:.1f}% vs {pb:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
         if conf_dnb_away_cal >= UMBRAL_RECOMENDACION:
-            ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away_cal,
+            ap("Empate Sin Apuesta", f"✅ Gana {away_team} (DNB)", conf_dnb_away,
                f"{pb:.1f}% vs {pa:.1f}% · empate ({pd_:.1f}%) reembolsa el stake")
 
     # 4. Hándicap Asiático — el favorito debe ganar por 2+ (-1.0) o 3+ (-2.0)
-    if r["prob_hcap_home_m10"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Hándicap Asiático", r["prob_hcap_home_m10"]) >= UMBRAL_RECOMENDACION:
         ap("Hándicap Asiático", f"✅ {home_team} -1.0 (gana por 2+)", r["prob_hcap_home_m10"],
            "Empuje (reembolso) si gana por exactamente 1")
-    if r["prob_hcap_home_m20"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Hándicap Asiático", r["prob_hcap_home_m20"]) >= UMBRAL_RECOMENDACION:
         ap("Hándicap Asiático", f"✅ {home_team} -2.0 (gana por 3+)", r["prob_hcap_home_m20"],
            "Empuje (reembolso) si gana por exactamente 2")
-    if r["prob_hcap_away_m10"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Hándicap Asiático", r["prob_hcap_away_m10"]) >= UMBRAL_RECOMENDACION:
         ap("Hándicap Asiático", f"✅ {away_team} -1.0 (gana por 2+)", r["prob_hcap_away_m10"],
            "Empuje (reembolso) si gana por exactamente 1")
-    if r["prob_hcap_away_m20"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Hándicap Asiático", r["prob_hcap_away_m20"]) >= UMBRAL_RECOMENDACION:
         ap("Hándicap Asiático", f"✅ {away_team} -2.0 (gana por 3+)", r["prob_hcap_away_m20"],
            "Empuje (reembolso) si gana por exactamente 2")
 
@@ -1639,21 +1706,21 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     # las descartaba si no encontraba una casa real con esa línea
     # exacta. Se prefirió excluir 0.5 de forma fija en vez de depender
     # de la disponibilidad de cuotas en cada consulta a The Odds API.
-    if r["prob_over15"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Total Goles", r["prob_over15"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 1.5 (2+ goles)", r["prob_over15"], f"{r['prob_over15']:.1f}% de simulaciones")
-    if r["prob_over25"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Total Goles", r["prob_over25"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 2.5 (3+ goles)", r["prob_over25"], f"{r['prob_over25']:.1f}% de simulaciones")
-    if r["prob_over35"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Total Goles", r["prob_over35"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Over 3.5 (4+ goles)", r["prob_over35"], f"{r['prob_over35']:.1f}% de simulaciones")
-    if (100 - r["prob_over15"]) >= UMBRAL_RECOMENDACION:
+    if _calibrar("Total Goles", 100 - r["prob_over15"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Under 1.5 (0 o 1 gol)", 100 - r["prob_over15"], f"{100 - r['prob_over15']:.1f}% de simulaciones")
-    if (100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
+    if _calibrar("Total Goles", 100 - r["prob_over25"]) >= UMBRAL_RECOMENDACION:
         ap("Total Goles", "✅ Under 2.5 (0, 1 o 2 goles)", 100 - r["prob_over25"], f"{100 - r['prob_over25']:.1f}% de simulaciones")
 
     # 6. Ambos Marcan (BTTS)
-    if r["prob_btts"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Ambos Marcan", r["prob_btts"]) >= UMBRAL_RECOMENDACION:
         ap("Ambos Marcan", "✅ Sí — ambos anotan", r["prob_btts"], f"{r['prob_btts']:.1f}% de simulaciones")
-    if (100 - r["prob_btts"]) >= UMBRAL_RECOMENDACION:
+    if _calibrar("Ambos Marcan", 100 - r["prob_btts"]) >= UMBRAL_RECOMENDACION:
         ap("Ambos Marcan", "✅ No — al menos uno no anota", 100 - r["prob_btts"], f"{100 - r['prob_btts']:.1f}% de simulaciones")
 
     # 7. Tarjetas totales (roja cuenta como 2 amarillas, convención de casas de apuestas)
@@ -1663,26 +1730,26 @@ def analizar_apuestas(home_team: str, away_team: str, r: dict, mercados_suspendi
     tarj_over55_cal = _calibrar("Tarjetas", r["prob_tarj_over55"])
     tarj_under45_cal = _calibrar("Tarjetas", 100 - r["prob_tarj_over45"])
     if tarj_over25_cal >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", tarj_over25_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+        ap("Tarjetas", "✅ Over 2.5 tarjetas (roja=2pts)", r["prob_tarj_over25"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
     if tarj_over35_cal >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", tarj_over35_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+        ap("Tarjetas", "✅ Over 3.5 tarjetas (roja=2pts)", r["prob_tarj_over35"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
     if tarj_over45_cal >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", tarj_over45_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+        ap("Tarjetas", "✅ Over 4.5 tarjetas (roja=2pts)", r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
     if tarj_over55_cal >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", tarj_over55_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+        ap("Tarjetas", "✅ Over 5.5 tarjetas (roja=2pts)", r["prob_tarj_over55"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
     if tarj_under45_cal >= UMBRAL_RECOMENDACION:
-        ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", tarj_under45_cal, f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
+        ap("Tarjetas", "✅ Under 4.5 tarjetas (roja=2pts)", 100 - r["prob_tarj_over45"], f"{r['tarjetas_totales_esp']:.1f} esperadas · árbitro {r['arbitro']}")
 
     # 8. Córners
-    if r["prob_corners_over85"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Córners", r["prob_corners_over85"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 8.5 córners (9+)", r["prob_corners_over85"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over95"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Córners", r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 9.5 córners (10+)", r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over105"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Córners", r["prob_corners_over105"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 10.5 córners (11+)", r["prob_corners_over105"], f"{r['corners_esp']:.1f} esperados")
-    if r["prob_corners_over115"] >= UMBRAL_RECOMENDACION:
+    if _calibrar("Córners", r["prob_corners_over115"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Over 11.5 córners (12+)", r["prob_corners_over115"], f"{r['corners_esp']:.1f} esperados")
-    if (100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
+    if _calibrar("Córners", 100 - r["prob_corners_over95"]) >= UMBRAL_RECOMENDACION:
         ap("Córners", "✅ Under 9.5 córners (máx 9)", 100 - r["prob_corners_over95"], f"{r['corners_esp']:.1f} esperados")
 
     # Una sola línea por RUBRO/categoría (Resultado, Doble Oportunidad,

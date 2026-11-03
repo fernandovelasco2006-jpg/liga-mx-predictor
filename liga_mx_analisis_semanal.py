@@ -456,6 +456,17 @@ def main():
         _log("Historial de apuestas:\n" + reporte)
         _escribir_resumen_actions("## Historial de apuestas verificadas\n\n" + reporte)
 
+    # Backtest a ciegas del motor de goles con los resultados de PARTIDOS
+    # (no necesita Supabase): deja en el resumen de Actions cómo va el
+    # modelo contra el heredado y contra 33/33/33 cada semana.
+    try:
+        from liga_mx_walkforward import reporte_markdown
+        backtest_md = reporte_markdown()
+        _log(backtest_md)
+        _escribir_resumen_actions("## Calidad del modelo\n\n" + backtest_md)
+    except Exception as e:
+        _log(f"Aviso: no se pudo correr el backtest ({e})")
+
     if args.solo_verificar:
         return
 

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import math
 from datetime import datetime, timedelta, timezone
 
 from liga_mx_predictor_skeleton import (
@@ -13,6 +14,7 @@ from liga_mx_algoritmo import (
     ALTITUD_UMBRAL, BONUS_ALTITUD_LOCAL, FACTOR_FATIGA_LEAGUES_CUP,
     PROMEDIO_LIGA_AMARILLAS, PROMEDIO_LIGA_ROJAS,
     ELO_BASE, ELO_ACTUALIZADO, resumen_movimiento_elo, n_partidos_procesados,
+    PARAMS_MOTOR, RHO_DIXON_COLES,
     simular_jornada_completa, detectar_jornada_actual, armar_super_parlay_jornada,
 )
 
@@ -26,7 +28,7 @@ try:
         calcular_ev_apuestas_reales, actualizar_apuestas_reales_pendientes,
         eliminar_apuesta_real, marcar_reembolsada_apuesta_real,
         cargar_historial_predicciones, calcular_brier_score, calcular_calibracion_por_bin,
-        comparar_modelo_vs_baseline,
+        comparar_modelo_vs_baseline, calcular_log_loss,
         calcular_sesgo_por_equipo, guardar_jornada_completa,
         calibrar_confianza_por_mercado,
     )
@@ -161,7 +163,7 @@ h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 st.markdown("""
 <div class="hero">
   <div class="hero-title">LIGA MX · APERTURA 2026</div>
-  <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · ELO + Altitud + Árbitro + Clima</div>
+  <div class="hero-sub">Monte Carlo · 10,000,000 simulaciones · Poisson ajustado + Árbitro + Clima</div>
 </div>
 <div class="disclaimer-banner">
 ⚠️ Proyecto educativo, sin fines de lucro · <b>no es asesoría de apuestas ni garantía de resultados</b> ·
@@ -1795,12 +1797,22 @@ with tab_info:
         historial_pred_salud = cargar_historial_predicciones(SUPABASE_URL, SUPABASE_KEY)
         brier_salud = calcular_brier_score(historial_pred_salud)
         if brier_salud["n_evaluadas"] > 0:
-            col_s1, col_s2, col_s3 = st.columns(3)
+            ll_salud = calcular_log_loss(historial_pred_salud)
+            col_s1, col_s1b, col_s2, col_s3 = st.columns(4)
             color_brier_salud = "#4ade80" if brier_salud["brier"] < 0.55 else ("#f0c040" if brier_salud["brier"] < 0.667 else "#f87171")
             with col_s1:
                 st.markdown(
                     f'<div class="metric-box"><div class="metric-val" style="color:{color_brier_salud}">'
                     f'{brier_salud["brier"]}</div><div class="metric-lbl">Brier Score (1X2)</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with col_s1b:
+                _ll = ll_salud["log_loss"]
+                color_ll_salud = "#4ade80" if _ll is not None and _ll < 1.05 else (
+                    "#f0c040" if _ll is not None and _ll < ll_salud["referencia_uniforme"] else "#f87171")
+                st.markdown(
+                    f'<div class="metric-box"><div class="metric-val" style="color:{color_ll_salud}">'
+                    f'{_ll if _ll is not None else "—"}</div><div class="metric-lbl">Log-loss (1X2)</div></div>',
                     unsafe_allow_html=True,
                 )
             with col_s2:
@@ -1818,7 +1830,8 @@ with tab_info:
                 )
             st.caption(
                 "Brier Score: 0 = predicciones perfectas · 0.667 = igual que tirar una moneda entre 3 "
-                "opciones. Detalle completo (por equipo, por rango de confianza) en 📈 Historial → "
+                "opciones. Log-loss: 1.099 = igual que la moneda; castiga más los favoritos muy seguros que "
+                "fallan. Solo cuentan predicciones guardadas antes de que empezara el partido. Detalle completo (por equipo, por rango de confianza) en 📈 Historial → "
                 "🎲 Apuestas sugeridas → Auto-calibración por mercado."
             )
 
@@ -1922,27 +1935,25 @@ El predictor usa **simulación Monte Carlo con distribución de Poisson** — {N
 por partido, el mismo enfoque que casas de apuestas y modelos académicos serios.
 
 **En cada simulación el modelo combina:**
-- **Ataque/Defensa** — FUERZA_ATAQUE/FUERZA_DEFENSA de cada equipo, calibradas con el Clausura 2026 y
-  **recalibradas solas** con cada resultado real que se agrega (media móvil exponencial, α=0.15)
-- **Momentum vía Elo** — ajuste acotado (±8%) según cuánto se movió el Elo de cada equipo desde el
-  arranque del torneo (fórmula Elo estándar de fútbol, con ventaja de local y multiplicador por goleada)
-- **Forma real** — promedio real de goles anotados/recibidos en los partidos ya jugados (tope ±8%)
+- **Ataque/Defensa y localía ajustados con los datos** — un modelo de Poisson tipo Dixon-Coles estimado
+  por máxima verosimilitud con los 153 partidos del Clausura 2026 (como punto de partida, con menos peso)
+  y todos los resultados del Apertura (los más recientes pesan más). Las diferencias entre equipos se
+  jalan hacia el promedio de liga hasta que hay evidencia de varios partidos. Ventaja de local estimada:
+  ×{math.exp(PARAMS_MOTOR["localia"]):.2f} goles · corrección de marcadores bajos ρ={RHO_DIXON_COLES:.2f}.
+  Se re-estima solo cada vez que arranca la app con los resultados de `PARTIDOS`.
 - **Corrección de sesgo del propio modelo** — ajuste acotado (±15%) basado en qué tan bien (o mal) ha
   venido prediciendo el modelo a CADA equipo en particular, comparando goles esperados guardados en el
-  historial contra los goles reales — separado por local/visita. Solo se activa una vez que un equipo
-  acumula 8+ partidos evaluados en ese rol; antes de eso, no tiene efecto.
-- **Altitud** — bono de +{BONUS_ALTITUD_LOCAL} al λ del local si su ciudad está a ≥{ALTITUD_UMBRAL:,}m
-  y el visitante no está aclimatado a la altura
+  historial contra los goles reales — separado por local/visita. Solo cuenta predicciones del motor
+  actual hechas antes del partido, y se activa con 8+ partidos evaluados en ese rol.
 - **Árbitro** — promedio real de tarjetas del árbitro asignado (cuando lo tenemos) vs. el promedio de
   liga ({PROMEDIO_LIGA_AMARILLAS} amarillas/partido)
 - **Fatiga Leagues Cup** — reduce el λ ofensivo {(1-FACTOR_FATIGA_LEAGUES_CUP)*100:.0f}% si el equipo jugó
   Leagues Cup en los 7 días previos
 
-Los factores de Ataque/Defensa, Momentum vía Elo y Forma real se recalculan solos cada vez que arranca la
-app, reproduciendo todos los partidos que ya tienen resultado en `PARTIDOS` — no hay que tocar código ni
-una base de datos aparte, basta con seguir agregando los resultados reales jornada a jornada. La
-corrección de sesgo del propio modelo se recalcula igual de automático, leyendo el historial de
-predicciones ya evaluadas de Supabase.
+Desde noviembre 2026 ya no se suman aparte el bono de altitud, el ×1.12 de localía ni el sesgo
+local/visita del Clausura: contaban la ventaja de local tres veces. Re-prediciendo a ciegas los partidos
+del Apertura, el motor anterior quedaba peor que poner 33/33/33 en todos los partidos (log-loss 1.23
+contra 1.10); este queda en 1.08. El backtest se puede repetir con `liga_mx_walkforward.py`.
 
 **¿Qué se recomienda como apuesta?**
 Un umbral **dinámico**: entre 80% y 90% de probabilidad según qué tan avanzado está el torneo (más
@@ -1961,8 +1972,7 @@ No incluye goles por mitades ni resultado al descanso — el modelo simula el pa
 
 | Factor | Peso |
 |---|---|
-| ELO (ataque/defensa) | {PESO_ELO} |
-| Altitud | {PESO_ALTITUD} |
+| Diferencias entre equipos | {PESO_ELO} |
 | Árbitro | {PESO_ARBITRO} |
 
 **Mercados de apuestas sugeridos:** Resultado (1X2), Doble Oportunidad, Total de Goles (Over/Under),
