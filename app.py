@@ -138,6 +138,16 @@ h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 .disclaimer-banner { background: linear-gradient(135deg, #2a1500, #3a1e00); border: 1px solid #5a3a00; border-radius: 8px; padding: 0.35rem 1rem; margin-bottom: 0.8rem; font-size: 0.68rem; color: #f0c040; line-height: 1.5; text-align: center; }
 .stButton > button { background: linear-gradient(135deg,#006341,#e5007d) !important; font-size:1rem !important; color:white !important; border:none !important; border-radius:8px !important; font-family:'Bebas Neue', sans-serif !important; letter-spacing:2px !important; padding:0.6rem 2rem !important; width:100% !important; }
 .stButton > button:hover { filter: brightness(1.15); }
+/* Tarjetas de resumen clicables (Historial de apuestas): un botón
+   invisible cubre toda la tarjeta, así se ve igual que antes pero filtra. */
+div[class*="st-key-tarj_ap_"] { position:relative; gap:0 !important; }
+div[class*="st-key-btn_ap_"] { position:absolute !important; inset:0; width:100% !important; height:100% !important; z-index:2; margin:0 !important; }
+div[class*="st-key-btn_ap_"] .stButton, div[class*="st-key-btn_ap_"] .stButton div, div[class*="st-key-btn_ap_"] button { width:100% !important; height:100% !important; }
+div[class*="st-key-btn_ap_"] button { opacity:0 !important; cursor:pointer; padding:0 !important; min-height:0 !important; }
+div[class*="st-key-tarj_ap_"] .metric-box { transition:border-color .15s, transform .15s; }
+div[class*="st-key-tarj_ap_"]:hover .metric-box { border-color:#4ade80; transform:translateY(-2px); }
+.metric-box-activa { border-color:#e5007d !important; box-shadow:0 0 0 1px #e5007d, 0 0 14px rgba(229,0,125,.25); }
+.metric-hint { font-size:0.55rem; color:#3f6b50; margin-top:0.25rem; letter-spacing:0.5px; }
 .stSelectbox > div > div { background:#0f1e15 !important; border:1px solid #1f4a2e !important; color:#e8f0ea !important; border-radius:8px !important; }
 .resumen-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:0.75rem; margin-bottom:0.8rem; }
 /* Celular: menos margen, portada más chica, resumen en 2x2 y números menos gigantes */
@@ -1093,22 +1103,37 @@ with tab_hist_ap:
             st.info("⏳ Aún no hay apuestas registradas. Se guardan automáticamente cada vez que simulas un partido.")
         else:
             stats = calcular_stats_apuestas(historial)
-            c1, c2, c3, c4, c5 = st.columns(5)
-            with c1:
-                st.markdown(f'<div class="metric-box"><div class="metric-val">{stats["accuracy"]:.1f}%</div>'
-                            f'<div class="metric-lbl">Accuracy apuestas</div></div>', unsafe_allow_html=True)
-            with c2:
-                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#4ade80">{stats["aciertos"]}</div>'
-                            f'<div class="metric-lbl">✅ Aciertos</div></div>', unsafe_allow_html=True)
-            with c3:
-                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#f87171">{stats["fallos"]}</div>'
-                            f'<div class="metric-lbl">❌ Fallos</div></div>', unsafe_allow_html=True)
-            with c4:
-                st.markdown(f'<div class="metric-box"><div class="metric-val">{stats["total_pendientes"]}</div>'
-                            f'<div class="metric-lbl">⏳ Pendientes</div></div>', unsafe_allow_html=True)
-            with c5:
-                st.markdown(f'<div class="metric-box"><div class="metric-val" style="color:#8fbfa0">{stats.get("total_nulas", 0)}</div>'
-                            f'<div class="metric-lbl">⚪ Nulas (DNB empatado)</div></div>', unsafe_allow_html=True)
+
+            # Cada tarjeta es un botón: al tocarla filtra la lista de abajo
+            # (Accuracy abre el desglose por jornada y por mercado). Tocar la
+            # tarjeta activa otra vez regresa a "todas".
+            def _alternar_filtro_ap(clave):
+                actual = st.session_state.get("filtro_hist_ap")
+                st.session_state["filtro_hist_ap"] = None if actual == clave else clave
+
+            filtro_ap = st.session_state.get("filtro_hist_ap")
+            tarjetas_ap = [
+                ("accuracy", f'{stats["accuracy"]:.1f}%', None, "Accuracy apuestas"),
+                ("aciertos", stats["aciertos"], "#4ade80", "✅ Aciertos"),
+                ("fallos", stats["fallos"], "#f87171", "❌ Fallos"),
+                ("pendientes", stats["total_pendientes"], None, "⏳ Pendientes"),
+                ("nulas", stats.get("total_nulas", 0), "#8fbfa0", "⚪ Nulas (DNB empatado)"),
+            ]
+            for col, (clave, valor, color_val, etiqueta) in zip(st.columns(5), tarjetas_ap):
+                activa = filtro_ap == clave
+                estilo_val = f' style="color:{color_val}"' if color_val else ""
+                pista = "toca para ver todas" if activa else ("ver desglose" if clave == "accuracy" else "toca para filtrar")
+                with col:
+                    with st.container(key=f"tarj_ap_{clave}"):
+                        st.markdown(
+                            f'<div class="metric-box{" metric-box-activa" if activa else ""}">'
+                            f'<div class="metric-val"{estilo_val}>{valor}</div>'
+                            f'<div class="metric-lbl">{etiqueta}</div>'
+                            f'<div class="metric-hint">{pista}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                        st.button(etiqueta, key=f"btn_ap_{clave}", on_click=_alternar_filtro_ap,
+                                  args=(clave,))
 
             # ── Panel de auto-calibración: ¿el 80% que dice el modelo es
             # realmente 80% de acierto? Desglosado por mercado. ──────────
@@ -1171,32 +1196,93 @@ with tab_hist_ap:
                         df_calib.columns = ["Rango prometido", "Prometido promedio (%)", "Real (%)", "Brecha", "N observaciones"]
                         st.dataframe(df_calib, width="stretch", hide_index=True)
 
-            if stats["evaluadas"]:
-                st.markdown("##### ✅ Apuestas evaluadas")
-                for ap in stats["evaluadas"]:
-                    icono = "✅" if ap["acierto"] else "❌"
-                    color = "#0d2818" if ap["acierto"] else "#1a0d0d"
-                    st.markdown(
-                        f'<div style="background:{color};border-radius:8px;padding:0.5rem 0.9rem;margin-bottom:0.3rem;'
-                        f'font-size:0.8rem">{icono} {flag(ap["local"])} {ap["local"]} vs {flag(ap["visitante"])} {ap["visitante"]} '
-                        f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.5rem">J{ap["jornada"]} · {ap.get("resultado_real","")}</span>'
-                        f'<div style="font-size:0.72rem;color:#f0c040;margin-top:0.2rem">📋 {ap["mercado"]} → {ap["seleccion"]} '
-                        f'<span style="color:#4ade80">({ap["confianza"]:.0f}%)</span></div></div>',
-                        unsafe_allow_html=True,
-                    )
+            # ── Desglose de accuracy (tarjeta "Accuracy apuestas") ───────
+            if filtro_ap == "accuracy":
+                def _desglose_ap(campo):
+                    grupos = {}
+                    for ap in stats["evaluadas"] + stats["pendientes"]:
+                        g = grupos.setdefault(ap.get(campo, "—"), {"a": 0, "f": 0, "p": 0, "conf": []})
+                        if ap.get("acierto") is None:
+                            g["p"] += 1
+                        else:
+                            g["a" if ap["acierto"] else "f"] += 1
+                            g["conf"].append(float(ap.get("confianza") or 0))
+                    filas = []
+                    for k, g in grupos.items():
+                        n = g["a"] + g["f"]
+                        filas.append({
+                            "k": k, "Aciertos": g["a"], "Fallos": g["f"], "Pendientes": g["p"],
+                            "Accuracy (%)": round(g["a"] / n * 100, 1) if n else None,
+                            "Confianza prom. (%)": round(sum(g["conf"]) / n, 1) if n else None,
+                        })
+                    return filas
 
-            if stats["pendientes"]:
+                st.markdown("##### 📊 Desglose del accuracy")
+                st.caption("Solo cuentan apuestas ya evaluadas; las nulas (DNB empatado) no suman ni restan. "
+                           "Con pocas apuestas en una fila, su porcentaje todavía es ruido.")
+                d1, d2 = st.columns(2)
+                with d1:
+                    st.markdown("###### Por jornada")
+                    filas_j = sorted(_desglose_ap("jornada"), key=lambda r: -int(r["k"]) if str(r["k"]).isdigit() else 0)
+                    df_j = pd.DataFrame(filas_j).rename(columns={"k": "Jornada"})
+                    st.dataframe(df_j.drop(columns=["Confianza prom. (%)"]), width="stretch", hide_index=True)
+                with d2:
+                    st.markdown("###### Por mercado")
+                    filas_m = sorted(_desglose_ap("mercado"), key=lambda r: -(r["Aciertos"] + r["Fallos"]))
+                    df_m = pd.DataFrame(filas_m).rename(columns={"k": "Mercado"})
+                    st.dataframe(df_m, width="stretch", hide_index=True)
                 st.markdown("---")
+
+            def _tarjeta_apuesta(ap, estado):
+                fondo, borde, icono = {
+                    "acierto": ("#0d2818", "transparent", "✅ "),
+                    "fallo": ("#1a0d0d", "transparent", "❌ "),
+                    "nula": ("#111827", "#3a4a5a", "⚪ "),
+                    "pendiente": ("#111827", "#1f4a2e", ""),
+                }[estado]
+                detalle = f' · {ap.get("resultado_real", "")}' if estado != "pendiente" and ap.get("resultado_real") else ""
+                st.markdown(
+                    f'<div style="background:{fondo};border:1px solid {borde};border-radius:8px;padding:0.5rem 0.9rem;'
+                    f'margin-bottom:0.3rem;font-size:0.8rem">{icono}{flag(ap["local"])} {ap["local"]} vs {flag(ap["visitante"])} {ap["visitante"]} '
+                    f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.5rem">J{ap["jornada"]}{detalle}</span>'
+                    f'<div style="font-size:0.72rem;color:#f0c040;margin-top:0.2rem">📋 {ap["mercado"]} → {ap["seleccion"]} '
+                    f'<span style="color:#4ade80">({ap["confianza"]:.0f}%)</span></div></div>',
+                    unsafe_allow_html=True,
+                )
+
+            titulos_filtro = {"aciertos": "✅ Aciertos", "fallos": "❌ Fallos",
+                              "pendientes": "⏳ Pendientes", "nulas": "⚪ Nulas (DNB empatado)"}
+            if filtro_ap in titulos_filtro:
+                st.caption(f"Mostrando solo **{titulos_filtro[filtro_ap]}** · toca la tarjeta otra vez para ver todas.")
+
+            if filtro_ap in (None, "accuracy", "aciertos", "fallos"):
+                evaluadas_vista = [ap for ap in stats["evaluadas"]
+                                   if filtro_ap not in ("aciertos", "fallos")
+                                   or bool(ap["acierto"]) == (filtro_ap == "aciertos")]
+                if evaluadas_vista:
+                    titulo = titulos_filtro.get(filtro_ap, "✅ Apuestas evaluadas")
+                    st.markdown(f"##### {titulo} ({len(evaluadas_vista)})")
+                    for ap in evaluadas_vista:
+                        _tarjeta_apuesta(ap, "acierto" if ap["acierto"] else "fallo")
+                elif filtro_ap:
+                    st.info("No hay apuestas en este estado todavía.")
+
+            if filtro_ap in (None, "accuracy", "pendientes") and stats["pendientes"]:
+                if filtro_ap is None or filtro_ap == "accuracy":
+                    st.markdown("---")
                 st.markdown(f"##### ⏳ Apuestas pendientes ({len(stats['pendientes'])})")
                 for ap in stats["pendientes"]:
-                    st.markdown(
-                        f'<div style="background:#111827;border:1px solid #1f4a2e;border-radius:8px;padding:0.5rem 0.9rem;'
-                        f'margin-bottom:0.3rem;font-size:0.8rem">{flag(ap["local"])} {ap["local"]} vs {flag(ap["visitante"])} {ap["visitante"]} '
-                        f'<span style="color:#6b9b7d;font-size:0.7rem;margin-left:0.5rem">J{ap["jornada"]}</span>'
-                        f'<div style="font-size:0.72rem;color:#f0c040;margin-top:0.2rem">📋 {ap["mercado"]} → {ap["seleccion"]} '
-                        f'<span style="color:#4ade80">({ap["confianza"]:.0f}%)</span></div></div>',
-                        unsafe_allow_html=True,
-                    )
+                    _tarjeta_apuesta(ap, "pendiente")
+            elif filtro_ap == "pendientes":
+                st.info("No hay apuestas pendientes.")
+
+            if filtro_ap == "nulas":
+                if stats.get("nulas"):
+                    st.markdown(f"##### ⚪ Apuestas nulas ({len(stats['nulas'])})")
+                    for ap in stats["nulas"]:
+                        _tarjeta_apuesta(ap, "nula")
+                else:
+                    st.info("No hay apuestas nulas.")
         st.markdown(
             '<div class="model-note">🎯 Solo apuestas de confianza ALTA. Tarjetas y córners quedan '
             '"pendientes" hasta que agregues manualmente el resultado real de amarillas/córners '
