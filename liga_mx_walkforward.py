@@ -14,9 +14,12 @@ A diferencia de liga_mx_backtesting.py (Clausura 2026, que el modelo ya
 partido que predice, así que sirve para comparar motores. No incluye
 clima ni sesgo por equipo (vienen de APIs y de Supabase).
 
-Uso:  python3 liga_mx_walkforward.py
+Uso:  python3 liga_mx_walkforward.py            (reporte)
+      python3 liga_mx_walkforward.py --evidencia (filas de evidencia en JSON)
 """
+import json
 import math
+import sys
 
 import liga_mx_algoritmo as alg
 import liga_mx_elo_update as elo_update
@@ -44,6 +47,7 @@ def _probabilidades(lam_h: float, lam_a: float, rho: float) -> dict:
     p1, px = suma(lambda x, y: x > y), suma(lambda x, y: x == y)
     return {"1": p1, "X": px, "2": 100 - p1 - px,
             "over15": suma(lambda x, y: x + y >= 2), "over25": suma(lambda x, y: x + y >= 3),
+            "over35": suma(lambda x, y: x + y >= 4),
             "btts": suma(lambda x, y: x >= 1 and y >= 1)}
 
 
@@ -162,5 +166,58 @@ def reporte_markdown() -> str:
     return "\n".join(lineas)
 
 
+# Piso de confianza para la evidencia: la isotónica necesita ver también
+# los tramos de 50-80% para saber cuánto bajar los de 80%+.
+PISO_EVIDENCIA = 50.0
+
+
+def _candidatas(f: dict) -> list:
+    """(mercado, confianza cruda, acierto) de cada selección que
+    analizar_apuestas() puede recomendar y que sale solo del motor de
+    goles. acierto None = nula (empate en DNB), no cuenta."""
+    gh, ga = f["gh"], f["ga"]
+    p1, px, p2 = f["1"], f["X"], f["2"]
+    goles = gh + ga
+    empate = gh == ga
+    out = [
+        ("Resultado (1X2)", p1, gh > ga), ("Resultado (1X2)", p2, gh < ga),
+        ("Doble Oportunidad", min(p1 + px, 99), gh >= ga), ("Doble Oportunidad", min(p2 + px, 99), gh <= ga),
+        ("Total Goles", f["over15"], goles >= 2), ("Total Goles", f["over25"], goles >= 3),
+        ("Total Goles", f["over35"], goles >= 4), ("Total Goles", 100 - f["over15"], goles <= 1),
+        ("Total Goles", 100 - f["over25"], goles <= 2),
+        ("Ambos Marcan", f["btts"], gh > 0 and ga > 0), ("Ambos Marcan", 100 - f["btts"], not (gh > 0 and ga > 0)),
+    ]
+    if p1 + p2 > 0:
+        out += [("Empate Sin Apuesta", p1 / (p1 + p2) * 100, None if empate else gh > ga),
+                ("Empate Sin Apuesta", p2 / (p1 + p2) * 100, None if empate else gh < ga)]
+    return out
+
+
+def evidencia_backtest(resultado: dict = None) -> list:
+    """
+    Apuestas "a ciegas" del motor actual, con el mismo formato que las
+    filas de apuestas_historial_ligamx (mercado, jornada, confianza,
+    confianza_cruda, acierto, version_modelo). Sirven de evidencia de
+    arranque para calcular_mercados_suspendidos() y
+    calibrar_confianza_por_mercado() mientras el motor actual todavía no
+    junta apuestas reales evaluadas: sin esto, los mercados de goles se
+    juzgaban con apuestas del motor anterior.
+    """
+    r = resultado or backtest(alg.MOTOR_GOLES)
+    filas = []
+    for f in r.get("filas", []):
+        for mercado, p, ok in _candidatas(f):
+            if ok is None or p < PISO_EVIDENCIA:
+                continue
+            p = round(p, 1)
+            filas.append({"mercado": mercado, "jornada": f["jornada"], "local": f["local"],
+                          "visitante": f["visitante"], "confianza": p, "confianza_cruda": p,
+                          "acierto": bool(ok), "version_modelo": alg.VERSION_MODELO, "origen": "backtest"})
+    return filas
+
+
 if __name__ == "__main__":
-    print(reporte_markdown())
+    if "--evidencia" in sys.argv:
+        print(json.dumps(evidencia_backtest()))
+    else:
+        print(reporte_markdown())

@@ -306,12 +306,34 @@ def _simular_rapido_cached(local, visit, peso_elo, peso_altitud, peso_arbitro):
                            peso_altitud=peso_altitud, peso_arbitro=peso_arbitro)
 
 
+# Evidencia de arranque para los mercados de goles: el backtest a ciegas
+# del motor actual (liga_mx_walkforward.evidencia_backtest()). Corre en
+# un proceso aparte porque el backtest reemplaza temporalmente PARTIDOS,
+# Elo y el motor dentro de liga_mx_algoritmo, y en la app otros usuarios
+# simulan con ese mismo módulo al mismo tiempo. Cacheado 1 h: solo cambia
+# cuando entran resultados nuevos.
+@st.cache_data(ttl=3600, show_spinner=False)
+def _evidencia_backtest_cached():
+    import json
+    import subprocess
+    import sys
+    try:
+        salida = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "liga_mx_walkforward.py"),
+             "--evidencia"],
+            capture_output=True, text=True, timeout=120, check=True,
+        )
+        return json.loads(salida.stdout)
+    except Exception:
+        return []
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def _mercados_suspendidos_cached():
     if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
         return frozenset()
     historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
-    return frozenset(calcular_mercados_suspendidos(historial))
+    return frozenset(calcular_mercados_suspendidos(historial, evidencia_backtest=_evidencia_backtest_cached()))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -328,7 +350,7 @@ def _tablas_calibracion_cached():
     if not SUPABASE_MODULO_DISPONIBLE or not (SUPABASE_URL and SUPABASE_KEY):
         return {}
     historial = cargar_historial_apuestas(SUPABASE_URL, SUPABASE_KEY)
-    return calibrar_confianza_por_mercado(historial)
+    return calibrar_confianza_por_mercado(historial, evidencia_backtest=_evidencia_backtest_cached())
 
 
 # ─────────────────────────────────────────────────────────────────────────
