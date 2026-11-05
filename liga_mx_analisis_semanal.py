@@ -242,6 +242,18 @@ def actualizar_aciertos_de_jornadas_pasadas(url: str, key: str):
     _log(f"Aciertos actualizados: {n_ap} apuestas, {n_pa} parlays")
 
 
+def _evidencia_backtest() -> list:
+    """Apuestas a ciegas del motor actual (liga_mx_walkforward), evidencia
+    de arranque para suspender/calibrar mercados de goles mientras el
+    motor junta apuestas reales. Si falla, se sigue sin ella."""
+    try:
+        from liga_mx_walkforward import evidencia_backtest
+        return evidencia_backtest()
+    except Exception as e:
+        _log(f"Aviso: sin evidencia del backtest para la calibración ({e})")
+        return []
+
+
 def cargar_retroalimentacion(url: str = None, key: str = None) -> dict:
     """
     Lo que el historial real ya le enseñó al modelo, con las mismas
@@ -262,8 +274,10 @@ def cargar_retroalimentacion(url: str = None, key: str = None) -> dict:
     try:
         historial = cargar_historial_apuestas(url, key)
         retro["historial"] = historial
-        retro["mercados_suspendidos"] = frozenset(calcular_mercados_suspendidos(historial))
-        retro["tablas_calibracion"] = calibrar_confianza_por_mercado(historial)
+        evidencia = _evidencia_backtest()
+        retro["mercados_suspendidos"] = frozenset(
+            calcular_mercados_suspendidos(historial, evidencia_backtest=evidencia))
+        retro["tablas_calibracion"] = calibrar_confianza_por_mercado(historial, evidencia_backtest=evidencia)
         retro["sesgo_por_equipo"] = calcular_sesgo_por_equipo(cargar_historial_predicciones(url, key))
     except Exception as e:
         _log(f"Aviso: no se pudo cargar la retroalimentación ({e}) — se sigue con lo que haya")

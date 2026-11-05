@@ -888,7 +888,7 @@ def calcular_stats_por_mercado(historial: list, minimo_evaluadas: int = 3) -> li
     return filas
 
 
-def _isotonic_fit(pares: list) -> list:
+def _isotonic_fit(pares: list, pesos: list = None) -> list:
     """
     PAVA (Pool Adjacent Violators Algorithm) — ajusta una regresión
     isotónica simple y sin dependencias externas (no requiere scikit-
@@ -904,12 +904,17 @@ def _isotonic_fit(pares: list) -> list:
 
     Devuelve una lista de (x, y_calibrada) del mismo largo que `pares`,
     con y_calibrada ya monótona no-decreciente en x.
+
+    pesos (opcional): cuántas apuestas tiene cada bin. Sin pesos, un bin
+    con 1 sola apuesta fallada pesaba lo mismo que uno con 70 y podía
+    aplanar toda la curva al fusionarse.
     """
     if not pares:
         return []
+    pesos = pesos or [1] * len(pares)
     # Cada "bloque" acumula (suma_y, peso, x_min, x_max) de los puntos
     # que ya se fusionaron por violar la monotonía.
-    bloques = [[y, 1, x, x] for x, y in pares]
+    bloques = [[y * w, w, x, x] for (x, y), w in zip(pares, pesos)]
     i = 0
     while i < len(bloques) - 1:
         if bloques[i][0] / bloques[i][1] > bloques[i + 1][0] / bloques[i + 1][1]:
@@ -933,8 +938,40 @@ def _isotonic_fit(pares: list) -> list:
     return salida
 
 
+# Mercados que salen solo del motor de goles: cuando cambia el motor
+# (VERSION_MODELO), sus apuestas viejas ya no dicen nada del motor nuevo.
+# Tarjetas y Córners no dependen del motor de goles y conservan todo su
+# historial.
+MERCADOS_MOTOR_GOLES = frozenset({"Resultado (1X2)", "Doble Oportunidad", "Empate Sin Apuesta",
+                                  "Hándicap Asiático", "Total Goles", "Ambos Marcan"})
+
+
+def _jornada_int(fila):
+    try:
+        return int(fila.get("jornada"))
+    except (TypeError, ValueError):
+        return None
+
+
+def evidencia_de_arranque(historial: list, evidencia_backtest: list, confianza_minima: float = None) -> list:
+    """
+    Filas del backtest a ciegas (liga_mx_walkforward.evidencia_backtest())
+    que se suman al historial real del motor actual. Solo entran las de
+    jornadas ANTERIORES a la primera con apuestas reales del motor actual:
+    de ahí en adelante manda lo real y no se cuenta dos veces el mismo
+    partido. confianza_minima filtra a lo que sí se habría recomendado.
+    """
+    if not evidencia_backtest:
+        return []
+    jornadas_reales = [j for j in (_jornada_int(a) for a in de_version_actual(historial)) if j is not None]
+    corte = min(jornadas_reales) if jornadas_reales else float("inf")
+    return [e for e in evidencia_backtest
+            if (_jornada_int(e) or 0) < corte
+            and (confianza_minima is None or float(e.get("confianza_cruda", 0)) >= confianza_minima)]
+
+
 def calibrar_confianza_por_mercado(historial: list, minimo_evaluadas: int = 15,
-                                    ancho_bin: int = 10) -> dict:
+                                    ancho_bin: int = 10, evidencia_backtest: list = None) -> dict:
     """
     RECALIBRACIÓN REAL (no un parche de umbral): para cada mercado con
     evidencia suficiente, ajusta una curva isotónica que convierte
@@ -978,8 +1015,11 @@ def calibrar_confianza_por_mercado(historial: list, minimo_evaluadas: int = 15,
     # Solo filas del motor actual y con confianza CRUDA guardada: la
     # curva traduce "cruda -> real", así que ajustarla sobre números ya
     # calibrados (como se hacía hasta nov/2026) la deformaba cada ciclo.
+    # evidencia_backtest (opcional): apuestas a ciegas del motor actual
+    # (ver evidencia_de_arranque()) para no esperar 15 apuestas reales
+    # por mercado después de cambiar de motor.
     por_mercado = {}
-    for a in de_version_actual(historial):
+    for a in de_version_actual(historial) + evidencia_de_arranque(historial, evidencia_backtest):
         if a.get("acierto") is None:
             continue  # solo evidencia YA evaluada, igual que calcular_stats_por_mercado()
         merc = a.get("mercado", "Desconocido")
@@ -1012,11 +1052,12 @@ def calibrar_confianza_por_mercado(historial: list, minimo_evaluadas: int = 15,
         if len(bins) < 2:
             continue  # con un solo bin no hay nada que "ordenar" isotónicamente
 
-        puntos = []
+        puntos, pesos = [], []
         for (piso, techo), (suma_conf, suma_acierto, n) in sorted(bins.items()):
             puntos.append((suma_conf / n, suma_acierto / n))  # (x=confianza prom, y=accuracy real)
+            pesos.append(n)
 
-        calibrados = _isotonic_fit(puntos)
+        calibrados = _isotonic_fit(puntos, pesos)
         resultado[merc] = {
             "bins": [(round(x, 1), round(y, 1)) for x, y in calibrados],
             "n_evaluadas": len(obs),
@@ -1068,7 +1109,8 @@ def aplicar_calibracion(mercado: str, confianza_cruda: float, tablas_calibracion
 
 
 def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 8,
-                                   piso_accuracy: float = 65.0, brecha_maxima: float = 15.0) -> set:
+                                   piso_accuracy: float = 65.0, brecha_maxima: float = 15.0,
+                                   evidencia_backtest: list = None) -> set:
     """
     RETROALIMENTACIÓN AUTOMÁTICA: decide qué mercados debe DEJAR de
     sugerir el modelo por el momento, usando el mismo panel de
@@ -1097,8 +1139,23 @@ def calcular_mercados_suspendidos(historial: list, minimo_evaluadas: int = 8,
     queda un mercado "marcado" de forma permanente. En cuanto entren más
     resultados y el acierto real se recupere por encima del piso, el
     mercado se vuelve a sugerir automáticamente solo, sin tocar código.
+
+    MOTOR DE GOLES: los mercados de MERCADOS_MOTOR_GOLES se juzgan solo
+    con apuestas del motor actual (VERSION_MODELO) — antes se suspendían
+    1X2/Doble Oportunidad/DNB por los fallos del motor heredado, que ya
+    no se usa. Mientras el motor actual junta apuestas reales, se suma
+    como evidencia su backtest a ciegas (evidencia_backtest, opcional;
+    solo las selecciones que habrían pasado el umbral mínimo de 80%).
+    Tarjetas y Córners no dependen del motor y usan todo su historial.
     """
-    stats = calcular_stats_por_mercado(historial, minimo_evaluadas=minimo_evaluadas)
+    try:
+        from liga_mx_algoritmo import UMBRAL_MIN_RECOMENDACION  # diferido: import circular
+    except Exception:
+        UMBRAL_MIN_RECOMENDACION = 80.0
+    juzgables = [a for a in historial if a.get("mercado") not in MERCADOS_MOTOR_GOLES]
+    juzgables += [a for a in de_version_actual(historial) if a.get("mercado") in MERCADOS_MOTOR_GOLES]
+    juzgables += evidencia_de_arranque(historial, evidencia_backtest, confianza_minima=UMBRAL_MIN_RECOMENDACION)
+    stats = calcular_stats_por_mercado(juzgables, minimo_evaluadas=minimo_evaluadas)
     suspendidos = set()
     for fm in stats:
         if fm["accuracy_real"] < piso_accuracy or fm["brecha"] > brecha_maxima:
