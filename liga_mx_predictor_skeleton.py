@@ -768,7 +768,7 @@ DATOS_REALES_LIGAMX = {
     # Sofascore no mostró la fila de tarjetas en el resumen que me diste
     # (sí la mostró para los otros 2 partidos) — no metí "am"/"ro" para
     # no inventar el dato; complétalo si lo consigues.
-    "Puebla_Guadalajara":         {"co": 8},
+    "Puebla_Guadalajara":         {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas/rojas NO mostradas en Sofascore (0 sin confirmar) | 1 PUE + 7 GDL
 
     "Queretaro_Tigres":           {"am": 9,  "co": 17, "ro": 0, "am_l": 6, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 6 QRO + 3 TIG | 6 QRO + 11 TIG
     "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3, "am_l": 5, "am_v": 2, "ro_l": 2, "ro_v": 1},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
@@ -785,15 +785,15 @@ DATOS_REALES_LIGAMX = {
     # Purata por "professional foul last man" viene junto con la
     # amarilla que la originó), así que el total puede ser 1 más que el
     # resumen "Yellow cards X/Y" que muestra el box score de Sofascore.
-    "Atlante_Toluca":             {"am": 2, "co": 15, "ro": 0, "ro_l": 0, "ro_v": 0},
+    "Atlante_Toluca":             {"am": 2, "co": 15, "ro": 0, "am_l": 2, "am_v": 0, "ro_l": 0, "ro_v": 0},  # Sofascore: 2 ATL + 0 TOL | 8 ATL + 7 TOL
     "Monterrey_FC Juarez":        {"am": 0, "co": 10, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},
-    "Atlas_Tigres":               {"am": 4, "co": 18, "ro": 1},
-    "Pumas UNAM_Queretaro":       {"am": 4, "co": 7,  "ro": 0, "ro_l": 0, "ro_v": 0},
-    "America_Atletico San Luis":  {"am": 3, "co": 15, "ro": 0, "ro_l": 0, "ro_v": 0},
-    "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 0, "ro_l": 0, "ro_v": 0},
-    "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0, "ro_l": 0, "ro_v": 0},
+    "Atlas_Tigres":               {"am": 3, "co": 18, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 1, "ro_v": 0},  # Sofascore: 2 ATL + 1 TIG | 2 ATL + 16 TIG | 1 ATL + 0 TIG roja (BSD daba 4 am, contando la amarilla previa a la roja)
+    "Pumas UNAM_Queretaro":       {"am": 4, "co": 7,  "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # Sofascore: 1 PUM + 3 QRO | 6 PUM + 1 QRO
+    "America_Atletico San Luis":  {"am": 4, "co": 15, "ro": 1, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 1},  # Sofascore: 2 AME + 2 ASL | 10 AME + 5 ASL | 0 AME + 1 ASL roja (BSD daba 3 am y 0 rojas)
+    "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 1, "am_l": 1, "am_v": 0, "ro_l": 1, "ro_v": 0},  # Sofascore: 1 SAN + 0 GDL | 5 SAN + 7 GDL | 1 SAN + 0 GDL roja (BSD daba 0 rojas)
+    "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 0},  # Sofascore: 2 TIJ + 4 CAZ | 5 TIJ + 6 CAZ
     "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 1 NEC + 0 LEO roja (Echeverría, doble amarilla)
-    "Pachuca_Puebla":             {"co": 8},  # amarillas no confirmadas: Sofascore no mostró esa fila en el resumen (córners sí: 5 PAC + 3 PUE)
+    "Pachuca_Puebla":             {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas/rojas NO mostradas en Sofascore (0 sin confirmar; raro con 2 penales) | 5 PAC + 3 PUE
 
     # Jornada 5 — resultados y estadísticas confirmados (fuente: Sofascore)
     "Pumas UNAM_Necaxa":          {"am": 4,  "co": 12, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 PUM + 2 NEC | 8 PUM + 4 NEC
