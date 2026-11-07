@@ -698,6 +698,10 @@ BAJAS = {}
 # igual patrón que DATOS_REALES en tu Mundial-predictor. Se llena a mano
 # conforme me pasas los datos de cada jornada jugada. Formato:
 #   "Local_Visitante": {"am": total_amarillas, "co": total_corners, "ro": total_rojas}
+#   más el desglose por equipo (opcional): "am_l"/"am_v" = amarillas del
+#   local/visitante y "ro_l"/"ro_v" = rojas del local/visitante. Con eso
+#   liga_mx_algoritmo calcula solo el promedio de tarjetas POR EQUIPO del
+#   Apertura (antes era una tabla fija copiada de ligamx.net a la J8).
 # Con esto, evaluar_acierto() en liga_mx_supabase.py puede calificar
 # apuestas de Tarjetas y Córners (ahora mismo quedan "pendientes" sin
 # este dato). También sirve a futuro para recalibrar CORNERS_EQUIPO y
@@ -736,42 +740,42 @@ TARJETAS_EQUIPO_LIGAMX = {
 
 DATOS_REALES_LIGAMX = {
     # Jornada 1 — 16-18 julio 2026
-    "Necaxa_Atlante":             {"am": 0,  "co": 16},   # 0 NEC + 0 ATL | 11 NEC + 5 ATL
-    "Tijuana_Tigres":             {"am": 6,  "co": 5},    # 2 TIJ + 4 TIG | 1 TIJ + 4 TIG
-    "Atletico San Luis_Cruz Azul":{"am": 3,  "co": 8},    # 2 ASL + 1 CAZ | 4 ASL + 4 CAZ
-    "Leon_Atlas":                 {"am": 4,  "co": 8},    # 2 LEO + 2 ATA | 6 LEO + 2 ATA
-    "FC Juarez_Puebla":           {"am": 2,  "co": 12},   # 1 JUA + 1 PUE | 5 JUA + 7 PUE
-    "Pumas UNAM_Pachuca":         {"am": 1,  "co": 13},   # 1 PUM + 0 PAC | 9 PUM + 4 PAC
-    "Monterrey_Santos Laguna":    {"am": 0,  "co": 10},   # 0 MTY + 0 SAN | 5 MTY + 5 SAN
-    "Guadalajara_Toluca":         {"am": 4,  "co": 11},   # 2 GDL + 2 TOL | 9 GDL + 2 TOL
-    "Queretaro_America":          {"am": 10, "co": 14},   # 6 QRO + 4 AME | 2 QRO + 12 AME
+    "Necaxa_Atlante":             {"am": 0,  "co": 16, "am_l": 0, "am_v": 0},   # 0 NEC + 0 ATL | 11 NEC + 5 ATL
+    "Tijuana_Tigres":             {"am": 6,  "co": 5, "am_l": 2, "am_v": 4},    # 2 TIJ + 4 TIG | 1 TIJ + 4 TIG
+    "Atletico San Luis_Cruz Azul":{"am": 3,  "co": 8, "am_l": 2, "am_v": 1},    # 2 ASL + 1 CAZ | 4 ASL + 4 CAZ
+    "Leon_Atlas":                 {"am": 4,  "co": 8, "am_l": 2, "am_v": 2},    # 2 LEO + 2 ATA | 6 LEO + 2 ATA
+    "FC Juarez_Puebla":           {"am": 2,  "co": 12, "am_l": 1, "am_v": 1},   # 1 JUA + 1 PUE | 5 JUA + 7 PUE
+    "Pumas UNAM_Pachuca":         {"am": 1,  "co": 13, "am_l": 1, "am_v": 0},   # 1 PUM + 0 PAC | 9 PUM + 4 PAC
+    "Monterrey_Santos Laguna":    {"am": 0,  "co": 10, "am_l": 0, "am_v": 0},   # 0 MTY + 0 SAN | 5 MTY + 5 SAN
+    "Guadalajara_Toluca":         {"am": 4,  "co": 11, "am_l": 2, "am_v": 2},   # 2 GDL + 2 TOL | 9 GDL + 2 TOL
+    "Queretaro_America":          {"am": 10, "co": 14, "am_l": 6, "am_v": 4},   # 6 QRO + 4 AME | 2 QRO + 12 AME
 
     # Jornada 2 — resultados y estadísticas confirmados
-    "Cruz Azul_Puebla":           {"am": 5,  "co": 10, "ro": 0},  # 2 CAZ + 3 PUE | 7 CAZ + 3 PUE
-    "Toluca_Pumas UNAM":          {"am": 2,  "co": 10, "ro": 0},  # 1 TOL + 1 PUM | 9 TOL + 1 PUM
-    "Atlante_America":            {"am": 4,  "co": 11, "ro": 0},  # 1 ATL + 3 AME | 2 ATL + 9 AME
-    "Tijuana_Leon":                {"am": 2,  "co": 13, "ro": 0},  # 0 TIJ + 2 LEO | 3 TIJ + 10 LEO
-    "Guadalajara_FC Juarez":      {"am": 3,  "co": 12, "ro": 0},  # 1 GDL + 2 JUA | 10 GDL + 2 JUA
-    "Santos Laguna_Atlas":        {"am": 3,  "co": 9,  "ro": 0},  # 2 SAN + 1 ATA | 4 SAN + 5 ATA
-    "Tigres_Atletico San Luis":   {"am": 3,  "co": 12, "ro": 0},  # 2 TIG + 1 ASL | 9 TIG + 3 ASL
-    "Necaxa_Monterrey":           {"am": 4,  "co": 5,  "ro": 1},  # 2 NEC + 2 MTY | 4 NEC + 1 MTY | 0 NEC + 1 MTY roja
-    "Pachuca_Queretaro":          {"am": 5,  "co": 7,  "ro": 0},  # 2 PAC + 3 QRO | 1 PAC + 6 QRO
+    "Cruz Azul_Puebla":           {"am": 5,  "co": 10, "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 CAZ + 3 PUE | 7 CAZ + 3 PUE
+    "Toluca_Pumas UNAM":          {"am": 2,  "co": 10, "ro": 0, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 1 TOL + 1 PUM | 9 TOL + 1 PUM
+    "Atlante_America":            {"am": 4,  "co": 11, "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 1 ATL + 3 AME | 2 ATL + 9 AME
+    "Tijuana_Leon":                {"am": 2,  "co": 13, "ro": 0, "am_l": 0, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 0 TIJ + 2 LEO | 3 TIJ + 10 LEO
+    "Guadalajara_FC Juarez":      {"am": 3,  "co": 12, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 GDL + 2 JUA | 10 GDL + 2 JUA
+    "Santos Laguna_Atlas":        {"am": 3,  "co": 9,  "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 SAN + 1 ATA | 4 SAN + 5 ATA
+    "Tigres_Atletico San Luis":   {"am": 3,  "co": 12, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 TIG + 1 ASL | 9 TIG + 3 ASL
+    "Necaxa_Monterrey":           {"am": 4,  "co": 5,  "ro": 1, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 2 NEC + 2 MTY | 4 NEC + 1 MTY | 0 NEC + 1 MTY roja
+    "Pachuca_Queretaro":          {"am": 5,  "co": 7,  "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 PAC + 3 QRO | 1 PAC + 6 QRO
 
     # Jornada 3 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "Atletico San Luis_Tijuana":  {"am": 3,  "co": 6,  "ro": 0},  # 1 ASL + 2 TIJ | 5 ASL + 1 TIJ
-    "FC Juarez_Pumas UNAM":       {"am": 3,  "co": 2,  "ro": 0},  # 2 JUA + 1 PUM | 2 JUA + 0 PUM
+    "Atletico San Luis_Tijuana":  {"am": 3,  "co": 6,  "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 ASL + 2 TIJ | 5 ASL + 1 TIJ
+    "FC Juarez_Pumas UNAM":       {"am": 3,  "co": 2,  "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 JUA + 1 PUM | 2 JUA + 0 PUM
     # Puebla_Guadalajara: córners confirmados (1 PUE + 7 GDL = 8), pero
     # Sofascore no mostró la fila de tarjetas en el resumen que me diste
     # (sí la mostró para los otros 2 partidos) — no metí "am"/"ro" para
     # no inventar el dato; complétalo si lo consigues.
     "Puebla_Guadalajara":         {"co": 8},
 
-    "Queretaro_Tigres":           {"am": 9,  "co": 17, "ro": 0},  # 6 QRO + 3 TIG | 6 QRO + 11 TIG
-    "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
-    "Leon_Pachuca":               {"am": 11, "co": 10, "ro": 1},  # 4 LEO + 7 PAC | 4 LEO + 6 PAC | 0 LEO + 1 PAC roja
-    "America_Santos Laguna":      {"am": 1,  "co": 15, "ro": 0},  # 0 AME + 1 SAN | 4 AME + 11 SAN
-    "Cruz Azul_Atlante":          {"am": 3,  "co": 12, "ro": 0},  # 2 CAZ + 1 ATL | 7 CAZ + 5 ATL
-    "Toluca_Necaxa":              {"am": 5,  "co": 8,  "ro": 2},  # 1 TOL + 4 NEC | 6 TOL + 2 NEC | 0 TOL + 2 NEC rojas
+    "Queretaro_Tigres":           {"am": 9,  "co": 17, "ro": 0, "am_l": 6, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 6 QRO + 3 TIG | 6 QRO + 11 TIG
+    "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3, "am_l": 5, "am_v": 2, "ro_l": 2, "ro_v": 1},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
+    "Leon_Pachuca":               {"am": 11, "co": 10, "ro": 1, "am_l": 4, "am_v": 7, "ro_l": 0, "ro_v": 1},  # 4 LEO + 7 PAC | 4 LEO + 6 PAC | 0 LEO + 1 PAC roja
+    "America_Santos Laguna":      {"am": 1,  "co": 15, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 AME + 1 SAN | 4 AME + 11 SAN
+    "Cruz Azul_Atlante":          {"am": 3,  "co": 12, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 CAZ + 1 ATL | 7 CAZ + 5 ATL
+    "Toluca_Necaxa":              {"am": 5,  "co": 8,  "ro": 2, "am_l": 1, "am_v": 4, "ro_l": 0, "ro_v": 2},  # 1 TOL + 4 NEC | 6 TOL + 2 NEC | 0 TOL + 2 NEC rojas
 
     # Jornada 4 — resultados y estadísticas confirmados (fuente: BSD /
     # Bzzoiro Sports Data, verificado en vivo agosto 2026). Los valores
@@ -781,131 +785,131 @@ DATOS_REALES_LIGAMX = {
     # Purata por "professional foul last man" viene junto con la
     # amarilla que la originó), así que el total puede ser 1 más que el
     # resumen "Yellow cards X/Y" que muestra el box score de Sofascore.
-    "Atlante_Toluca":             {"am": 2, "co": 15, "ro": 0},
-    "Monterrey_FC Juarez":        {"am": 0, "co": 10, "ro": 0},
+    "Atlante_Toluca":             {"am": 2, "co": 15, "ro": 0, "ro_l": 0, "ro_v": 0},
+    "Monterrey_FC Juarez":        {"am": 0, "co": 10, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},
     "Atlas_Tigres":               {"am": 4, "co": 18, "ro": 1},
-    "Pumas UNAM_Queretaro":       {"am": 4, "co": 7,  "ro": 0},
-    "America_Atletico San Luis":  {"am": 3, "co": 15, "ro": 0},
-    "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 0},
-    "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0},
-    "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 1 NEC + 0 LEO roja (Echeverría, doble amarilla)
+    "Pumas UNAM_Queretaro":       {"am": 4, "co": 7,  "ro": 0, "ro_l": 0, "ro_v": 0},
+    "America_Atletico San Luis":  {"am": 3, "co": 15, "ro": 0, "ro_l": 0, "ro_v": 0},
+    "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 0, "ro_l": 0, "ro_v": 0},
+    "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0, "ro_l": 0, "ro_v": 0},
+    "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 1 NEC + 0 LEO roja (Echeverría, doble amarilla)
     "Pachuca_Puebla":             {"co": 8},  # amarillas no confirmadas: Sofascore no mostró esa fila en el resumen (córners sí: 5 PAC + 3 PUE)
 
     # Jornada 5 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "Pumas UNAM_Necaxa":          {"am": 4,  "co": 12, "ro": 0},  # 2 PUM + 2 NEC | 8 PUM + 4 NEC
-    "Leon_Monterrey":             {"am": 4,  "co": 13, "ro": 1},  # 1 LEO + 3 MTY | 3 LEO + 10 MTY | 0 LEO + 1 MTY roja
-    "Tigres_Atlante":             {"am": 2,  "co": 6,  "ro": 1},  # 0 TIG + 2 ATL | 5 TIG + 1 ATL | 1 TIG + 0 ATL roja
-    "FC Juarez_America":          {"am": 6,  "co": 12, "ro": 0},  # 5 JUA + 1 AME | 5 JUA + 7 AME
-    "Queretaro_Toluca":           {"am": 6,  "co": 13, "ro": 1},  # 3 QRO + 3 TOL | 7 QRO + 6 TOL | 0 QRO + 1 TOL roja
-    "Puebla_Santos Laguna":       {"am": 1,  "co": 13, "ro": 0},  # 0 PUE + 1 SAN | 6 PUE + 7 SAN
-    "Guadalajara_Tijuana":        {"am": 4,  "co": 8,  "ro": 0},  # 3 GDL + 1 TIJ | 4 GDL + 4 TIJ
-    "Cruz Azul_Atlas":            {"am": 1,  "co": 13, "ro": 0},  # 0 CAZ + 1 ATA | 9 CAZ + 4 ATA
-    "Atletico San Luis_Pachuca":  {"am": 2,  "co": 5,  "ro": 1},  # 0 ASL + 2 PAC | 1 ASL + 4 PAC | 0 ASL + 1 PAC roja
+    "Pumas UNAM_Necaxa":          {"am": 4,  "co": 12, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 PUM + 2 NEC | 8 PUM + 4 NEC
+    "Leon_Monterrey":             {"am": 4,  "co": 13, "ro": 1, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 1},  # 1 LEO + 3 MTY | 3 LEO + 10 MTY | 0 LEO + 1 MTY roja
+    "Tigres_Atlante":             {"am": 2,  "co": 6,  "ro": 1, "am_l": 0, "am_v": 2, "ro_l": 1, "ro_v": 0},  # 0 TIG + 2 ATL | 5 TIG + 1 ATL | 1 TIG + 0 ATL roja
+    "FC Juarez_America":          {"am": 6,  "co": 12, "ro": 0, "am_l": 5, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 5 JUA + 1 AME | 5 JUA + 7 AME
+    "Queretaro_Toluca":           {"am": 6,  "co": 13, "ro": 1, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 1},  # 3 QRO + 3 TOL | 7 QRO + 6 TOL | 0 QRO + 1 TOL roja
+    "Puebla_Santos Laguna":       {"am": 1,  "co": 13, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 PUE + 1 SAN | 6 PUE + 7 SAN
+    "Guadalajara_Tijuana":        {"am": 4,  "co": 8,  "ro": 0, "am_l": 3, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 3 GDL + 1 TIJ | 4 GDL + 4 TIJ
+    "Cruz Azul_Atlas":            {"am": 1,  "co": 13, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 CAZ + 1 ATA | 9 CAZ + 4 ATA
+    "Atletico San Luis_Pachuca":  {"am": 2,  "co": 5,  "ro": 1, "am_l": 0, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 0 ASL + 2 PAC | 1 ASL + 4 PAC | 0 ASL + 1 PAC roja
 
     # Jornada 6 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "Atlante_Leon":               {"am": 3,  "co": 6,  "ro": 0},  # 2 ATL + 1 LEO | 3 ATL + 3 LEO
-    "Necaxa_Cruz Azul":           {"am": 7,  "co": 14, "ro": 0},  # 5 NEC + 2 CAZ | 7 NEC + 7 CAZ
-    "Tijuana_Pumas UNAM":         {"am": 2,  "co": 9,  "ro": 1},  # 1 TIJ + 1 PUM | 3 TIJ + 6 PUM | 0 TIJ + 1 PUM roja
-    "Atlas_Queretaro":            {"am": 2,  "co": 8,  "ro": 1},  # 0 ATL + 2 QRO | 6 ATL + 2 QRO | 1 ATL + 0 QRO roja
-    "Santos Laguna_Tigres":       {"am": 6,  "co": 15, "ro": 1},  # 4 SAN + 2 TIG | 12 SAN + 3 TIG | 0 SAN + 1 TIG roja
-    "America_Puebla":             {"am": 1,  "co": 11, "ro": 0},  # 0 AME + 1 PUE | 3 AME + 8 PUE
-    "Pachuca_Guadalajara":        {"am": 4,  "co": 15, "ro": 0},  # 4 PAC + 0 GDL | 8 PAC + 7 GDL
-    "Toluca_FC Juarez":           {"am": 2,  "co": 8,  "ro": 0},  # 1 TOL + 1 JUA | 5 TOL + 3 JUA
-    "Monterrey_Atletico San Luis": {"am": 3, "co": 15, "ro": 0},  # 1 MTY + 2 ASL | 14 MTY + 1 ASL
+    "Atlante_Leon":               {"am": 3,  "co": 6,  "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 ATL + 1 LEO | 3 ATL + 3 LEO
+    "Necaxa_Cruz Azul":           {"am": 7,  "co": 14, "ro": 0, "am_l": 5, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 5 NEC + 2 CAZ | 7 NEC + 7 CAZ
+    "Tijuana_Pumas UNAM":         {"am": 2,  "co": 9,  "ro": 1, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 1},  # 1 TIJ + 1 PUM | 3 TIJ + 6 PUM | 0 TIJ + 1 PUM roja
+    "Atlas_Queretaro":            {"am": 2,  "co": 8,  "ro": 1, "am_l": 0, "am_v": 2, "ro_l": 1, "ro_v": 0},  # 0 ATL + 2 QRO | 6 ATL + 2 QRO | 1 ATL + 0 QRO roja
+    "Santos Laguna_Tigres":       {"am": 6,  "co": 15, "ro": 1, "am_l": 4, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 4 SAN + 2 TIG | 12 SAN + 3 TIG | 0 SAN + 1 TIG roja
+    "America_Puebla":             {"am": 1,  "co": 11, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 AME + 1 PUE | 3 AME + 8 PUE
+    "Pachuca_Guadalajara":        {"am": 4,  "co": 15, "ro": 0, "am_l": 4, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 4 PAC + 0 GDL | 8 PAC + 7 GDL
+    "Toluca_FC Juarez":           {"am": 2,  "co": 8,  "ro": 0, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 1 TOL + 1 JUA | 5 TOL + 3 JUA
+    "Monterrey_Atletico San Luis": {"am": 3, "co": 15, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 MTY + 2 ASL | 14 MTY + 1 ASL
 
     # Jornada 7 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "FC Juarez_Pachuca":          {"am": 10, "co": 4,  "ro": 0},  # 6 JUA + 4 PAC | 1 JUA + 3 PAC
-    "Atletico San Luis_Guadalajara": {"am": 1, "co": 5,  "ro": 0},  # 1 ASL + 0 GDL | 3 ASL + 2 GDL
-    "Atlas_Atlante":              {"am": 5,  "co": 4,  "ro": 0},  # 2 ATL + 3 ATE | 3 ATL + 1 ATE
-    "Tigres_Necaxa":               {"am": 5,  "co": 9,  "ro": 0},  # 3 TIG + 2 NEC | 6 TIG + 3 NEC
-    "Cruz Azul_Santos Laguna":     {"am": 1,  "co": 14, "ro": 0},  # 0 CAZ + 1 SAN | 9 CAZ + 5 SAN
-    "America_Tijuana":             {"am": 6,  "co": 11, "ro": 1},  # 2 AME + 4 TIJ | 9 AME + 2 TIJ | roja: 1 TIJ (Alejandro Gomez, 93') — reprogramado, jugado 28/oct
+    "FC Juarez_Pachuca":          {"am": 10, "co": 4,  "ro": 0, "am_l": 6, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 6 JUA + 4 PAC | 1 JUA + 3 PAC
+    "Atletico San Luis_Guadalajara": {"am": 1, "co": 5,  "ro": 0, "am_l": 1, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 1 ASL + 0 GDL | 3 ASL + 2 GDL
+    "Atlas_Atlante":              {"am": 5,  "co": 4,  "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 ATL + 3 ATE | 3 ATL + 1 ATE
+    "Tigres_Necaxa":               {"am": 5,  "co": 9,  "ro": 0, "am_l": 3, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 3 TIG + 2 NEC | 6 TIG + 3 NEC
+    "Cruz Azul_Santos Laguna":     {"am": 1,  "co": 14, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 CAZ + 1 SAN | 9 CAZ + 5 SAN
+    "America_Tijuana":             {"am": 6,  "co": 11, "ro": 1, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 1},  # 2 AME + 4 TIJ | 9 AME + 2 TIJ | roja: 1 TIJ (Alejandro Gomez, 93') — reprogramado, jugado 28/oct
 
     # Jornada 8 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "Necaxa_Puebla":               {"am": 4,  "co": 13, "ro": 1},  # 1 NEC + 3 PUE | 8 NEC + 5 PUE | 1 NEC + 0 PUE roja
-    "Tijuana_Queretaro":           {"am": 5,  "co": 17, "ro": 0},  # 0 TIJ + 5 QRO | 13 TIJ + 4 QRO
-    "Atlante_Pachuca":             {"am": 6,  "co": 10, "ro": 0},  # 2 ATL + 4 PAC | 5 ATL + 5 PAC
-    "Toluca_Atlas":                {"am": 4,  "co": 13, "ro": 0},  # 1 TOL + 3 ATL | 6 TOL + 7 ATL
-    "Monterrey_Tigres":            {"am": 6,  "co": 6,  "ro": 1},  # 3 MTY + 3 TIG | 6 MTY + 0 TIG | 0 MTY + 1 TIG roja
-    "Cruz Azul_America":           {"am": 7,  "co": 15, "ro": 0},  # 5 CAZ + 2 AME | 6 CAZ + 9 AME
-    "Santos Laguna_FC Juarez":     {"am": 8,  "co": 18, "ro": 0},  # 4 SAN + 4 JUA | 12 SAN + 6 JUA
-    "Guadalajara_Pumas UNAM":      {"am": 3,  "co": 10, "ro": 0},  # 1 GDL + 2 PUM | 6 GDL + 4 PUM
-    "Leon_Atletico San Luis":      {"am": 3,  "co": 8,  "ro": 0},  # 1 LEO + 2 ASL | 6 LEO + 2 ASL
-    "Puebla_Toluca":               {"am": 1,  "co": 11, "ro": 0},  # 0 PUE + 1 TOL | 6 PUE + 5 TOL
-    "Pumas UNAM_Leon":             {"am": 3,  "co": 10, "ro": 0},  # 2 PUM + 1 LEO | 8 PUM + 2 LEO
+    "Necaxa_Puebla":               {"am": 4,  "co": 13, "ro": 1, "am_l": 1, "am_v": 3, "ro_l": 1, "ro_v": 0},  # 1 NEC + 3 PUE | 8 NEC + 5 PUE | 1 NEC + 0 PUE roja
+    "Tijuana_Queretaro":           {"am": 5,  "co": 17, "ro": 0, "am_l": 0, "am_v": 5, "ro_l": 0, "ro_v": 0},  # 0 TIJ + 5 QRO | 13 TIJ + 4 QRO
+    "Atlante_Pachuca":             {"am": 6,  "co": 10, "ro": 0, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 2 ATL + 4 PAC | 5 ATL + 5 PAC
+    "Toluca_Atlas":                {"am": 4,  "co": 13, "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 1 TOL + 3 ATL | 6 TOL + 7 ATL
+    "Monterrey_Tigres":            {"am": 6,  "co": 6,  "ro": 1, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 1},  # 3 MTY + 3 TIG | 6 MTY + 0 TIG | 0 MTY + 1 TIG roja
+    "Cruz Azul_America":           {"am": 7,  "co": 15, "ro": 0, "am_l": 5, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 5 CAZ + 2 AME | 6 CAZ + 9 AME
+    "Santos Laguna_FC Juarez":     {"am": 8,  "co": 18, "ro": 0, "am_l": 4, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 4 SAN + 4 JUA | 12 SAN + 6 JUA
+    "Guadalajara_Pumas UNAM":      {"am": 3,  "co": 10, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 GDL + 2 PUM | 6 GDL + 4 PUM
+    "Leon_Atletico San Luis":      {"am": 3,  "co": 8,  "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 LEO + 2 ASL | 6 LEO + 2 ASL
+    "Puebla_Toluca":               {"am": 1,  "co": 11, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 PUE + 1 TOL | 6 PUE + 5 TOL
+    "Pumas UNAM_Leon":             {"am": 3,  "co": 10, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 PUM + 1 LEO | 8 PUM + 2 LEO
 
     # Jornada 9 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "Puebla_Atlante":              {"am": 1,  "co": 17, "ro": 0},  # 1 PUE + 0 ATL | 6 PUE + 11 ATL
-    "Atletico San Luis_Necaxa":    {"am": 2,  "co": 7,  "ro": 0},  # 1 ASL + 1 NEC | 2 ASL + 5 NEC
-    "Atlas_Pumas UNAM":            {"am": 0,  "co": 14, "ro": 1},  # 0 ATL + 0 PUM | 8 ATL + 6 PUM | 0 ATL + 1 PUM roja
-    "Monterrey_Cruz Azul":         {"am": 3,  "co": 10, "ro": 0},  # 1 MTY + 2 CAZ | 6 MTY + 4 CAZ
-    "America_Guadalajara":         {"am": 4,  "co": 10, "ro": 0},  # 1 AME + 3 GDL | 4 AME + 6 GDL
-    "Toluca_Santos Laguna":        {"am": 2,  "co": 13, "ro": 1},  # 1 TOL + 1 SAN | 6 TOL + 7 SAN | 1 TOL + 0 SAN roja
-    "Pachuca_Tijuana":             {"am": 4,  "co": 10, "ro": 0},  # 1 PAC + 3 TIJ | 10 PAC + 0 TIJ
-    "Queretaro_Leon":              {"am": 7,  "co": 9,  "ro": 0},  # 4 QRO + 3 LEO | 8 QRO + 1 LEO
-    "FC Juarez_Tigres":            {"am": 2,  "co": 11, "ro": 0},  # 1 JUA + 1 TIG | 2 JUA + 9 TIG
+    "Puebla_Atlante":              {"am": 1,  "co": 17, "ro": 0, "am_l": 1, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 1 PUE + 0 ATL | 6 PUE + 11 ATL
+    "Atletico San Luis_Necaxa":    {"am": 2,  "co": 7,  "ro": 0, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 1 ASL + 1 NEC | 2 ASL + 5 NEC
+    "Atlas_Pumas UNAM":            {"am": 0,  "co": 14, "ro": 1, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 1},  # 0 ATL + 0 PUM | 8 ATL + 6 PUM | 0 ATL + 1 PUM roja
+    "Monterrey_Cruz Azul":         {"am": 3,  "co": 10, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 MTY + 2 CAZ | 6 MTY + 4 CAZ
+    "America_Guadalajara":         {"am": 4,  "co": 10, "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 1 AME + 3 GDL | 4 AME + 6 GDL
+    "Toluca_Santos Laguna":        {"am": 2,  "co": 13, "ro": 1, "am_l": 1, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 1 TOL + 1 SAN | 6 TOL + 7 SAN | 1 TOL + 0 SAN roja
+    "Pachuca_Tijuana":             {"am": 4,  "co": 10, "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 1 PAC + 3 TIJ | 10 PAC + 0 TIJ
+    "Queretaro_Leon":              {"am": 7,  "co": 9,  "ro": 0, "am_l": 4, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 4 QRO + 3 LEO | 8 QRO + 1 LEO
+    "FC Juarez_Tigres":            {"am": 2,  "co": 11, "ro": 0, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 1 JUA + 1 TIG | 2 JUA + 9 TIG
 
     # Jornada 10 — resultados y estadísticas confirmados (fuente: Sofascore)
-    "Atlante_Monterrey":           {"am": 4,  "co": 8,  "ro": 0},  # 2 ATL + 2 MTY | 2 ATL + 6 MTY
-    "Tijuana_Atlas":               {"am": 4,  "co": 16, "ro": 0},  # 2 TIJ + 2 ATL | 5 TIJ + 11 ATL
-    "Guadalajara_Queretaro":       {"am": 2,  "co": 18, "ro": 1},  # 0 GDL + 2 QRO | 12 GDL + 6 QRO | 1 GDL + 0 QRO roja
-    "Cruz Azul_Toluca":            {"am": 5,  "co": 9,  "ro": 0},  # 4 CAZ + 1 TOL | 4 CAZ + 5 TOL
-    "Santos Laguna_Pachuca":       {"am": 5,  "co": 15, "ro": 0},  # 2 SAN + 3 PAC | 10 SAN + 5 PAC
-    "Tigres_Puebla":               {"am": 1,  "co": 5,  "ro": 0},  # 0 TIG + 1 PUE | 5 TIG + 0 PUE
-    "Pumas UNAM_Atletico San Luis": {"am": 3, "co": 13, "ro": 0}, # 1 PUM + 2 ASL | 11 PUM + 2 ASL
-    "Leon_FC Juarez":              {"am": 4,  "co": 5,  "ro": 0},  # 2 LEO + 2 JUA | 1 LEO + 4 JUA
-    "Necaxa_America":              {"am": 5,  "co": 8,  "ro": 0},  # 3 NEC + 2 AME | 3 NEC + 5 AME
-    "Puebla_Leon":                 {"am": 2,  "co": 12, "ro": 1},  # 1 PUE + 1 LEO | 6 PUE + 6 LEO | roja LEO
-    "Tigres_Toluca":               {"am": 5,  "co": 11, "ro": 0},  # 1 TIG + 4 TOL | 5 TIG + 6 TOL
-    "Queretaro_Atlante":           {"am": 4,  "co": 14, "ro": 0},  # 1 QRO + 3 ATL | 6 QRO + 8 ATL
-    "FC Juarez_Tijuana":           {"am": 9,  "co": 15, "ro": 1},  # 5 JUA + 4 TIJ | 9 JUA + 6 TIJ | roja JUA
-    "Atlas_Guadalajara":           {"am": 8,  "co": 14, "ro": 1},  # 3 ATS + 5 GDL | 7 ATS + 7 GDL | roja GDL
-    "America_Monterrey":           {"am": 2,  "co": 11, "ro": 1},  # 1 AME + 1 MTY | 6 AME + 5 MTY | roja AME
-    "Pachuca_Necaxa":              {"am": 8,  "co": 8,  "ro": 0},  # 4 PAC + 4 NEC | 5 PAC + 3 NEC
-    "Atletico San Luis_Santos Laguna": {"am": 1,  "co": 9,  "ro": 0},  # 0 ASL + 1 SAN | 6 ASL + 3 SAN
-    "Pumas UNAM_Cruz Azul":        {"am": 3,  "co": 10, "ro": 1},  # 2 PUM + 1 CAZ | 4 PUM + 6 CAZ | roja PUM
-    "Tijuana_Puebla":              {"am": 4,  "co": 15, "ro": 0},  # 2 TIJ + 2 PUE | 12 TIJ + 3 PUE
-    "Necaxa_Atlas":                {"am": 2,  "co": 16, "ro": 1},  # 1 NEC + 1 ATS | 10 NEC + 6 ATS | roja ATS
-    "Atlante_Pumas UNAM":          {"am": 3,  "co": 10, "ro": 0},  # 2 ATL + 1 PUM | 10 ATL + 0 PUM
-    "Cruz Azul_FC Juarez":         {"am": 5,  "co": 10, "ro": 0},  # 1 CAZ + 4 JUA | 2 CAZ + 8 JUA
-    "Santos Laguna_Queretaro":     {"am": 4,  "co": 4,  "ro": 1},  # 2 SAN + 2 QRO | 3 SAN + 1 QRO | roja QRO
-    "Guadalajara_Tigres":          {"am": 2,  "co": 16, "ro": 1},  # 2 GDL + 0 TIG | 10 GDL + 6 TIG | roja TIG
-    "Toluca_Atletico San Luis":    {"am": 0,  "co": 17, "ro": 0},  # sin tarjetas listadas en Sofascore (por confirmar) | 15 TOL + 2 ASL
-    "Leon_America":                {"am": 8,  "co": 9,  "ro": 0},  # 4 LEO + 4 AME | 7 LEO + 2 AME
-    "Monterrey_Pachuca":           {"am": 6,  "co": 11, "ro": 0},  # 3 MON + 3 PAC | 3 MON + 8 PAC (rojas: no mostradas en Sofascore)
-    "Guadalajara_Necaxa":          {"am": 1,  "co": 14, "ro": 0},  # 0 GDL + 1 NEC | 9 GDL + 5 NEC
-    "FC Juarez_Atlante":           {"am": 6,  "co": 17, "ro": 0},  # 3 JUA + 3 ATL | 8 JUA + 9 ATL
-    "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 5 SLP + 2 QRO
-    "Tigres_Leon":                 {"am": 1,  "co": 20, "ro": 0},  # 0 TIG + 1 LEO | 16 TIG + 4 LEO (amarillas a DT no cuentan)
-    "Pachuca_Cruz Azul":           {"am": 8,  "co": 8,  "ro": 0},  # 5 PAC + 3 CAZ | 0 PAC + 8 CAZ
-    "Puebla_Monterrey":            {"am": 2,  "co": 10, "ro": 0},  # 0 PUE + 2 MON | 2 PUE + 8 MON
-    "Atlas_America":               {"am": 3,  "co": 13, "ro": 0},  # 2 ATS + 1 AME | 9 ATS + 4 AME
-    "Toluca_Tijuana":              {"am": 0,  "co": 22, "ro": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 17 TOL + 5 TIJ
-    "Santos Laguna_Pumas UNAM":    {"am": 5,  "co": 11, "ro": 1},  # 3 SAN + 2 PUM | 8 SAN + 3 PUM | roja: 1 PUM
+    "Atlante_Monterrey":           {"am": 4,  "co": 8,  "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 ATL + 2 MTY | 2 ATL + 6 MTY
+    "Tijuana_Atlas":               {"am": 4,  "co": 16, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 TIJ + 2 ATL | 5 TIJ + 11 ATL
+    "Guadalajara_Queretaro":       {"am": 2,  "co": 18, "ro": 1, "am_l": 0, "am_v": 2, "ro_l": 1, "ro_v": 0},  # 0 GDL + 2 QRO | 12 GDL + 6 QRO | 1 GDL + 0 QRO roja
+    "Cruz Azul_Toluca":            {"am": 5,  "co": 9,  "ro": 0, "am_l": 4, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 4 CAZ + 1 TOL | 4 CAZ + 5 TOL
+    "Santos Laguna_Pachuca":       {"am": 5,  "co": 15, "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 SAN + 3 PAC | 10 SAN + 5 PAC
+    "Tigres_Puebla":               {"am": 1,  "co": 5,  "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 TIG + 1 PUE | 5 TIG + 0 PUE
+    "Pumas UNAM_Atletico San Luis": {"am": 3, "co": 13, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0}, # 1 PUM + 2 ASL | 11 PUM + 2 ASL
+    "Leon_FC Juarez":              {"am": 4,  "co": 5,  "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 LEO + 2 JUA | 1 LEO + 4 JUA
+    "Necaxa_America":              {"am": 5,  "co": 8,  "ro": 0, "am_l": 3, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 3 NEC + 2 AME | 3 NEC + 5 AME
+    "Puebla_Leon":                 {"am": 2,  "co": 12, "ro": 1, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 1},  # 1 PUE + 1 LEO | 6 PUE + 6 LEO | roja LEO
+    "Tigres_Toluca":               {"am": 5,  "co": 11, "ro": 0, "am_l": 1, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 1 TIG + 4 TOL | 5 TIG + 6 TOL
+    "Queretaro_Atlante":           {"am": 4,  "co": 14, "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 1 QRO + 3 ATL | 6 QRO + 8 ATL
+    "FC Juarez_Tijuana":           {"am": 9,  "co": 15, "ro": 1, "am_l": 5, "am_v": 4, "ro_l": 1, "ro_v": 0},  # 5 JUA + 4 TIJ | 9 JUA + 6 TIJ | roja JUA
+    "Atlas_Guadalajara":           {"am": 8,  "co": 14, "ro": 1, "am_l": 3, "am_v": 5, "ro_l": 0, "ro_v": 1},  # 3 ATS + 5 GDL | 7 ATS + 7 GDL | roja GDL
+    "America_Monterrey":           {"am": 2,  "co": 11, "ro": 1, "am_l": 1, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 1 AME + 1 MTY | 6 AME + 5 MTY | roja AME
+    "Pachuca_Necaxa":              {"am": 8,  "co": 8,  "ro": 0, "am_l": 4, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 4 PAC + 4 NEC | 5 PAC + 3 NEC
+    "Atletico San Luis_Santos Laguna": {"am": 1,  "co": 9,  "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 ASL + 1 SAN | 6 ASL + 3 SAN
+    "Pumas UNAM_Cruz Azul":        {"am": 3,  "co": 10, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 2 PUM + 1 CAZ | 4 PUM + 6 CAZ | roja PUM
+    "Tijuana_Puebla":              {"am": 4,  "co": 15, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 TIJ + 2 PUE | 12 TIJ + 3 PUE
+    "Necaxa_Atlas":                {"am": 2,  "co": 16, "ro": 1, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 1},  # 1 NEC + 1 ATS | 10 NEC + 6 ATS | roja ATS
+    "Atlante_Pumas UNAM":          {"am": 3,  "co": 10, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 ATL + 1 PUM | 10 ATL + 0 PUM
+    "Cruz Azul_FC Juarez":         {"am": 5,  "co": 10, "ro": 0, "am_l": 1, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 1 CAZ + 4 JUA | 2 CAZ + 8 JUA
+    "Santos Laguna_Queretaro":     {"am": 4,  "co": 4,  "ro": 1, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 2 SAN + 2 QRO | 3 SAN + 1 QRO | roja QRO
+    "Guadalajara_Tigres":          {"am": 2,  "co": 16, "ro": 1, "am_l": 2, "am_v": 0, "ro_l": 0, "ro_v": 1},  # 2 GDL + 0 TIG | 10 GDL + 6 TIG | roja TIG
+    "Toluca_Atletico San Luis":    {"am": 0,  "co": 17, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # sin tarjetas listadas en Sofascore (por confirmar) | 15 TOL + 2 ASL
+    "Leon_America":                {"am": 8,  "co": 9,  "ro": 0, "am_l": 4, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 4 LEO + 4 AME | 7 LEO + 2 AME
+    "Monterrey_Pachuca":           {"am": 6,  "co": 11, "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 MON + 3 PAC | 3 MON + 8 PAC (rojas: no mostradas en Sofascore)
+    "Guadalajara_Necaxa":          {"am": 1,  "co": 14, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 GDL + 1 NEC | 9 GDL + 5 NEC
+    "FC Juarez_Atlante":           {"am": 6,  "co": 17, "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 JUA + 3 ATL | 8 JUA + 9 ATL
+    "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 5 SLP + 2 QRO
+    "Tigres_Leon":                 {"am": 1,  "co": 20, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 TIG + 1 LEO | 16 TIG + 4 LEO (amarillas a DT no cuentan)
+    "Pachuca_Cruz Azul":           {"am": 8,  "co": 8,  "ro": 0, "am_l": 5, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 5 PAC + 3 CAZ | 0 PAC + 8 CAZ
+    "Puebla_Monterrey":            {"am": 2,  "co": 10, "ro": 0, "am_l": 0, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 0 PUE + 2 MON | 2 PUE + 8 MON
+    "Atlas_America":               {"am": 3,  "co": 13, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 ATS + 1 AME | 9 ATS + 4 AME
+    "Toluca_Tijuana":              {"am": 0,  "co": 22, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 17 TOL + 5 TIJ
+    "Santos Laguna_Pumas UNAM":    {"am": 5,  "co": 11, "ro": 1, "am_l": 3, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 3 SAN + 2 PUM | 8 SAN + 3 PUM | roja: 1 PUM
     # Jornada 14 — 23-25 octubre 2026
-    "Necaxa_FC Juarez":            {"am": 4,  "co": 12, "ro": 0},  # 2 NEC + 2 JUA | 7 NEC + 5 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Atlante_Atletico San Luis":   {"am": 4,  "co": 9,  "ro": 0},  # 3 ATL + 1 SLP | 7 ATL + 2 SLP | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Leon_Toluca":                 {"am": 6,  "co": 9,  "ro": 0},  # 3 LEO + 3 TOL | 3 LEO + 6 TOL | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Monterrey_Guadalajara":       {"am": 2,  "co": 11, "ro": 1},  # 2 MON + 0 GUA | 8 MON + 3 GUA | roja: 1 MON (Pineda, 90')
-    "Pumas UNAM_Tigres":           {"am": 6,  "co": 8,  "ro": 0},  # 3 PUM + 3 TIG | 6 PUM + 2 TIG | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Tijuana_Santos Laguna":       {"am": 6,  "co": 7,  "ro": 0},  # 2 TIJ + 4 SAN | 3 TIJ + 4 SAN | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Atlas_Puebla":                {"am": 3,  "co": 10, "ro": 1},  # 0 ATS + 3 PUE | 7 ATS + 3 PUE | roja: 1 PUE
-    "America_Pachuca":             {"am": 4,  "co": 11, "ro": 0},  # 2 AME + 2 PAC | 6 AME + 5 PAC | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Queretaro_Cruz Azul":         {"am": 2,  "co": 14, "ro": 0},  # 1 QRO + 1 CAZ | 8 QRO + 6 CAZ | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Necaxa_FC Juarez":            {"am": 4,  "co": 12, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 NEC + 2 JUA | 7 NEC + 5 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atlante_Atletico San Luis":   {"am": 4,  "co": 9,  "ro": 0, "am_l": 3, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 3 ATL + 1 SLP | 7 ATL + 2 SLP | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Leon_Toluca":                 {"am": 6,  "co": 9,  "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 LEO + 3 TOL | 3 LEO + 6 TOL | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Monterrey_Guadalajara":       {"am": 2,  "co": 11, "ro": 1, "am_l": 2, "am_v": 0, "ro_l": 1, "ro_v": 0},  # 2 MON + 0 GUA | 8 MON + 3 GUA | roja: 1 MON (Pineda, 90')
+    "Pumas UNAM_Tigres":           {"am": 6,  "co": 8,  "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 PUM + 3 TIG | 6 PUM + 2 TIG | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Tijuana_Santos Laguna":       {"am": 6,  "co": 7,  "ro": 0, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 2 TIJ + 4 SAN | 3 TIJ + 4 SAN | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atlas_Puebla":                {"am": 3,  "co": 10, "ro": 1, "am_l": 0, "am_v": 3, "ro_l": 0, "ro_v": 1},  # 0 ATS + 3 PUE | 7 ATS + 3 PUE | roja: 1 PUE
+    "America_Pachuca":             {"am": 4,  "co": 11, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 AME + 2 PAC | 6 AME + 5 PAC | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Queretaro_Cruz Azul":         {"am": 2,  "co": 14, "ro": 0, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 1 QRO + 1 CAZ | 8 QRO + 6 CAZ | rojas no mostradas en Sofascore (0 sin confirmar)
     # Jornada 15 — 30 octubre 2026
-    "FC Juarez_Queretaro":         {"am": 3,  "co": 12, "ro": 0},  # 1 JUA + 2 QRO | 2 JUA + 10 QRO | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Atletico San Luis_Atlas":     {"am": 5,  "co": 11, "ro": 0},  # 1 SLP + 4 ATS | 7 SLP + 4 ATS | rojas no mostradas en Sofascore (0 sin confirmar)
+    "FC Juarez_Queretaro":         {"am": 3,  "co": 12, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 JUA + 2 QRO | 2 JUA + 10 QRO | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atletico San Luis_Atlas":     {"am": 5,  "co": 11, "ro": 0, "am_l": 1, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 1 SLP + 4 ATS | 7 SLP + 4 ATS | rojas no mostradas en Sofascore (0 sin confirmar)
     # Jornada 15 — 31 octubre-1 noviembre 2026
-    "Pachuca_Tigres":              {"am": 3,  "co": 8,  "ro": 1},  # 2 PAC + 1 TIG | 4 PAC + 4 TIG | roja: 1 TIG
-    "Monterrey_Tijuana":           {"am": 5,  "co": 11, "ro": 0},  # 3 MON + 2 TIJ | 9 MON + 2 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Guadalajara_Atlante":         {"am": 1,  "co": 10, "ro": 0},  # 0 GUA + 1 ATL | 6 GUA + 4 ATL | rojas no mostradas en Sofascore (0 sin confirmar)
-    "America_Toluca":              {"am": 6,  "co": 11, "ro": 2},  # 3 AME + 3 TOL | 6 AME + 5 TOL | rojas: 1 AME + 1 TOL
-    "Santos Laguna_Necaxa":        {"am": 4,  "co": 18, "ro": 0},  # 1 SAN + 3 NEC | 12 SAN + 6 NEC | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Cruz Azul_Leon":              {"am": 9,  "co": 10, "ro": 0},  # 4 CAZ + 5 LEO | 4 CAZ + 6 LEO | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Puebla_Pumas UNAM":           {"am": 2,  "co": 10, "ro": 0},  # 0 PUE + 2 PUM | 7 PUE + 3 PUM | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Necaxa_Tijuana":              {"am": 3,  "co": 11, "ro": 0},  # 1 NEC + 2 TIJ | 5 NEC + 6 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Atletico San Luis_FC Juarez": {"am": 5,  "co": 11, "ro": 0},  # 2 ASL + 3 JUA | 8 ASL + 3 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
-    "Atlante_Santos Laguna":       {"am": 2,  "co": 9,  "ro": 2},  # 0 ATL + 2 SAN | 3 ATL + 6 SAN | rojas: Sofascore marca 2 ATL + 0 SAN; Maya Comunicacion reporta 1 y 1 (Portales ATL, Quiros SAN). Total 2 en ambas
+    "Pachuca_Tigres":              {"am": 3,  "co": 8,  "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 1},  # 2 PAC + 1 TIG | 4 PAC + 4 TIG | roja: 1 TIG
+    "Monterrey_Tijuana":           {"am": 5,  "co": 11, "ro": 0, "am_l": 3, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 3 MON + 2 TIJ | 9 MON + 2 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Guadalajara_Atlante":         {"am": 1,  "co": 10, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 GUA + 1 ATL | 6 GUA + 4 ATL | rojas no mostradas en Sofascore (0 sin confirmar)
+    "America_Toluca":              {"am": 6,  "co": 11, "ro": 2, "am_l": 3, "am_v": 3, "ro_l": 1, "ro_v": 1},  # 3 AME + 3 TOL | 6 AME + 5 TOL | rojas: 1 AME + 1 TOL
+    "Santos Laguna_Necaxa":        {"am": 4,  "co": 18, "ro": 0, "am_l": 1, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 1 SAN + 3 NEC | 12 SAN + 6 NEC | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Cruz Azul_Leon":              {"am": 9,  "co": 10, "ro": 0, "am_l": 4, "am_v": 5, "ro_l": 0, "ro_v": 0},  # 4 CAZ + 5 LEO | 4 CAZ + 6 LEO | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Puebla_Pumas UNAM":           {"am": 2,  "co": 10, "ro": 0, "am_l": 0, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 0 PUE + 2 PUM | 7 PUE + 3 PUM | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Necaxa_Tijuana":              {"am": 3,  "co": 11, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 NEC + 2 TIJ | 5 NEC + 6 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atletico San Luis_FC Juarez": {"am": 5,  "co": 11, "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 ASL + 3 JUA | 8 ASL + 3 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atlante_Santos Laguna":       {"am": 2,  "co": 9,  "ro": 2, "am_l": 0, "am_v": 2, "ro_l": 2, "ro_v": 0},  # 0 ATL + 2 SAN | 3 ATL + 6 SAN | rojas: Sofascore marca 2 ATL + 0 SAN; Maya Comunicacion reporta 1 y 1 (Portales ATL, Quiros SAN). Total 2 en ambas
 }
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ Cuando el usuario pegue una página de Sofascore (o texto con resultado de un pa
 1. Extraer: equipos, marcador, tarjetas amarillas por equipo, córners por equipo, rojas, árbitro central si aparece.
 2. En `liga_mx_predictor_skeleton.py`:
    - Actualizar la tupla en `PARTIDOS`: cambiar el `None` de resultado por `(goles_local, goles_visita)`, y el `None` de árbitro por el nombre si se tiene (formato SIN acentos: "Cesar" no "César", ver convención abajo).
-   - Agregar entrada a `DATOS_REALES_LIGAMX` con clave `"Local_Visitante"` (usando los nombres internos de `EQUIPOS`, no los de Sofascore) y valor `{"am": total_amarillas, "co": total_corners, "ro": total_rojas}`.
+   - Agregar entrada a `DATOS_REALES_LIGAMX` con clave `"Local_Visitante"` (usando los nombres internos de `EQUIPOS`, no los de Sofascore) y valor `{"am": total_amarillas, "co": total_corners, "ro": total_rojas}`. Incluir también el desglose por equipo `"am_l"`, `"am_v"`, `"ro_l"`, `"ro_v"` (local/visitante): de ahí sale el promedio de tarjetas por equipo del Apertura (`_tarjetas_reales_por_equipo()`); sin desglose ese partido no cuenta para el equipo.
    - Si el árbitro es nuevo (no está en `ARBITROS_LIGA_MX`), agregarlo con `ARBITRO_DEFAULT` como placeholder y un comentario explicando que es debut sin ficha confirmada — nunca inventar un promedio.
 3. Validar con `python3 -c "import ast; ast.parse(open('liga_mx_predictor_skeleton.py').read())"`.
 4. Confirmar con una consulta rápida que el partido se refleja en `tabla_actual_real()` y que `detectar_jornada_actual()` avanza cuando la jornada se completa.
