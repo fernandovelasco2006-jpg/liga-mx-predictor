@@ -740,15 +740,15 @@ TARJETAS_EQUIPO_LIGAMX = {
 
 DATOS_REALES_LIGAMX = {
     # Jornada 1 — 16-18 julio 2026
-    "Necaxa_Atlante":             {"am": 0,  "co": 16, "am_l": 0, "am_v": 0},   # 0 NEC + 0 ATL | 11 NEC + 5 ATL
-    "Tijuana_Tigres":             {"am": 6,  "co": 5, "am_l": 2, "am_v": 4},    # 2 TIJ + 4 TIG | 1 TIJ + 4 TIG
-    "Atletico San Luis_Cruz Azul":{"am": 3,  "co": 8, "am_l": 2, "am_v": 1},    # 2 ASL + 1 CAZ | 4 ASL + 4 CAZ
-    "Leon_Atlas":                 {"am": 4,  "co": 8, "am_l": 2, "am_v": 2},    # 2 LEO + 2 ATA | 6 LEO + 2 ATA
-    "FC Juarez_Puebla":           {"am": 2,  "co": 12, "am_l": 1, "am_v": 1},   # 1 JUA + 1 PUE | 5 JUA + 7 PUE
-    "Pumas UNAM_Pachuca":         {"am": 1,  "co": 13, "am_l": 1, "am_v": 0},   # 1 PUM + 0 PAC | 9 PUM + 4 PAC
-    "Monterrey_Santos Laguna":    {"am": 0,  "co": 10, "am_l": 0, "am_v": 0},   # 0 MTY + 0 SAN | 5 MTY + 5 SAN
-    "Guadalajara_Toluca":         {"am": 4,  "co": 11, "am_l": 2, "am_v": 2},   # 2 GDL + 2 TOL | 9 GDL + 2 TOL
-    "Queretaro_America":          {"am": 10, "co": 14, "am_l": 6, "am_v": 4},   # 6 QRO + 4 AME | 2 QRO + 12 AME
+    "Necaxa_Atlante":             {"am": 0,  "co": 16, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},   # 0 NEC + 0 ATL | 11 NEC + 5 ATL
+    "Tijuana_Tigres":             {"am": 6,  "co": 5, "ro": 1, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 1},    # 2 TIJ + 4 TIG | 1 TIJ + 4 TIG | rojas: Sofascore J1
+    "Atletico San Luis_Cruz Azul":{"am": 3,  "co": 8, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},    # 2 ASL + 1 CAZ | 4 ASL + 4 CAZ
+    "Leon_Atlas":                 {"am": 4,  "co": 8, "ro": 1, "am_l": 2, "am_v": 2, "ro_l": 1, "ro_v": 0},    # 2 LEO + 2 ATA | 6 LEO + 2 ATA | rojas: Sofascore J1
+    "FC Juarez_Puebla":           {"am": 2,  "co": 12, "ro": 1, "am_l": 1, "am_v": 1, "ro_l": 0, "ro_v": 1},   # 1 JUA + 1 PUE | 5 JUA + 7 PUE | rojas: Sofascore J1
+    "Pumas UNAM_Pachuca":         {"am": 1,  "co": 13, "ro": 0, "am_l": 1, "am_v": 0, "ro_l": 0, "ro_v": 0},   # 1 PUM + 0 PAC | 9 PUM + 4 PAC
+    "Monterrey_Santos Laguna":    {"am": 0,  "co": 10, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},   # 0 MTY + 0 SAN | 5 MTY + 5 SAN
+    "Guadalajara_Toluca":         {"am": 4,  "co": 11, "ro": 1, "am_l": 2, "am_v": 2, "ro_l": 1, "ro_v": 0},   # 2 GDL + 2 TOL | 9 GDL + 2 TOL | rojas: Sofascore J1
+    "Queretaro_America":          {"am": 10, "co": 14, "ro": 1, "am_l": 6, "am_v": 4, "ro_l": 0, "ro_v": 1},   # 6 QRO + 4 AME | 2 QRO + 12 AME | rojas: Sofascore J1
 
     # Jornada 2 — resultados y estadísticas confirmados
     "Cruz Azul_Puebla":           {"am": 5,  "co": 10, "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 CAZ + 3 PUE | 7 CAZ + 3 PUE
