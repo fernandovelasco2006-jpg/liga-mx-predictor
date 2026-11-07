@@ -903,6 +903,9 @@ DATOS_REALES_LIGAMX = {
     "Santos Laguna_Necaxa":        {"am": 4,  "co": 18, "ro": 0},  # 1 SAN + 3 NEC | 12 SAN + 6 NEC | rojas no mostradas en Sofascore (0 sin confirmar)
     "Cruz Azul_Leon":              {"am": 9,  "co": 10, "ro": 0},  # 4 CAZ + 5 LEO | 4 CAZ + 6 LEO | rojas no mostradas en Sofascore (0 sin confirmar)
     "Puebla_Pumas UNAM":           {"am": 2,  "co": 10, "ro": 0},  # 0 PUE + 2 PUM | 7 PUE + 3 PUM | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Necaxa_Tijuana":              {"am": 3,  "co": 11, "ro": 0},  # 1 NEC + 2 TIJ | 5 NEC + 6 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atletico San Luis_FC Juarez": {"am": 5,  "co": 11, "ro": 0},  # 2 ASL + 3 JUA | 8 ASL + 3 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
+    "Atlante_Santos Laguna":       {"am": 2,  "co": 9,  "ro": 2},  # 0 ATL + 2 SAN | 3 ATL + 6 SAN | rojas: Sofascore marca 2 ATL + 0 SAN; Maya Comunicacion reporta 1 y 1 (Portales ATL, Quiros SAN). Total 2 en ambas
 }
 
 # ─────────────────────────────────────────────────────────────────────────
