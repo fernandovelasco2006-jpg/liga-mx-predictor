@@ -1245,6 +1245,48 @@ def _promedio_arbitro_dinamico(arbitro: str) -> float:
     return (1 - peso_real) * prom_historico + peso_real * promedio_real
 
 
+# -------------------------------------------------------------------------
+# AMARILLAS ESPERADAS DEL ÁRBITRO PARA EL MERCADO DE TARJETAS.
+# _promedio_arbitro_dinamico() arranca de la ficha histórica (~4.4 de
+# promedio entre árbitros) y le da 100% de peso al Apertura hasta llegar
+# a 8 PJ: con eso el modelo predecía 4.2 amarillas por partido cuando el
+# Apertura promedia 3.7 (backtest a ciegas J2-J16, 128 partidos).
+# Aquí el prior es el promedio REAL de la liga en este torneo más solo una
+# fracción (BETA) de lo que el árbitro se separa del promedio histórico, y
+# su Apertura entra con peso pj / (pj + K) (shrinkage bayesiano). K y BETA
+# salieron de ese backtest (log-verosimilitud -2.229 -> -2.183, Brier
+# O/U 4.5 0.223 -> 0.210). Solo lo usa _tarjetas_esperadas(); el factor
+# árbitro de goles sigue con _promedio_arbitro_dinamico().
+# -------------------------------------------------------------------------
+K_ARBITRO_AMARILLAS = 4
+BETA_HISTORICO_ARBITRO = 0.3
+
+
+def _promedio_historico_arbitros() -> float:
+    """Promedio de la ficha histórica entre todos los árbitros con ficha."""
+    arbitros = set(ARBITROS_LIGA_MX) | set(ARBITROS_LIGA_MX_TRANSFERMARKT)
+    if not arbitros:
+        return PROMEDIO_LIGA_AMARILLAS_BASE
+    return sum(_prom_historico_arbitro(a)[0] for a in arbitros) / len(arbitros)
+
+
+def _amarillas_esperadas_arbitro(arbitro: str) -> float:
+    """
+    Amarillas por partido esperadas con ESTE árbitro (mercado de
+    tarjetas). Árbitro sin ficha ni partidos = promedio real de la liga.
+    """
+    liga = _promedio_liga_amarillas_dinamico()
+    prior = liga
+    if arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT):
+        prior += BETA_HISTORICO_ARBITRO * (_prom_historico_arbitro(arbitro)[0] - _promedio_historico_arbitros())
+    datos = _amarillas_reales_por_arbitro().get(arbitro) if arbitro else None
+    if not datos or datos[1] == 0:
+        return prior
+    amarillas, pj = datos
+    peso = pj / (pj + K_ARBITRO_AMARILLAS)
+    return (1 - peso) * prior + peso * amarillas / pj
+
+
 def _promedio_rojas_arbitro_dinamico(arbitro: str) -> float:
     """
     Promedio de ROJAS TOTALES (segunda amarilla + roja directa,
@@ -1284,18 +1326,12 @@ def _tarjetas_esperadas(home_team: str, away_team: str, peso_arbitro: float = 1.
     tu Mundial-predictor."""
     arbitro = _buscar_arbitro(home_team, away_team)
     promedio_liga_amarillas = _promedio_liga_amarillas_dinamico()
-    arbitro_conocido = arbitro and (arbitro in ARBITROS_LIGA_MX or arbitro in ARBITROS_LIGA_MX_TRANSFERMARKT)
-    if arbitro_conocido:
-        # Usa el promedio del árbitro YA mezclado entre ambas fuentes
-        # históricas (Sofascore + Transfermarkt, ver
-        # _prom_historico_arbitro()) y con su desempeño real en el
-        # Apertura 2026 (ver _promedio_arbitro_dinamico()) — no la ficha
-        # histórica fija de una sola fuente.
-        amarillas_esp_arbitro = _promedio_arbitro_dinamico(arbitro)
-    else:
-        prom_amarillas = ARBITRO_DEFAULT[0]
-        desviacion = (prom_amarillas - promedio_liga_amarillas) * peso_arbitro
-        amarillas_esp_arbitro = promedio_liga_amarillas + desviacion * 0.3
+    # Ver _amarillas_esperadas_arbitro(): prior = promedio real de la liga
+    # + una fracción de la desviación histórica del árbitro, y su Apertura
+    # con shrinkage pj/(pj+K). También cubre árbitros sin ficha que ya
+    # dirigieron en el Apertura (antes caían a ARBITRO_DEFAULT y se
+    # ignoraban sus partidos).
+    amarillas_esp_arbitro = _amarillas_esperadas_arbitro(arbitro)
 
     factor_equipos = (_factor_tarjetas_equipo(home_team) + _factor_tarjetas_equipo(away_team)) / 2
     amarillas_esp = amarillas_esp_arbitro * 0.7 + (amarillas_esp_arbitro * factor_equipos) * 0.3
