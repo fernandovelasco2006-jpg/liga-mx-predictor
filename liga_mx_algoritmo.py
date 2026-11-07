@@ -309,18 +309,82 @@ TARJETAS_EQUIPO_APERTURA = {
 }
 
 
-def _factor_tarjetas_equipo(equipo: str) -> float:
+# Fuente del promedio de tarjetas POR EQUIPO del Apertura:
+#   "real"  = se calcula solo con el desglose "am_l"/"am_v" de
+#             DATOS_REALES_LIGAMX (partidos jugados en PARTIDOS), así se
+#             actualiza cada jornada y respeta el recorte a ciegas del
+#             backtest.
+#   "tabla" = TARJETAS_EQUIPO_APERTURA fija (ligamx.net, J8). Se conserva
+#             solo para comparar y como respaldo de un equipo sin datos.
+FUENTE_TARJETAS_EQUIPO = "real"
+
+
+def _tarjetas_reales_por_equipo() -> dict:
+    """
+    (amarillas_totales, rojas_totales, partidos) REAL de cada equipo en el
+    Apertura, cruzando PARTIDOS (solo jugados) con el desglose por equipo
+    de DATOS_REALES_LIGAMX ("am_l"/"am_v", y "ro_l"/"ro_v" si está).
+    Partidos sin desglose de amarillas se omiten (no se asume 0).
+    """
+    conteo = {}
+    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
+        if resultado is None:
+            continue
+        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+        if not datos or "am_l" not in datos or "am_v" not in datos:
+            continue
+        for equipo, am, ro in ((local, datos["am_l"], datos.get("ro_l", 0)),
+                               (visit, datos["am_v"], datos.get("ro_v", 0))):
+            c = conteo.setdefault(equipo, [0, 0, 0])
+            c[0] += am
+            c[1] += ro
+            c[2] += 1
+    return {k: tuple(v) for k, v in conteo.items()}
+
+
+def _factor_tarjetas_equipo(equipo: str, fuente: str = None) -> float:
     """
     Qué tan por encima/debajo del promedio de liga está el ESTILO
     disciplinario del equipo (independiente del árbitro). 1.0 = promedio
     de liga. Tope [0.7, 1.4] para no sobre-ajustar con muestras chicas.
 
-    Mezcla Clausura 2026 (base robusta, 17 PJ) con Apertura 2026 EN VIVO
-    (TARJETAS_EQUIPO_APERTURA) usando el mismo shrinkage progresivo que
-    _tope_shrinkage(): con 0 PJ del Apertura, 100% Clausura; a partir de
-    PARTIDOS_PARA_TOPE_COMPLETO PJ del Apertura, 100% Apertura.
+    Mezcla Clausura 2026 (base robusta, 17 PJ) con el Apertura 2026 con
+    shrinkage progresivo: 0 PJ del Apertura = 100% Clausura; a partir de
+    PARTIDOS_PARA_TOPE_COMPLETO PJ, 100% Apertura.
+
+    Con fuente "real" (default) se mezclan RAZONES (equipo / promedio de
+    su propio torneo), no promedios crudos: el Apertura viene con menos
+    amarillas por partido que el Clausura, y dividir un promedio del
+    Apertura entre el promedio del Clausura bajaba a todos los equipos a
+    la vez (ese nivel general ya lo cubren el árbitro y la liga).
     """
+    fuente = fuente or FUENTE_TARJETAS_EQUIPO
     datos_clausura = TARJETAS_EQUIPO_LIGAMX.get(equipo)
+
+    if fuente == "real":
+        reales = _tarjetas_reales_por_equipo()
+        datos_apertura = reales.get(equipo)
+        if datos_apertura and datos_apertura[2] > 0:
+            tot_am = sum(v[0] for v in reales.values())
+            tot_pj = sum(v[2] for v in reales.values())
+            razon_apertura = (datos_apertura[0] / datos_apertura[2]) / (tot_am / tot_pj) if tot_am > 0 else 1.0
+            pj_apertura = datos_apertura[2]
+        else:
+            razon_apertura, pj_apertura = None, 0
+        razon_clausura = None
+        if datos_clausura and datos_clausura[2] > 0:
+            razon_clausura = (datos_clausura[0] / datos_clausura[2]) / _PROMEDIO_LIGA_AMARILLAS_EQUIPO
+        if razon_clausura is None and razon_apertura is None:
+            return 1.0
+        if razon_clausura is None:
+            razon = razon_apertura
+        elif razon_apertura is None:
+            razon = razon_clausura
+        else:
+            peso_apertura = min(pj_apertura / PARTIDOS_PARA_TOPE_COMPLETO, 1.0)
+            razon = (1 - peso_apertura) * razon_clausura + peso_apertura * razon_apertura
+        return max(0.7, min(1.4, razon))
+
     datos_apertura = TARJETAS_EQUIPO_APERTURA.get(equipo)
 
     prom_clausura = None
