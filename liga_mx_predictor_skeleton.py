@@ -792,7 +792,7 @@ DATOS_REALES_LIGAMX = {
     "America_Atletico San Luis":  {"am": 4, "co": 15, "ro": 1, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 1},  # Sofascore: 2 AME + 2 ASL | 10 AME + 5 ASL | 0 AME + 1 ASL roja (BSD daba 3 am y 0 rojas)
     "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 1, "am_l": 1, "am_v": 0, "ro_l": 1, "ro_v": 0},  # Sofascore: 1 SAN + 0 GDL | 5 SAN + 7 GDL | 1 SAN + 0 GDL roja (BSD daba 0 rojas)
     "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 0},  # Sofascore: 2 TIJ + 4 CAZ | 5 TIJ + 6 CAZ
-    "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 1 NEC + 0 LEO roja (Echeverría, doble amarilla)
+    "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 1},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 0 NEC + 1 LEO roja (Rodrigo Echeverría, León, 61')
     "Pachuca_Puebla":             {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas/rojas NO mostradas en Sofascore (0 sin confirmar; raro con 2 penales) | 5 PAC + 3 PUE
 
     # Jornada 5 — resultados y estadísticas confirmados (fuente: Sofascore)
