@@ -116,7 +116,7 @@ PARTIDOS = [
     ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', (0, 1), 'Maximiliano Quintero Hernandez'),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', (0, 2), 'Katia Itzel Garcia Mendoza'),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
-    ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', None, None),
+    ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', (0, 1), None),
     ('Tigres', 'Necaxa', 7, 'Estadio Universitario', (1, 1), 'Karen Hernandez Andrade'),
     ('America', 'Tijuana', 7, 'Estadio Banorte', (1, 1), 'Fernando Hernandez Gomez'),  # designación FMF (antes Quintero Hernandez); jugado el 28/oct
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
@@ -197,12 +197,12 @@ PARTIDOS = [
     ('Necaxa', 'Tijuana', 16, 'Estadio Victoria', (1, 0), 'Adonai Escobedo Gonzalez'),
     ('Atletico San Luis', 'FC Juarez', 16, 'Estadio Libertad Financiera', (0, 1), 'Victor Alfonso Caceres Hernandez'),
     ('Atlante', 'Santos Laguna', 16, 'Estadio Banorte', (0, 2), 'Marco Antonio Ortiz Nava'),
-    ('Atlas', 'Pachuca', 16, 'Estadio Jalisco', None, 'Fernando Hernandez Gomez'),
-    ('Tigres', 'Cruz Azul', 16, 'Estadio Universitario', None, 'Ismael Rosario Lopez Peñuelas'),
-    ('Toluca', 'Monterrey', 16, 'Estadio Nemesio Diez', None, 'Daniel Quintero Huitron'),
-    ('Pumas UNAM', 'America', 16, 'Estadio Olimpico Universitario', None, 'Cesar Arturo Ramos Palazuelos'),
-    ('Queretaro', 'Puebla', 16, 'Estadio Corregidora', None, 'Katia Itzel Garcia Mendoza'),
-    ('Leon', 'Guadalajara', 16, 'Estadio Nou Camp', None, 'Guillermo Pacheco Larios'),
+    ('Atlas', 'Pachuca', 16, 'Estadio Jalisco', (1, 4), 'Fernando Hernandez Gomez'),
+    ('Tigres', 'Cruz Azul', 16, 'Estadio Universitario', (2, 3), 'Ismael Rosario Lopez Peñuelas'),
+    ('Toluca', 'Monterrey', 16, 'Estadio Nemesio Diez', (4, 0), 'Daniel Quintero Huitron'),
+    ('Pumas UNAM', 'America', 16, 'Estadio Olimpico Universitario', (2, 2), 'Cesar Arturo Ramos Palazuelos'),
+    ('Queretaro', 'Puebla', 16, 'Estadio Corregidora', (0, 2), 'Katia Itzel Garcia Mendoza'),
+    ('Leon', 'Guadalajara', 16, 'Estadio Nou Camp', (1, 1), 'Guillermo Pacheco Larios'),
     ('Puebla', 'Atletico San Luis', 17, 'Estadio Cuauhtemoc', None, 'Karen Hernandez Andrade'),
     ('FC Juarez', 'Atlas', 17, 'Estadio Olimpico Benito Juarez', None, 'Adonai Escobedo Gonzalez'),
     ('Tijuana', 'Atlante', 17, 'Estadio Caliente', None, 'Maximiliano Quintero Hernandez'),
@@ -910,6 +910,15 @@ DATOS_REALES_LIGAMX = {
     "Necaxa_Tijuana":              {"am": 3,  "co": 11, "ro": 0, "am_l": 1, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 1 NEC + 2 TIJ | 5 NEC + 6 TIJ | rojas no mostradas en Sofascore (0 sin confirmar)
     "Atletico San Luis_FC Juarez": {"am": 5,  "co": 11, "ro": 0, "am_l": 2, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 2 ASL + 3 JUA | 8 ASL + 3 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
     "Atlante_Santos Laguna":       {"am": 2,  "co": 9,  "ro": 2, "am_l": 0, "am_v": 2, "ro_l": 2, "ro_v": 0},  # 0 ATL + 2 SAN | 3 ATL + 6 SAN | rojas: Sofascore marca 2 ATL + 0 SAN; Maya Comunicacion reporta 1 y 1 (Portales ATL, Quiros SAN). Total 2 en ambas
+    # J16 sábado/domingo (texto Sofascore pegado por fer 2026-11-19; rojas que no aparecen = 0)
+    "Atlas_Pachuca":               {"am": 4,  "co": 12, "ro": 1, "am_l": 3, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 3 ATS + 1 PAC | 7 ATS + 5 PAC | 1 ATS + 0 PAC roja
+    "Tigres_Cruz Azul":            {"am": 7,  "co": 14, "ro": 0, "am_l": 3, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 3 TIG + 4 CAZ | 10 TIG + 4 CAZ
+    "Toluca_Monterrey":            {"am": 6,  "co": 12, "ro": 1, "am_l": 1, "am_v": 5, "ro_l": 0, "ro_v": 1},  # 1 TOL + 5 MON | 6 TOL + 6 MON | 0 TOL + 1 MON roja
+    "Pumas UNAM_America":          {"am": 9,  "co": 6,  "ro": 0, "am_l": 6, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 6 PUM + 3 AME | 4 PUM + 2 AME
+    "Queretaro_Puebla":            {"am": 6,  "co": 9,  "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 QRO + 3 PUE | 9 QRO + 0 PUE
+    "Leon_Guadalajara":            {"am": 3,  "co": 8,  "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 1, "ro_v": 0},  # 2 LEO + 1 GDL | 2 LEO + 6 GDL | 1 LEO + 0 GDL roja
+    # J7 rezagado (14/11)
+    "Queretaro_Monterrey":         {"am": 7,  "co": 10, "ro": 0, "am_l": 4, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 4 QRO + 3 MON | 4 QRO + 6 MON
 }
 
 # ─────────────────────────────────────────────────────────────────────────
