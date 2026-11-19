@@ -768,7 +768,7 @@ DATOS_REALES_LIGAMX = {
     # Sofascore no mostró la fila de tarjetas en el resumen que me diste
     # (sí la mostró para los otros 2 partidos) — no metí "am"/"ro" para
     # no inventar el dato; complétalo si lo consigues.
-    "Puebla_Guadalajara":         {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas/rojas NO mostradas en Sofascore (0 sin confirmar) | 1 PUE + 7 GDL
+    "Puebla_Guadalajara":         {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 0 amarillas y 0 rojas (confirmado por fer 2026-11-19) | 1 PUE + 7 GDL
 
     "Queretaro_Tigres":           {"am": 9,  "co": 17, "ro": 0, "am_l": 6, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 6 QRO + 3 TIG | 6 QRO + 11 TIG
     "Atlas_Monterrey":            {"am": 7,  "co": 8,  "ro": 3, "am_l": 5, "am_v": 2, "ro_l": 2, "ro_v": 1},  # 5 ATA + 2 MTY | 6 ATA + 2 MTY | 2 ATA + 1 MTY rojas (Duk y Valenzuela expulsados x VAR + Salcedo)
@@ -793,7 +793,7 @@ DATOS_REALES_LIGAMX = {
     "Santos Laguna_Guadalajara":  {"am": 1, "co": 12, "ro": 1, "am_l": 1, "am_v": 0, "ro_l": 1, "ro_v": 0},  # Sofascore: 1 SAN + 0 GDL | 5 SAN + 7 GDL | 1 SAN + 0 GDL roja (BSD daba 0 rojas)
     "Tijuana_Cruz Azul":          {"am": 6, "co": 11, "ro": 0, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 0},  # Sofascore: 2 TIJ + 4 CAZ | 5 TIJ + 6 CAZ
     "Necaxa_Leon":                {"am": 3, "co": 10, "ro": 1, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 1},  # 2 NEC + 1 LEO | 7 NEC + 3 LEO | 0 NEC + 1 LEO roja (Rodrigo Echeverría, León, 61')
-    "Pachuca_Puebla":             {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas/rojas NO mostradas en Sofascore (0 sin confirmar; raro con 2 penales) | 5 PAC + 3 PUE
+    "Pachuca_Puebla":             {"am": 0, "co": 8,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 0 amarillas y 0 rojas (confirmado por fer 2026-11-19) | 5 PAC + 3 PUE
 
     # Jornada 5 — resultados y estadísticas confirmados (fuente: Sofascore)
     "Pumas UNAM_Necaxa":          {"am": 4,  "co": 12, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 PUM + 2 NEC | 8 PUM + 4 NEC
@@ -879,12 +879,12 @@ DATOS_REALES_LIGAMX = {
     "Monterrey_Pachuca":           {"am": 6,  "co": 11, "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 MON + 3 PAC | 3 MON + 8 PAC (rojas: no mostradas en Sofascore)
     "Guadalajara_Necaxa":          {"am": 1,  "co": 14, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 GDL + 1 NEC | 9 GDL + 5 NEC
     "FC Juarez_Atlante":           {"am": 6,  "co": 17, "ro": 0, "am_l": 3, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 3 JUA + 3 ATL | 8 JUA + 9 ATL
-    "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 5 SLP + 2 QRO
+    "Atletico San Luis_Queretaro": {"am": 0,  "co": 7,  "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 0 amarillas y 0 rojas (confirmado por fer 2026-11-19) | 5 SLP + 2 QRO
     "Tigres_Leon":                 {"am": 1,  "co": 20, "ro": 0, "am_l": 0, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 0 TIG + 1 LEO | 16 TIG + 4 LEO (amarillas a DT no cuentan)
     "Pachuca_Cruz Azul":           {"am": 8,  "co": 8,  "ro": 0, "am_l": 5, "am_v": 3, "ro_l": 0, "ro_v": 0},  # 5 PAC + 3 CAZ | 0 PAC + 8 CAZ
     "Puebla_Monterrey":            {"am": 2,  "co": 10, "ro": 0, "am_l": 0, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 0 PUE + 2 MON | 2 PUE + 8 MON
     "Atlas_America":               {"am": 3,  "co": 13, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 ATS + 1 AME | 9 ATS + 4 AME
-    "Toluca_Tijuana":              {"am": 0,  "co": 22, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # amarillas NO mostradas en Sofascore (0 sin confirmar) | 17 TOL + 5 TIJ
+    "Toluca_Tijuana":              {"am": 0,  "co": 22, "ro": 0, "am_l": 0, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 0 amarillas y 0 rojas (confirmado por fer 2026-11-19) | 17 TOL + 5 TIJ
     "Santos Laguna_Pumas UNAM":    {"am": 5,  "co": 11, "ro": 1, "am_l": 3, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 3 SAN + 2 PUM | 8 SAN + 3 PUM | roja: 1 PUM
     # Jornada 14 — 23-25 octubre 2026
     "Necaxa_FC Juarez":            {"am": 4,  "co": 12, "ro": 0, "am_l": 2, "am_v": 2, "ro_l": 0, "ro_v": 0},  # 2 NEC + 2 JUA | 7 NEC + 5 JUA | rojas no mostradas en Sofascore (0 sin confirmar)
