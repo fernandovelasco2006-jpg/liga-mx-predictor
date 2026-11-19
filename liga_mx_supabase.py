@@ -1220,6 +1220,53 @@ def guardar_parlay_diario(url: str, key: str, fecha: str, selecciones: list, pro
     return False
 
 
+
+def borrar_apuestas_pendientes(url: str, key: str, jornada: int, partidos: list) -> int:
+    """
+    Borra las apuestas sugeridas (y el parlay de la jornada) que siguen
+    pendientes para partidos que todavía NO empiezan, para que una
+    re-simulación forzada (--forzar en liga_mx_analisis_semanal.py) las
+    reemplace en vez de mezclarse con las nuevas. Caso típico: la jornada
+    se guardó en cuanto tuvo árbitros, pero después se cargaron resultados
+    de la jornada anterior que el modelo no había visto.
+
+    Nunca toca filas ya calificadas (acierto/nulo) ni partidos empezados:
+    eso es historial a ciegas que no se reescribe. partidos = tuplas de
+    PARTIDOS. Devuelve cuántas apuestas se borraron.
+    """
+    if not (url and key):
+        return 0
+    ahora = datetime.now(TZ_MX)
+    borradas = 0
+    for local, visit, *_ in partidos:
+        if partido_ya_empezo(local, visit, ahora):
+            continue
+        try:
+            resp = requests.delete(
+                f"{url}/rest/v1/apuestas_historial_ligamx",
+                headers=_headers(key, prefer="return=representation"),
+                params={"local": f"eq.{local}", "visitante": f"eq.{visit}",
+                        "jornada": f"eq.{jornada}", "acierto": "is.null",
+                        "nulo": "not.is.true"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                borradas += len(resp.json())
+        except Exception:
+            pass
+    try:
+        # Parlay(s) de la jornada que guarda analizar_jornada(): id
+        # "jornada{N}_{fecha}". Solo los que siguen pendientes.
+        requests.delete(
+            f"{url}/rest/v1/parlays_historial_ligamx",
+            headers=_headers(key, prefer=""),
+            params={"id": f"like.jornada{jornada}_*", "resultado": "eq.pendiente"},
+            timeout=10,
+        )
+    except Exception:
+        pass
+    return borradas
+
 # ─────────────────────────────────────────────────────────────────────────
 # APUESTAS REALES — a diferencia de apuestas_historial_ligamx (que
 # registra TODAS las sugerencias del modelo, se hayan apostado o no),

@@ -32,7 +32,8 @@
 #     partido: no esperan a que se designe el otro rezagado.
 #   - Un partido ya guardado con ese MISMO árbitro no se vuelve a simular;
 #     si la FMF cambió el árbitro, se simula de nuevo.
-#   - --forzar ignora ambas condiciones (útil para correr a mano).
+#   - --forzar ignora ambas condiciones (útil para correr a mano) y
+#     reemplaza las apuestas pendientes de los partidos que aún no empiezan.
 # Lo llaman el workflow de árbitros (en cuanto sube árbitros nuevos) y el
 # análisis de los lunes (que además pone al día aciertos/fallos/nulas).
 #
@@ -495,6 +496,12 @@ def main():
             _log("No hay jornadas pendientes — temporada regular completa.")
             return
         listos = {jornada: [p for p in _partidos_de_jornada(jornada) if p[4] is None]}
+        if url and key:
+            # Sin esto, las apuestas viejas que ya no pasen el umbral se
+            # quedarían junto a las nuevas (guardar_apuestas() no borra).
+            from liga_mx_supabase import borrar_apuestas_pendientes
+            n = borrar_apuestas_pendientes(url, key, jornada, listos[jornada])
+            _log(f"--forzar: {n} apuestas pendientes de la J{jornada} borradas para regenerarlas.")
     else:
         listos = partidos_listos_por_arbitro()
         if args.jornada:
