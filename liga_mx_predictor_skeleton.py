@@ -116,7 +116,7 @@ PARTIDOS = [
     ('Puebla', 'Toluca', 7, 'Estadio Cuauhtemoc', (0, 1), 'Maximiliano Quintero Hernandez'),
     ('FC Juarez', 'Pachuca', 7, 'Estadio Olimpico Benito Juarez', (0, 2), 'Katia Itzel Garcia Mendoza'),
     ('Atletico San Luis', 'Guadalajara', 7, 'Estadio Libertad Financiera', (0, 3), 'Jorge Abraham Camacho Peregrina'),
-    ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', (0, 1), None),
+    ('Queretaro', 'Monterrey', 7, 'Estadio Corregidora', (0, 1), 'Luis Enrique Santander Aguirre'),
     ('Tigres', 'Necaxa', 7, 'Estadio Universitario', (1, 1), 'Karen Hernandez Andrade'),
     ('America', 'Tijuana', 7, 'Estadio Banorte', (1, 1), 'Fernando Hernandez Gomez'),  # designación FMF (antes Quintero Hernandez); jugado el 28/oct
     ('Atlas', 'Atlante', 7, 'Estadio Jalisco', (1, 1), 'Ivan Antonio Lopez Sanchez'),
