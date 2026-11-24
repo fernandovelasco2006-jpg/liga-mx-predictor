@@ -212,6 +212,22 @@ PARTIDOS = [
     ('Tigres', 'America', 17, 'Estadio Universitario', (1, 0), 'Guillermo Pacheco Larios'),
     ('Guadalajara', 'Cruz Azul', 17, 'Estadio Akron', (1, 0), 'Daniel Quintero Huitron'),
     ('Queretaro', 'Necaxa', 17, 'Estadio Corregidora', (2, 2), 'Salvador Perez Villalobos'),
+    # ── LIGUILLA ──────────────────────────────────────────────────────
+    # Jornadas 18+ = Liguilla (ver RONDAS_LIGUILLA más abajo). Cada cruce
+    # repite un partido de la fase regular, así que horarios y datos
+    # reales de la Liguilla usan claves con jornada (ver horario_partido()
+    # y datos_reales_partido()). Árbitros: None hasta que la FMF designe.
+    # Cuartos de final (calendario Sofascore pegado por fer 2026-11-24):
+    # 1 Guadalajara v 8 Pachuca, 2 Cruz Azul v 7 Leon, 3 America v 6
+    # Monterrey, 4 Atlas v 5 Toluca. Ida de local el peor posicionado.
+    ('Toluca', 'Atlas', 18, 'Estadio Nemesio Diez', None, None),
+    ('Monterrey', 'America', 18, 'Estadio BBVA', None, None),
+    ('Pachuca', 'Guadalajara', 18, 'Estadio Hidalgo', None, None),
+    ('Leon', 'Cruz Azul', 18, 'Estadio Nou Camp', None, None),
+    ('Atlas', 'Toluca', 19, 'Estadio Jalisco', None, None),
+    ('America', 'Monterrey', 19, 'Estadio Banorte', None, None),
+    ('Guadalajara', 'Pachuca', 19, 'Estadio Akron', None, None),
+    ('Cruz Azul', 'Leon', 19, 'Estadio Banorte', None, None),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -371,6 +387,16 @@ HORARIOS_PARTIDO = {
     ('Tigres', 'America'): '2026-11-21 22:00',
     ('Guadalajara', 'Cruz Azul'): '2026-11-22 18:07',
     ('Queretaro', 'Necaxa'): '2026-11-22 20:00',
+    # Liguilla: clave (local, visita, jornada) porque el cruce ya existe en
+    # la fase regular. Horas tal cual el calendario de Sofascore de fer.
+    ('Toluca', 'Atlas', 18): '2026-11-25 19:00',
+    ('Monterrey', 'America', 18): '2026-11-25 21:00',
+    ('Pachuca', 'Guadalajara', 18): '2026-11-26 19:00',
+    ('Leon', 'Cruz Azul', 18): '2026-11-26 21:10',
+    ('Atlas', 'Toluca', 19): '2026-11-28 19:00',
+    ('America', 'Monterrey', 19): '2026-11-28 21:00',
+    ('Guadalajara', 'Pachuca', 19): '2026-11-29 19:00',
+    ('Cruz Azul', 'Leon', 19): '2026-11-29 21:00',
 }
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -949,3 +975,82 @@ DATOS_REALES_LIGAMX = {
 # 4. Fixture congestion: pausa del 4-13 agosto por fase de grupos de
 #    Leagues Cup 2026 — considera un factor de fatiga/rotación para
 #    equipos que jueguen ambos torneos en semanas cercanas.
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LIGUILLA — identificar un partido por (local, visita, jornada)
+# ─────────────────────────────────────────────────────────────────────────
+# En la fase regular cada cruce local-visita ocurre una sola vez, así que
+# (local, visita) bastaba como clave. En la Liguilla cada serie repite un
+# cruce (ej. Toluca-Atlas fue J8 y es la ida de cuartos, J18), así que:
+#   - HORARIOS_PARTIDO usa la clave (local, visita, jornada) para la Liguilla.
+#   - DATOS_REALES_LIGAMX usa "Local_Visita_J18" para la Liguilla.
+# Usar SIEMPRE estas funciones en vez de leer los diccionarios directo.
+# Si no se pasa jornada, se toma el partido pendiente de ese cruce (el
+# que se va a predecir) o, si ya se jugaron todos, el más reciente.
+JORNADAS_FASE_REGULAR = 17
+
+RONDAS_LIGUILLA = {
+    18: "Cuartos de final · ida",
+    19: "Cuartos de final · vuelta",
+    20: "Semifinal · ida",
+    21: "Semifinal · vuelta",
+    22: "Final · ida",
+    23: "Final · vuelta",
+}
+
+
+def es_liguilla(jornada) -> bool:
+    return jornada is not None and jornada > JORNADAS_FASE_REGULAR
+
+
+def nombre_jornada(jornada) -> str:
+    """"Jornada 5" o "Cuartos de final · ida"."""
+    return RONDAS_LIGUILLA.get(jornada, f"Jornada {jornada}")
+
+
+def nombre_jornada_corto(jornada) -> str:
+    """"J5" o "Cuartos ida" (para chips, selectores y tarjetas)."""
+    if not es_liguilla(jornada):
+        return f"J{jornada}"
+    return RONDAS_LIGUILLA.get(jornada, f"J{jornada}").replace(" de final", "").replace(" · ", " ")
+
+
+def buscar_partido(local, visit, jornada=None, partidos=None):
+    """Tupla de PARTIDOS de ese cruce: la de esa jornada si se pasa; si
+    no, la pendiente (la que se va a predecir) o la última jugada."""
+    partidos = PARTIDOS if partidos is None else partidos
+    candidatos = [p for p in partidos if p[0] == local and p[1] == visit]
+    if jornada is not None:
+        candidatos = [p for p in candidatos if p[2] == jornada]
+    if not candidatos:
+        return None
+    pendientes = [p for p in candidatos if p[4] is None]
+    return pendientes[0] if pendientes else candidatos[-1]
+
+
+def _jornada_resuelta(local, visit, jornada, partidos):
+    if jornada is not None:
+        return jornada
+    p = buscar_partido(local, visit, partidos=partidos)
+    return p[2] if p else None
+
+
+def clave_horario(local, visit, jornada=None, partidos=None):
+    j = _jornada_resuelta(local, visit, jornada, partidos)
+    return (local, visit, j) if es_liguilla(j) else (local, visit)
+
+
+def horario_partido(local, visit, jornada=None, default=None, partidos=None):
+    """Fecha/hora "YYYY-MM-DD HH:MM" (centro de México) del partido."""
+    return HORARIOS_PARTIDO.get(clave_horario(local, visit, jornada, partidos), default)
+
+
+def clave_datos_reales(local, visit, jornada=None, partidos=None):
+    j = _jornada_resuelta(local, visit, jornada, partidos)
+    return f"{local}_{visit}_J{j}" if es_liguilla(j) else f"{local}_{visit}"
+
+
+def datos_reales_partido(local, visit, jornada=None, default=None, partidos=None):
+    """Entrada de DATOS_REALES_LIGAMX (tarjetas/córners reales) del partido."""
+    return DATOS_REALES_LIGAMX.get(clave_datos_reales(local, visit, jornada, partidos), default)

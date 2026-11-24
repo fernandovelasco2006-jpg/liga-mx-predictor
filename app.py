@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from liga_mx_predictor_skeleton import (
     EQUIPOS, ALTITUD_EQUIPO, PARTIDOS, HORARIOS_PARTIDO, ARBITROS_LIGA_MX,
+    horario_partido, datos_reales_partido, nombre_jornada, nombre_jornada_corto, es_liguilla,
     ARBITRO_DEFAULT, CORNERS_EQUIPO, DATOS_REALES_LIGAMX,
 )
 from liga_mx_algoritmo import (
@@ -380,7 +381,7 @@ def _sesgo_equipo_cached():
 def _factor_clima_cached(local, visit):
     if not (CLIMA_MODULO_DISPONIBLE and WEATHER_API_KEY):
         return 1.0, None
-    fecha_hora = HORARIOS_PARTIDO.get((local, visit))
+    fecha_hora = horario_partido(local, visit)
     if not fecha_hora:
         return 1.0, None
     clima = obtener_clima_partido(local, fecha_hora, WEATHER_API_KEY)
@@ -432,7 +433,7 @@ def _partidos_de_hoy():
         local, visit, jornada, estadio, resultado, arbitro = p
         if resultado is not None:
             continue
-        horario = HORARIOS_PARTIDO.get((local, visit))
+        horario = horario_partido(local, visit, jornada)
         if horario and horario[:10] == hoy:
             hoy_lista.append(p)
     return hoy, hoy_lista
@@ -459,8 +460,8 @@ def _proximo_partido():
     """Partido pendiente con horario más próximo a partir de ahora (hora del centro de México)."""
     ahora = datetime.now(timezone(timedelta(hours=-6))).strftime("%Y-%m-%d %H:%M")
     pendientes = [
-        (HORARIOS_PARTIDO[(p[0], p[1])], p[0], p[1]) for p in PARTIDOS
-        if p[4] is None and HORARIOS_PARTIDO.get((p[0], p[1]), "") >= ahora
+        (horario_partido(p[0], p[1], p[2]), p[0], p[1]) for p in PARTIDOS
+        if p[4] is None and horario_partido(p[0], p[1], p[2], "") >= ahora
     ]
     return min(pendientes) if pendientes else None
 
@@ -491,7 +492,7 @@ _jornada_resumen = detectar_jornada_actual()
 _prox = _proximo_partido()
 _acierto_resumen, _roi_resumen = _resumen_supabase_cached()
 _metricas_resumen = [
-    (f"J{_jornada_resumen}" if _jornada_resumen else "—", "Jornada en curso", "#e5007d"),
+    (nombre_jornada_corto(_jornada_resumen) if _jornada_resumen else "—", "Liguilla en curso" if es_liguilla(_jornada_resumen) else "Jornada en curso", "#e5007d"),
     (f"{_acierto_resumen[0]:.0f}%" if _acierto_resumen else "—",
      f"Acierto apuestas ALTA ({_acierto_resumen[1]})" if _acierto_resumen else "Acierto apuestas ALTA",
      "#4ade80"),
@@ -528,7 +529,7 @@ if partidos_hoy_global:
         total_apuestas_hoy = 0
         patas_parlay_dia = []
         for local, visit, jornada, estadio, resultado, arbitro in partidos_hoy_global:
-            horario = HORARIOS_PARTIDO.get((local, visit), "")
+            horario = horario_partido(local, visit, jornada, "")
             hora_str = horario[11:] if horario else ""
             _fc, _ = _factor_clima_cached(local, visit)
             r_hoy = _simular_partido_cached(local, visit, N_SIMS_PARTIDO, PESO_ELO, PESO_ALTITUD, PESO_ARBITRO, _fc)
@@ -553,7 +554,7 @@ if partidos_hoy_global:
                 f'padding-bottom:0.3rem;border-bottom:1px solid #1f4a2e">'
                 f'<span style="font-size:0.82rem;color:#e8f0ea;font-weight:600">'
                 f'{flag(local)} {local} vs {flag(visit)} {visit}</span>'
-                f'<span style="font-size:0.68rem;color:#6b9b7d">⏰ {hora_str}h · Jornada {jornada}</span></div>',
+                f'<span style="font-size:0.68rem;color:#6b9b7d">⏰ {hora_str}h · {nombre_jornada(jornada)}</span></div>',
                 unsafe_allow_html=True,
             )
             for fila_inicio in range(0, len(sugs_alta_hoy), 3):
@@ -689,20 +690,21 @@ with tab_pred:
             idx_default = jornadas.index(jornada_detectada) if jornada_detectada in jornadas else 0
         else:
             idx_default = len(jornadas) - 1
-        jornada_sel = st.selectbox("Jornada", jornadas, index=idx_default, key=f"jornada_pred_{filtro_estado}")
+        jornada_sel = st.selectbox("Jornada", jornadas, index=idx_default, key=f"jornada_pred_{filtro_estado}",
+                                   format_func=nombre_jornada)
         partidos_j = [p for p in partidos_filtrados if p[2] == jornada_sel]
         # Ordenados por fecha para que el partido más próximo salga primero.
-        partidos_j.sort(key=lambda p: HORARIOS_PARTIDO.get((p[0], p[1]), "9999"))
+        partidos_j.sort(key=lambda p: horario_partido(p[0], p[1], p[2], "9999"))
         # Con fecha y hora para ubicar el partido sin abrirlo (ej. "sáb 1 nov · 19:00").
         opciones = {}
         for i, p in enumerate(partidos_j):
-            _cuando = _fecha_corta(HORARIOS_PARTIDO.get((p[0], p[1]), ""))
+            _cuando = _fecha_corta(horario_partido(p[0], p[1], p[2], ""))
             opciones[f"{flag(p[0])} {p[0]} vs {flag(p[1])} {p[1]}" + (f"  ·  {_cuando}" if _cuando else "")] = i
         lbl_sel = st.selectbox("Partido", list(opciones.keys()), key=f"partido_pred_{filtro_estado}_{jornada_sel}")
         idx_sel = opciones[lbl_sel]
         local, visit, jornada, estadio, resultado_real, arbitro = partidos_j[idx_sel]
         # El selector es angosto y corta la fecha del final; aquí se ve completa.
-        _cuando_sel = _fecha_corta(HORARIOS_PARTIDO.get((local, visit), ""))
+        _cuando_sel = _fecha_corta(horario_partido(local, visit, jornada, ""))
         if _cuando_sel:
             st.caption(f"📅 {_cuando_sel}")
 
@@ -723,7 +725,7 @@ with tab_pred:
         if _jornada_detectada is None:
             st.caption("No hay jornadas pendientes — temporada terminada.")
         else:
-            st.caption(f"Jornada detectada: **Jornada {_jornada_detectada}** · {N_SIMS_PARTIDO:,} sims/partido")
+            st.caption(f"Jornada detectada: **{nombre_jornada(_jornada_detectada)}** · {N_SIMS_PARTIDO:,} sims/partido")
             btn_jornada = st.button("⚽ Simular Jornada", key="btn_simular_jornada", type="primary")
 
     with col_der:
@@ -857,7 +859,7 @@ with tab_pred:
     # pero el resultado no cabe bien en 1/3.5 del ancho de pantalla).
     # ─────────────────────────────────────────────────────────────────
     if btn_jornada:
-        with st.spinner(f"Simulando Jornada {_jornada_detectada} completa ({N_SIMS_PARTIDO:,} sims por partido, "
+        with st.spinner(f"Simulando {nombre_jornada(_jornada_detectada)} completa ({N_SIMS_PARTIDO:,} sims por partido, "
                         f"puede tardar un par de minutos)..."):
             sesgo_actual = _sesgo_equipo_cached()
             resultado_jornada = simular_jornada_completa(
@@ -1015,14 +1017,14 @@ with tab_res:
         # De la jornada más reciente a la más vieja, y dentro de cada una
         # del partido más reciente al más viejo.
         for jn in sorted(set(p[2] for p in jugados), reverse=True):
-            st.markdown(f"**Jornada {jn}**")
+            st.markdown(f"**{nombre_jornada(jn)}**")
             partidos_jn = sorted(
                 (p for p in jugados if p[2] == jn),
-                key=lambda p: HORARIOS_PARTIDO.get((p[0], p[1]), ""), reverse=True,
+                key=lambda p: horario_partido(p[0], p[1], p[2], ""), reverse=True,
             )
             for local, visit, jornada, estadio, res, arb in partidos_jn:
                 gh, ga = res
-                datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+                datos = datos_reales_partido(local, visit, jornada)
                 stats_txt = ""
                 if datos:
                     # Algunos partidos solo traen córners (ej. Puebla_Guadalajara).
@@ -1761,7 +1763,7 @@ def _racha_ultimos_5() -> dict:
     """
     jugados = sorted(
         (p for p in PARTIDOS if p[4] is not None),
-        key=lambda p: (HORARIOS_PARTIDO.get((p[0], p[1]), ""), p[2]),
+        key=lambda p: (horario_partido(p[0], p[1], p[2], ""), p[2]),
     )
     racha = {eq: [] for eq in EQUIPOS}
     for local, visit, jornada, estadio, (gh, ga), arbitro in jugados:

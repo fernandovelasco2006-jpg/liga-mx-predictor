@@ -18,6 +18,7 @@ from liga_mx_predictor_skeleton import (
     ARBITROS_LIGA_MX, ARBITRO_DEFAULT, ARBITROS_LIGA_MX_TRANSFERMARKT,
     FUERZA_ATAQUE_LOCAL, FUERZA_ATAQUE_VISITA, FUERZA_DEFENSA_LOCAL, FUERZA_DEFENSA_VISITA,
     DATOS_REALES_LIGAMX,
+    JORNADAS_FASE_REGULAR, es_liguilla, buscar_partido, horario_partido, datos_reales_partido,
 )
 from liga_mx_elo_update import (
     actualizar_elo, actualizar_fuerza_ataque_defensa,
@@ -330,7 +331,7 @@ def _tarjetas_reales_por_equipo() -> dict:
     for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
         if resultado is None:
             continue
-        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+        datos = datos_reales_partido(local, visit, jornada)
         if not datos or "am_l" not in datos or "am_v" not in datos:
             continue
         for equipo, am, ro in ((local, datos["am_l"], datos.get("ro_l", 0)),
@@ -463,17 +464,18 @@ EQUIPOS_ACLIMATADOS_ALTURA = {
 }
 
 
-def _buscar_arbitro(home_team: str, away_team: str):
-    """Busca el árbitro asignado a un partido dentro de PARTIDOS."""
-    for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if local == home_team and visit == away_team:
-            return arbitro
-    return None
+def _buscar_arbitro(home_team: str, away_team: str, jornada: int = None):
+    """Busca el árbitro asignado a un partido dentro de PARTIDOS. Sin
+    jornada, el del partido pendiente de ese cruce (en la Liguilla el
+    cruce repite uno de la fase regular) o el último jugado."""
+    p = buscar_partido(home_team, away_team, jornada, partidos=PARTIDOS)
+    return p[5] if p else None
 
 
-def _buscar_fecha_partido(home_team: str, away_team: str):
-    """Busca la fecha/hora del partido en HORARIOS_PARTIDO."""
-    horario = HORARIOS_PARTIDO.get((home_team, away_team))
+def _buscar_fecha_partido(home_team: str, away_team: str, jornada: int = None):
+    """Busca la fecha/hora del partido en HORARIOS_PARTIDO (ver
+    horario_partido() en el skeleton para la Liguilla)."""
+    horario = horario_partido(home_team, away_team, jornada, partidos=PARTIDOS)
     if not horario:
         return None
     try:
@@ -554,7 +556,7 @@ def _promedio_liga_amarillas_dinamico() -> float:
         datos["am"]
         for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS
         if resultado is not None
-        for datos in [DATOS_REALES_LIGAMX.get(f"{local}_{visit}")]
+        for datos in [datos_reales_partido(local, visit, jornada)]
         if datos and "am" in datos
     ]
     if not amarillas_reales:
@@ -938,8 +940,8 @@ def tabla_actual_real() -> list:
     tabla = _tabla_vacia()
     partidos_jugados = 0
     for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
-        if resultado is None:
-            continue
+        if resultado is None or es_liguilla(jornada):
+            continue  # la Liguilla no suma a la tabla general
         gh, ga = resultado
         _actualizar_tabla(tabla, local, visit, gh, ga)
         partidos_jugados += 1
@@ -1018,6 +1020,8 @@ def simular_temporada(rng=None,
 
     tabla = _tabla_vacia()
     for home, away, jornada, estadio, resultado_real, arbitro in PARTIDOS:
+        if es_liguilla(jornada):
+            continue  # la Liguilla se simula abajo a partir del top 8
         if resultado_real is not None:
             # partido ya jugado en la vida real -> usa el resultado real
             gh, ga = resultado_real
@@ -1150,7 +1154,7 @@ def _rojas_reales_por_arbitro() -> dict:
     for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
         if resultado is None or not arbitro:
             continue
-        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+        datos = datos_reales_partido(local, visit, jornada)
         if datos is None or "ro" not in datos:
             continue
         if arbitro not in conteo:
@@ -1188,7 +1192,7 @@ def _amarillas_reales_por_arbitro() -> dict:
     for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
         if resultado is None or not arbitro:
             continue
-        datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}")
+        datos = datos_reales_partido(local, visit, jornada)
         if datos is None or "am" not in datos:
             continue
         if arbitro not in conteo:
@@ -2015,7 +2019,7 @@ def armar_super_parlay_jornada(partidos_con_apuestas: list) -> dict:
 
         for a in seleccion_partido:
             patas.append({
-                "local": p["local"], "visitante": p["visitante"],
+                "local": p["local"], "visitante": p["visitante"], "jornada": p.get("jornada"),
                 "mercado": a["mercado"], "seleccion": a["seleccion"],
                 "confianza": a["confianza"],
             })
@@ -2089,7 +2093,7 @@ def detectar_jornada_actual() -> int:
     for local, visit, jornada, estadio, resultado, arbitro in PARTIDOS:
         if resultado is not None:
             continue
-        horario_str = HORARIOS_PARTIDO.get((local, visit))
+        horario_str = horario_partido(local, visit, jornada)
         if not horario_str:
             continue
         try:
@@ -2213,7 +2217,7 @@ def simular_jornada_completa(jornada: int = None, n: int = 2_000_000,
                                       tablas_calibracion=tablas_calibracion)
         parlay = armar_parlay(apuestas)
         resultados.append({
-            "local": local, "visitante": visit,
+            "local": local, "visitante": visit, "jornada": jornada,
             "arbitro": r.get("arbitro", "Sin asignar"),
             "resultado_sim": r,
             "apuestas": apuestas,
