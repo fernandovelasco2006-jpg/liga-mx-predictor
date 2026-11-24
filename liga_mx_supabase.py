@@ -6,7 +6,8 @@ proyecto de Supabase separado, para no mezclar datos.
 """
 import requests
 from datetime import datetime, timezone, timedelta
-from liga_mx_predictor_skeleton import DATOS_REALES_LIGAMX, HORARIOS_PARTIDO
+from liga_mx_predictor_skeleton import (DATOS_REALES_LIGAMX, HORARIOS_PARTIDO, buscar_partido,
+                                        horario_partido, datos_reales_partido)
 
 # Import opcional — liga_mx_algoritmo.py importa cosas del skeleton pero
 # no de este módulo, así que no hay dependencia circular real; se deja
@@ -54,10 +55,12 @@ def _enviar(metodo: str, url: str, key: str, tabla: str, payload: dict, params: 
     return resp
 
 
-def inicio_partido(local: str, visit: str):
+def inicio_partido(local: str, visit: str, jornada=None):
     """datetime de arranque según HORARIOS_PARTIDO (hora del centro de
-    México), o None si no hay horario cargado."""
-    horario = HORARIOS_PARTIDO.get((local, visit))
+    México), o None si no hay horario cargado. Con jornada para no
+    confundir un partido de Liguilla con el mismo cruce de la fase
+    regular (ver horario_partido() en el skeleton)."""
+    horario = horario_partido(local, visit, _a_int(jornada))
     if not horario:
         return None
     try:
@@ -66,8 +69,35 @@ def inicio_partido(local: str, visit: str):
         return None
 
 
-def partido_ya_empezo(local: str, visit: str, ahora: datetime = None) -> bool:
-    inicio = inicio_partido(local, visit)
+def _a_int(jornada):
+    try:
+        return int(jornada) if jornada is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _mapa_resultados(partidos_jugados) -> dict:
+    """{(local, visita, jornada): (gh, ga)}. Con jornada porque en la
+    Liguilla cada cruce repite uno de la fase regular."""
+    return {(local, visit, jornada): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+
+
+def _resultado_y_datos(mapa: dict, local, visit, jornada=None):
+    """(resultado, datos_reales) del partido de una fila guardada. Sin
+    jornada (filas viejas) se toma el partido pendiente de ese cruce o el
+    último jugado, así una apuesta de Liguilla nunca se resuelve con el
+    resultado del mismo cruce en la fase regular."""
+    jornada = _a_int(jornada)
+    if jornada is None:
+        p = buscar_partido(local, visit)
+        jornada = p[2] if p else None
+    resultado = mapa.get((local, visit, jornada))
+    datos = datos_reales_partido(local, visit, jornada, default={}) if resultado is not None else {}
+    return resultado, datos
+
+
+def partido_ya_empezo(local: str, visit: str, ahora: datetime = None, jornada=None) -> bool:
+    inicio = inicio_partido(local, visit, jornada)
     return inicio is not None and inicio <= (ahora or datetime.now(TZ_MX))
 
 
@@ -80,7 +110,7 @@ def es_fila_pre_partido(fila: dict) -> bool:
     Esas filas no sirven para medir ni para calibrar. Sin horario o sin
     fecha de guardado no hay forma de saberlo y la fila se conserva.
     """
-    inicio = inicio_partido(fila.get("local"), fila.get("visitante"))
+    inicio = inicio_partido(fila.get("local"), fila.get("visitante"), fila.get("jornada"))
     guardada = fila.get("guardada_en")
     if inicio is None or not guardada:
         return True
@@ -141,7 +171,7 @@ def guardar_prediccion(url: str, key: str, local: str, visit: str, jornada: int,
     if not (url and key):
         return False
     ahora = datetime.now(TZ_MX)
-    if resultado_real is not None or partido_ya_empezo(local, visit, ahora):
+    if resultado_real is not None or partido_ya_empezo(local, visit, ahora, jornada):
         # Partido ya empezado o jugado: el modelo ya pudo "ver" el
         # resultado (Elo, motor y forma se recalculan con PARTIDOS), así
         # que una predicción hecha ahora no es a ciegas. Los goles reales
@@ -196,7 +226,7 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
     if not (url and key):
         return 0
     ahora = datetime.now(TZ_MX)
-    if resultado_real is not None or partido_ya_empezo(local, visit, ahora):
+    if resultado_real is not None or partido_ya_empezo(local, visit, ahora, jornada):
         # Mismo criterio que guardar_prediccion(): una apuesta generada
         # con el partido ya empezado no es a ciegas y contaminaría la
         # calibración. Los aciertos de las apuestas pre-partido los
@@ -211,7 +241,7 @@ def guardar_apuestas(url: str, key: str, local: str, visit: str, jornada: int,
         acierto = None
         es_nulo = False
         if gh is not None:
-            datos = DATOS_REALES_LIGAMX.get(f"{local}_{visit}", {})
+            datos = datos_reales_partido(local, visit, jornada, default={})
             acierto = evaluar_acierto(s, local, visit, gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
             if acierto is None and es_apuesta_nula(s, local, visit, gh, ga):
@@ -1556,7 +1586,7 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
     """
     if not (url and key):
         return 0
-    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+    mapa_resultados = _mapa_resultados(partidos_jugados)
     if not mapa_resultados:
         return 0
 
@@ -1567,7 +1597,7 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
         resp = requests.get(
             f"{url}/rest/v1/predicciones_ligamx",
             headers=_headers(key, prefer=""),
-            params={"select": "id,local,visitante", "goles_local": "is.null", "limit": 200},
+            params={"select": "id,local,visitante,jornada", "goles_local": "is.null", "limit": 200},
             timeout=10,
         )
         pendientes_pred = resp.json() if resp.status_code == 200 else []
@@ -1575,8 +1605,8 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
         pendientes_pred = []
 
     for pred in pendientes_pred:
-        clave = (pred.get("local"), pred.get("visitante"))
-        resultado = mapa_resultados.get(clave)
+        resultado, _ = _resultado_y_datos(mapa_resultados, pred.get("local"), pred.get("visitante"),
+                                          pred.get("jornada"))
         if resultado is None:
             continue
         gh, ga = resultado
@@ -1606,12 +1636,11 @@ def actualizar_aciertos_pendientes(url: str, key: str, partidos_jugados: list) -
         pendientes_ap = []
 
     for ap in pendientes_ap:
-        clave = (ap.get("local"), ap.get("visitante"))
-        resultado = mapa_resultados.get(clave)
+        resultado, datos = _resultado_y_datos(mapa_resultados, ap.get("local"), ap.get("visitante"),
+                                              ap.get("jornada"))
         if resultado is None:
             continue  # el partido AÚN no se ha jugado — sigue pendiente de verdad
         gh, ga = resultado
-        datos = DATOS_REALES_LIGAMX.get(f"{ap.get('local')}_{ap.get('visitante')}", {})
         acierto = evaluar_acierto(ap, ap.get("local"), ap.get("visitante"), gh, ga,
                                    am_reales=datos.get("am"), co_reales=datos.get("co"))
         if acierto is None:
@@ -1677,7 +1706,7 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
     """
     if not (url and key):
         return 0
-    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+    mapa_resultados = _mapa_resultados(partidos_jugados)
 
     try:
         resp = requests.get(
@@ -1702,19 +1731,19 @@ def actualizar_parlays_pendientes(url: str, key: str, partidos_jugados: list) ->
 
         estados = []
         for sel in selecciones:
-            clave = (sel.get("local"), sel.get("visitante"))
-            resultado = mapa_resultados.get(clave)
+            resultado, datos = _resultado_y_datos(mapa_resultados, sel.get("local"), sel.get("visitante"),
+                                                  sel.get("jornada"))
             if resultado is None:
                 estados.append(None)  # el partido aún no se ha jugado — sigue pendiente de verdad
                 continue
             gh, ga = resultado
-            datos = DATOS_REALES_LIGAMX.get(f"{sel.get('local')}_{sel.get('visitante')}", {})
             acierto = evaluar_acierto(sel, sel.get("local"), sel.get("visitante"), gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
             estados.append(acierto)
 
         todos_los_partidos_jugados = all(
-            mapa_resultados.get((s.get("local"), s.get("visitante"))) is not None for s in selecciones
+            _resultado_y_datos(mapa_resultados, s.get("local"), s.get("visitante"), s.get("jornada"))[0] is not None
+            for s in selecciones
         )
 
         # estados_evaluados excluye los None que son "partido aún no
@@ -1792,7 +1821,7 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
     """
     if not (url and key):
         return 0
-    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+    mapa_resultados = _mapa_resultados(partidos_jugados)
 
     try:
         resp = requests.get(
@@ -1822,12 +1851,12 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
             if not local_sel or not visit_sel:
                 estados.append(None)  # selección vieja sin local/visitante separados — no se puede evaluar
                 continue
-            resultado_partido = mapa_resultados.get((local_sel, visit_sel))
+            resultado_partido, datos = _resultado_y_datos(mapa_resultados, local_sel, visit_sel,
+                                                          sel.get("jornada"))
             if resultado_partido is None:
                 estados.append(None)  # el partido AÚN no se ha jugado — sigue pendiente de verdad
                 continue
             gh, ga = resultado_partido
-            datos = DATOS_REALES_LIGAMX.get(f"{local_sel}_{visit_sel}", {})
             acierto = evaluar_acierto(sel, local_sel, visit_sel, gh, ga,
                                        am_reales=datos.get("am"), co_reales=datos.get("co"))
             estados.append(acierto)
@@ -1839,7 +1868,7 @@ def actualizar_apuestas_reales_pendientes(url: str, key: str, partidos_jugados: 
                 hay_reembolso = True
 
         todos_los_partidos_jugados = all(
-            mapa_resultados.get((s.get("local"), s.get("visitante"))) is not None
+            _resultado_y_datos(mapa_resultados, s.get("local"), s.get("visitante"), s.get("jornada"))[0] is not None
             for s in selecciones if s.get("local") and s.get("visitante")
         )
 
@@ -1947,7 +1976,7 @@ def guardar_jornada_completa(url: str, key: str, resultado_simulacion: dict) -> 
     """
     if not (url and key):
         return 0
-    mapa_resultados = {(local, visit): res for local, visit, jornada, estadio, res, arb in partidos_jugados}
+    mapa_resultados = _mapa_resultados(partidos_jugados)
 
     try:
         resp = requests.get(
@@ -1962,12 +1991,10 @@ def guardar_jornada_completa(url: str, key: str, resultado_simulacion: dict) -> 
 
     actualizadas = 0
     for ap in pendientes:
-        clave = (ap["local"], ap["visitante"])
-        resultado = mapa_resultados.get(clave)
+        resultado, datos = _resultado_y_datos(mapa_resultados, ap["local"], ap["visitante"], ap.get("jornada"))
         if resultado is None:
             continue
         gh, ga = resultado
-        datos = DATOS_REALES_LIGAMX.get(f"{ap['local']}_{ap['visitante']}", {})
         acierto = evaluar_acierto(ap, ap["local"], ap["visitante"], gh, ga,
                                    am_reales=datos.get("am"), co_reales=datos.get("co"))
         if acierto is None:

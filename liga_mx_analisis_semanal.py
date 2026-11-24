@@ -56,7 +56,7 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
-from liga_mx_predictor_skeleton import PARTIDOS, HORARIOS_PARTIDO
+from liga_mx_predictor_skeleton import PARTIDOS, HORARIOS_PARTIDO, horario_partido
 from liga_mx_algoritmo import simular_partido, analizar_apuestas, armar_parlay, detectar_jornada_actual
 
 TZ_MX = timezone(timedelta(hours=-6))
@@ -90,10 +90,10 @@ def _partidos_de_jornada(jornada: int) -> list:
     return [p for p in PARTIDOS if p[2] == jornada]
 
 
-def _ya_empezo(local: str, visit: str, ahora: datetime) -> bool:
+def _ya_empezo(local: str, visit: str, ahora: datetime, jornada: int = None) -> bool:
     """True si el partido ya arrancó según HORARIOS_PARTIDO (hora del
     centro de México). Sin horario cargado se considera que no."""
-    horario = HORARIOS_PARTIDO.get((local, visit))
+    horario = horario_partido(local, visit, jornada)
     if not horario:
         return False
     try:
@@ -116,7 +116,7 @@ def partidos_listos_por_arbitro(ahora: datetime = None) -> dict:
     ultima = max(jugadas, default=0)
     por_jornada = {}
     for p in PARTIDOS:
-        if p[4] is None and not _ya_empezo(p[0], p[1], ahora):
+        if p[4] is None and not _ya_empezo(p[0], p[1], ahora, p[2]):
             por_jornada.setdefault(p[2], []).append(p)
 
     listos = {}
@@ -158,7 +158,7 @@ def _factor_clima_partido(local: str, visit: str, weather_api_key: str):
         return 1.0
     if not weather_api_key:
         return 1.0
-    fecha_hora = HORARIOS_PARTIDO.get((local, visit))
+    fecha_hora = horario_partido(local, visit)
     if not fecha_hora:
         return 1.0
     clima = obtener_clima_partido(local, fecha_hora, weather_api_key)
@@ -201,7 +201,7 @@ def revisar_resultados_pendientes_via_api(bsd_api_key: str) -> dict:
         _log(f"Aviso: no se pudo consultar BSD ({e}) — se sigue sin este paso")
         return None
 
-    partidos_ya_en_skeleton = {(p[0], p[1]) for p in PARTIDOS if p[4] is not None}
+    partidos_ya_en_skeleton = {(p[0], p[1]) for p in PARTIDOS if p[4] is not None and p[2] == jornada}
     nuevos = [p for p in actualizacion["partidos_terminados"]
               if (p["local"], p["visitante"]) not in partidos_ya_en_skeleton]
 

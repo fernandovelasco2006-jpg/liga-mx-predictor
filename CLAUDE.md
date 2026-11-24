@@ -26,6 +26,8 @@ Cuando el usuario pegue una página de Sofascore (o texto con resultado de un pa
 4. Confirmar con una consulta rápida que el partido se refleja en `tabla_actual_real()` y que `detectar_jornada_actual()` avanza cuando la jornada se completa.
 5. Commit y push.
 
+**Liguilla (jornadas 18+):** cuartos ida/vuelta = J18/J19, semis = J20/J21, final = J22/J23 (`RONDAS_LIGUILLA` en el skeleton). Cada cruce repite uno de la fase regular, así que para la Liguilla `HORARIOS_PARTIDO` usa la clave `(local, visita, jornada)` y `DATOS_REALES_LIGAMX` la clave `"Local_Visitante_J18"`. Leer y escribir siempre con `horario_partido()` / `datos_reales_partido()` / `buscar_partido()` (pasando la jornada cuando se tenga), nunca con `.get((local, visit))` directo. La tabla general (`tabla_actual_real()`) y la fase regular de `simular_temporada()` solo cuentan hasta `JORNADAS_FASE_REGULAR` (17).
+
 **Nunca hardcodear un `sport_key`, promedio de árbitro, o nombre de equipo sin confirmarlo con una fuente real** — mejor dejar un placeholder documentado que adivinar.
 
 ## Convenciones de nombres (importante, causa bugs si se ignora)
@@ -78,6 +80,7 @@ assert not at.exception, at.exception
 
 ## Estado de datos (actualizar aquí conforme avance la temporada)
 
+- Liguilla: cuartos cargados (J18 ida 25-26/11, J19 vuelta 28-29/11), sin árbitros todavía; la página de la FMF para la Liguilla no tiene URL conocida, así que el workflow de árbitros no los carga solo.
 - Jornadas 1–17: completas (153 partidos con resultado y tarjetas/córners en `DATOS_REALES_LIGAMX`), incluida la J7 Queretaro vs Monterrey (rezagada, jugada 14/11, 0-1).
 - Análisis de jornada automático: `liga_mx_analisis_semanal.py` simula (10M por partido) y guarda las apuestas ALTA de una jornada **una sola vez, en cuanto todos sus partidos por jugarse tienen árbitro central** (rezagadas, partido por partido; si la FMF cambia un árbitro, ese partido se vuelve a simular). Antes marca aciertos/fallos/nulas de lo ya jugado y usa la retroalimentación del historial (mercados suspendidos, calibración isotónica, sesgo por equipo), igual que la app. Lo corren `arbitros_fmf.yml` (job `analisis`, tras cada revisión de la FMF) y `analisis_semanal.yml` (lunes 12:00 UTC, cada push a main que toque el skeleton, y a mano con `jornada`/`forzar`). Necesita en Secrets del repo `SUPABASE_URL_LIGAMX`, `SUPABASE_KEY_LIGAMX` y opcionalmente `WEATHER_API_KEY`, `BSD_API_KEY`, `ODDS_API_KEY`; sin Supabase no simula (salvo `--forzar`).
 - `ODDS_API_KEY` y `SUPABASE_URL_LIGAMX`/`SUPABASE_KEY_LIGAMX` van en Secrets de Streamlit Cloud, nunca hardcodeados ni pegados en el chat/commits.
