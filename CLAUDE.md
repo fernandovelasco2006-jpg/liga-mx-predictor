@@ -78,7 +78,6 @@ assert not at.exception, at.exception
 
 ## Estado de datos (actualizar aquí conforme avance la temporada)
 
-- Jornadas 1–16: completas (144 partidos con resultado y tarjetas/córners en `DATOS_REALES_LIGAMX`), incluida la J7 Queretaro vs Monterrey (rezagada, jugada 14/11, 0-1).
-- Jornada 17: 5 de 9 jugados y cargados (Puebla-ASL, Juarez-Atlas, Tijuana-Atlante, Pachuca-Toluca, Queretaro-Necaxa). Faltan Santos-Leon, Pumas-Monterrey, Tigres-America, Guadalajara-Cruz Azul.
+- Jornadas 1–17: completas (153 partidos con resultado y tarjetas/córners en `DATOS_REALES_LIGAMX`), incluida la J7 Queretaro vs Monterrey (rezagada, jugada 14/11, 0-1).
 - Análisis de jornada automático: `liga_mx_analisis_semanal.py` simula (10M por partido) y guarda las apuestas ALTA de una jornada **una sola vez, en cuanto todos sus partidos por jugarse tienen árbitro central** (rezagadas, partido por partido; si la FMF cambia un árbitro, ese partido se vuelve a simular). Antes marca aciertos/fallos/nulas de lo ya jugado y usa la retroalimentación del historial (mercados suspendidos, calibración isotónica, sesgo por equipo), igual que la app. Lo corren `arbitros_fmf.yml` (job `analisis`, tras cada revisión de la FMF) y `analisis_semanal.yml` (lunes 12:00 UTC, cada push a main que toque el skeleton, y a mano con `jornada`/`forzar`). Necesita en Secrets del repo `SUPABASE_URL_LIGAMX`, `SUPABASE_KEY_LIGAMX` y opcionalmente `WEATHER_API_KEY`, `BSD_API_KEY`, `ODDS_API_KEY`; sin Supabase no simula (salvo `--forzar`).
 - `ODDS_API_KEY` y `SUPABASE_URL_LIGAMX`/`SUPABASE_KEY_LIGAMX` van en Secrets de Streamlit Cloud, nunca hardcodeados ni pegados en el chat/commits.

@@ -206,11 +206,11 @@ PARTIDOS = [
     ('Puebla', 'Atletico San Luis', 17, 'Estadio Cuauhtemoc', (1, 1), 'Karen Hernandez Andrade'),
     ('FC Juarez', 'Atlas', 17, 'Estadio Olimpico Benito Juarez', (3, 3), 'Adonai Escobedo Gonzalez'),
     ('Tijuana', 'Atlante', 17, 'Estadio Caliente', (1, 0), 'Maximiliano Quintero Hernandez'),
-    ('Santos Laguna', 'Leon', 17, 'Estadio TSM Corona', None, 'Luis Enrique Santander Aguirre'),
+    ('Santos Laguna', 'Leon', 17, 'Estadio TSM Corona', (1, 2), 'Luis Enrique Santander Aguirre'),
     ('Pachuca', 'Toluca', 17, 'Estadio Hidalgo', (2, 0), 'Jesus Rafael Lopez Valle'),
-    ('Pumas UNAM', 'Monterrey', 17, 'Estadio Olimpico Universitario', None, 'Fernando Hernandez Gomez'),
-    ('Tigres', 'America', 17, 'Estadio Universitario', None, 'Guillermo Pacheco Larios'),
-    ('Guadalajara', 'Cruz Azul', 17, 'Estadio Akron', None, 'Daniel Quintero Huitron'),
+    ('Pumas UNAM', 'Monterrey', 17, 'Estadio Olimpico Universitario', (0, 2), 'Fernando Hernandez Gomez'),
+    ('Tigres', 'America', 17, 'Estadio Universitario', (1, 0), 'Guillermo Pacheco Larios'),
+    ('Guadalajara', 'Cruz Azul', 17, 'Estadio Akron', (1, 0), 'Daniel Quintero Huitron'),
     ('Queretaro', 'Necaxa', 17, 'Estadio Corregidora', (2, 2), 'Salvador Perez Villalobos'),
 ]
 
@@ -925,6 +925,10 @@ DATOS_REALES_LIGAMX = {
     "FC Juarez_Atlas":             {"am": 3,  "co": 18, "ro": 0, "am_l": 2, "am_v": 1, "ro_l": 0, "ro_v": 0},  # 2 JUA + 1 ATS | 9 JUA + 9 ATS
     "Pachuca_Toluca":              {"am": 5,  "co": 7,  "ro": 1, "am_l": 3, "am_v": 2, "ro_l": 0, "ro_v": 1},  # 3 PAC + 2 TOL | 5 PAC + 2 TOL | 0 PAC + 1 TOL roja
     "Queretaro_Necaxa":            {"am": 2,  "co": 11, "ro": 0, "am_l": 2, "am_v": 0, "ro_l": 0, "ro_v": 0},  # 2 QRO + 0 NEC | 5 QRO + 6 NEC
+    "Santos Laguna_Leon":          {"am": 2,  "co": 9,  "ro": 1, "am_l": 0, "am_v": 2, "ro_l": 1, "ro_v": 0},  # 0 SAN + 2 LEO | 4 SAN + 5 LEO | 1 SAN + 0 LEO roja
+    "Pumas UNAM_Monterrey":        {"am": 4,  "co": 8,  "ro": 2, "am_l": 2, "am_v": 2, "ro_l": 1, "ro_v": 1},  # 2 PUM + 2 MON | 6 PUM + 2 MON | 1 PUM + 1 MON roja
+    "Tigres_America":              {"am": 6,  "co": 12, "ro": 0, "am_l": 2, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 2 TIG + 4 AME | 7 TIG + 5 AME
+    "Guadalajara_Cruz Azul":       {"am": 5,  "co": 8,  "ro": 0, "am_l": 1, "am_v": 4, "ro_l": 0, "ro_v": 0},  # 1 GDL + 4 CAZ | 3 GDL + 5 CAZ
 }
 
 # ─────────────────────────────────────────────────────────────────────────
