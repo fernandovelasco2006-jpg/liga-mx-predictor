@@ -220,10 +220,11 @@ PARTIDOS = [
     # Cuartos de final (calendario Sofascore pegado por fer 2026-11-24):
     # 1 Guadalajara v 8 Pachuca, 2 Cruz Azul v 7 Leon, 3 America v 6
     # Monterrey, 4 Atlas v 5 Toluca. Ida de local el peor posicionado.
-    ('Toluca', 'Atlas', 18, 'Estadio Nemesio Diez', None, None),
-    ('Monterrey', 'America', 18, 'Estadio BBVA', None, None),
-    ('Pachuca', 'Guadalajara', 18, 'Estadio Hidalgo', None, None),
-    ('Leon', 'Cruz Azul', 18, 'Estadio Nou Camp', None, None),
+    # Árbitros J18: comunicado FMF 154/2026 (24/11), pasado por fer.
+    ('Toluca', 'Atlas', 18, 'Estadio Nemesio Diez', None, 'Guillermo Pacheco Larios'),
+    ('Monterrey', 'America', 18, 'Estadio BBVA', None, 'Victor Alfonso Caceres Hernandez'),
+    ('Pachuca', 'Guadalajara', 18, 'Estadio Hidalgo', None, 'Fernando Hernandez Gomez'),
+    ('Leon', 'Cruz Azul', 18, 'Estadio Nou Camp', None, 'Cesar Arturo Ramos Palazuelos'),
     ('Atlas', 'Toluca', 19, 'Estadio Jalisco', None, None),
     ('America', 'Monterrey', 19, 'Estadio Banorte', None, None),
     ('Guadalajara', 'Pachuca', 19, 'Estadio Akron', None, None),
